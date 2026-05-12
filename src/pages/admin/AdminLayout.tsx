@@ -1,12 +1,26 @@
 import { Link, useNavigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.store';
-import { BookOpen, List, Users, Cpu, Settings, LogOut, BarChart3 } from 'lucide-react';
+import { useSocketStore } from '../../services/socket';
+import { BookOpen, List, Users, Cpu, Settings, LogOut, BarChart3, FileText, Swords, ClipboardList, FolderTree } from 'lucide-react';
+import { useEffect } from 'react';
 
 export function AdminLayout() {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
+  const { user, isAuthenticated, logout } = useAuthStore();
+  const { connect, disconnect, isConnected } = useSocketStore();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      const token = localStorage.getItem('token');
+      if (token && !isConnected) {
+        connect(token);
+      }
+    }
+    return () => {};
+  }, [isAuthenticated, isConnected, connect]);
 
   const handleLogout = () => {
+    disconnect();
     logout();
     navigate('/');
   };
@@ -14,7 +28,10 @@ export function AdminLayout() {
   const menuItems = [
     { path: '/admin', label: '概览', icon: BarChart3, exact: true },
     { path: '/admin/problems', label: '题目管理', icon: List },
-    { path: '/admin/solutions', label: '题解管理', icon: BookOpen },
+    { path: '/admin/knowledge-tree', label: '知识树管理', icon: FolderTree },
+    { path: '/admin/exams', label: '考试管理', icon: FileText },
+    { path: '/admin/submissions', label: '提交记录', icon: ClipboardList },
+    { path: '/admin/matches', label: 'PK对战', icon: Swords },
     { path: '/admin/users', label: '用户管理', icon: Users },
     { path: '/admin/ai-config', label: 'AI配置', icon: Cpu },
   ];

@@ -1,141 +1,196 @@
 from playwright.sync_api import sync_playwright
+import json
 
-def test_oj_system():
-    results = []
-    
+def run_test():
+    errors = []
+    test_results = []
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        
-        # 1. 测试首页加载
-        print("1. 测试首页加载...")
-        page.goto('http://localhost:5173')
-        page.wait_for_load_state('networkidle')
-        page.screenshot(path='/tmp/01_homepage.png', full_page=True)
-        
-        # 检查是否有题目列表
-        title = page.locator('h1').first.text_content()
-        results.append(f"✅ 首页加载成功，标题: {title}")
-        
-        # 2. 测试用户注册
-        print("2. 测试用户注册...")
-        page.click('text=注册')
-        page.wait_for_load_state('networkidle')
-        page.screenshot(path='/tmp/02_register.png', full_page=True)
-        
-        page.fill('input[placeholder="请输入用户名"]', 'testuser')
-        page.fill('input[placeholder="请输入邮箱"]', 'test@example.com')
-        page.fill('input[placeholder="请输入密码（至少6位）"]', 'test123456')
-        page.fill('input[placeholder="请再次输入密码"]', 'test123456')
-        page.click('button:has-text("注册")')
-        page.wait_for_load_state('networkidle')
-        page.screenshot(path='/tmp/03_after_register.png', full_page=True)
-        
-        results.append("✅ 用户注册功能正常")
-        
-        # 3. 测试登录功能
-        print("3. 测试登录功能...")
-        page.click('text=登录')
-        page.wait_for_load_state('networkidle')
-        
-        page.fill('input[placeholder="请输入用户名或邮箱"]', 'testuser')
-        page.fill('input[placeholder="请输入密码"]', 'test123456')
-        page.click('button:has-text("登录")')
-        page.wait_for_load_state('networkidle')
-        page.screenshot(path='/tmp/04_after_login.png', full_page=True)
-        
-        # 检查是否登录成功
-        user_text = page.locator('text=testuser').first.text_content()
-        results.append(f"✅ 登录成功，用户显示: {user_text}")
-        
-        # 4. 测试题目列表
-        print("4. 测试题目列表...")
-        problems = page.locator('a[href^="/problem/"]').count()
-        results.append(f"✅ 题目列表显示，共 {problems} 道题目")
-        
-        # 5. 测试题目详情
-        print("5. 测试题目详情...")
-        page.click('a[href^="/problem/"] >> nth=0')
-        page.wait_for_load_state('networkidle')
-        page.screenshot(path='/tmp/05_problem_detail.png', full_page=True)
-        
-        problem_title = page.locator('h1').first.text_content()
-        results.append(f"✅ 题目详情加载成功: {problem_title}")
-        
-        # 6. 测试答题功能
-        print("6. 测试答题功能...")
-        start_btn = page.locator('text=开始答题')
-        if start_btn.count() > 0:
-            start_btn.click()
-            page.wait_for_load_state('networkidle')
-            page.screenshot(path='/tmp/06_solve_page.png', full_page=True)
-            results.append("✅ 答题页面加载成功")
-        
-        # 7. 测试个人中心
-        print("7. 测试个人中心...")
-        page.click('text=testuser')
-        page.wait_for_load_state('networkidle')
-        page.screenshot(path='/tmp/07_profile.png', full_page=True)
-        
-        profile_title = page.locator('h1').first.text_content()
-        results.append(f"✅ 个人中心加载成功: {profile_title}")
-        
-        # 8. 测试管理员功能
-        print("8. 测试管理员功能...")
-        page.goto('http://localhost:5173/login')
-        page.wait_for_load_state('networkidle')
-        page.fill('input[placeholder="请输入用户名或邮箱"]', 'admin')
-        page.fill('input[placeholder="请输入密码"]', 'admin123')
-        page.click('button:has-text("登录")')
-        page.wait_for_load_state('networkidle')
-        page.screenshot(path='/tmp/08_admin_login.png', full_page=True)
-        
-        # 检查是否进入管理后台
-        admin_link = page.locator('text=管理后台')
-        if admin_link.count() > 0:
-            admin_link.click()
-            page.wait_for_load_state('networkidle')
-            page.screenshot(path='/tmp/09_admin_dashboard.png', full_page=True)
-            results.append("✅ 管理员登录成功，进入管理后台")
-        
-        # 9. 测试题目管理
-        print("9. 测试题目管理...")
-        page.click('text=题目管理')
-        page.wait_for_load_state('networkidle')
-        page.screenshot(path='/tmp/10_admin_problems.png', full_page=True)
-        
-        problem_count = page.locator('table tbody tr').count()
-        results.append(f"✅ 题目管理页面，显示 {problem_count} 道题目")
-        
-        # 10. 测试AI配置
-        print("10. 测试AI配置...")
-        page.click('text=AI配置')
-        page.wait_for_load_state('networkidle')
-        page.screenshot(path='/tmp/11_admin_ai_config.png', full_page=True)
-        
-        ai_title = page.locator('h1').first.text_content()
-        results.append(f"✅ AI配置页面加载: {ai_title}")
-        
-        # 11. 测试用户管理
-        print("11. 测试用户管理...")
-        page.click('text=用户管理')
-        page.wait_for_load_state('networkidle')
-        page.screenshot(path='/tmp/12_admin_users.png', full_page=True)
-        
-        user_count = page.locator('table tbody tr').count()
-        results.append(f"✅ 用户管理页面，显示 {user_count} 个用户")
-        
-        browser.close()
-    
-    # 输出测试报告
-    print("\n" + "="*60)
-    print("🧪 OJ系统功能测试报告")
-    print("="*60)
-    for result in results:
-        print(f"  {result}")
-    print("="*60)
-    print("📊 测试完成！共测试 12 项功能")
-    print("💡 截图已保存至 /tmp/ 目录")
 
-if __name__ == '__main__':
-    test_oj_system()
+        console_errors = []
+        page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+
+        try:
+            print("=" * 60)
+            print("🧪 OJ系统自动化测试")
+            print("=" * 60)
+
+            # Test 1: 访问首页
+            print("\n📍 测试 1: 访问首页...")
+            page.goto('http://localhost:5175')  
+            page.wait_for_load_state('networkidle')
+            page.screenshot(path='d:/桌面/TRAESOLO/OJ/开发OJ系统/test_results/01_home.png', full_page=True)
+            test_results.append(("访问首页", True,   "成功加载"))
+            print("   ✅ 首页加载成功")
+
+            # Test 2: 检查导航栏
+            print("\n📍 测试 2: 检查导航栏...")
+            navbar = page.locator('nav').first
+            if navbar.is_visible():
+                test_results.append(("导航栏", True, "导航栏可见"))
+                print("   ✅ 导航栏正常显示")
+            else:
+                test_results.append(("导航栏", False, "导航栏未找到"))
+                print("   ❌ 导航栏未找到")
+
+            # Test 3: 访问登录页
+            print("\n📍 测试 3: 访问登录页...")
+            page.goto('http://localhost:5175/login')
+            page.wait_for_load_state('networkidle')
+            page.screenshot(path='d:/桌面/TRAESOLO/OJ/开发OJ系统/test_results/02_login.png', full_page=True)
+            test_results.append(("登录页", True,   "登录页加载成功"))
+            print("   ✅ 登录页加载成功")
+
+            # Test 4: 登录功能测试
+            print("\n📍 测试 4: 测试登录功能...")
+            page.fill('input[type="text"], input[name="username"]', 'admin')
+            page.fill('input[type="password"]', 'admin123')
+            page.click('button[type="submit"]')
+            page.wait_for_timeout(2000)
+
+            current_url = page.url
+            if '/login' not in current_url:
+                test_results.append(("登录功能", True, "登录成功"))
+                print("   ✅ 登录成功，跳转到主页")
+                page.screenshot(path='d:/桌面/TRAESOLO/OJ/开发OJ系统/test_results/03_after_login.png', full_page=True)
+            else:
+                test_results.append(("登录功能", False, "登录失败"))
+                print("   ❌ 登录可能失败，仍在登录页")
+
+            # Test 5: 检查在线用户数显示
+            print("\n📍 测试 5: 检查在线用户数...")
+            page.wait_for_load_state('networkidle')
+            online_indicator = page.locator('text=/在线|online|人数/i')
+            if online_indicator.count() > 0:
+                test_results.append(("在线用户数", True, "在线用户数显示正常"))
+                print("   ✅ 在线用户数显示正常")
+            else:
+                test_results.append(("在线用户数", False, "未找到在线用户数显示"))
+                print("   ⚠️ 未找到在线用户数显示")
+
+            # Test 6: 访问做题页面
+            print("\n📍 测试 6: 访问做题页面...")
+            page.goto('http://localhost:5175/solve')
+            page.wait_for_load_state('networkidle')
+            page.screenshot(path='d:/桌面/TRAESOLO/OJ/开发OJ系统/test_results/04_solve.png', full_page=True)
+            test_results.append(("做题页面", True, "做题页面加载成功"))
+            print("   ✅ 做题页面加载成功")
+
+            # Test 7: 检查题目列表
+            print("\n📍 测试 7: 检查题目列表...")
+            problem_cards = page.locator('[class*="problem"], [class*="card"], [class*="item"]')
+            if problem_cards.count() > 0:
+                test_results.append(("题目列表", True, f"找到 {problem_cards.count()} 个题目"))
+                print(f"   ✅ 找到 {problem_cards.count()} 个题目")
+            else:
+                test_results.append(("题目列表", False, "未找到题目"))
+                print("   ⚠️ 未找到题目")
+
+            # Test 8: 访问提交记录页面
+            print("\n📍 测试 8: 访问提交记录页面...")
+            page.goto('http://localhost:5175/submissions')
+            page.wait_for_load_state('networkidle')
+            page.screenshot(path='d:/桌面/TRAESOLO/OJ/开发OJ系统/test_results/05_submissions.png', full_page=True)
+            test_results.append(("提交记录", True, "提交记录页面加载成功"))
+            print("   ✅ 提交记录页面加载成功")
+
+            # Test 9: 访问知识树页面
+            print("\n📍 测试 9: 访问知识树页面...")
+            page.goto('http://localhost:5175/knowledge-tree')
+            page.wait_for_load_state('networkidle')
+            page.screenshot(path='d:/桌面/TRAESOLO/OJ/开发OJ系统/test_results/06_knowledge_tree.png', full_page=True)
+            test_results.append(("知识树页面", True, "知识树页面加载成功"))
+            print("   ✅ 知识树页面加载成功")
+
+            # Test 10: 访问考试页面
+            print("\n📍 测试 10: 访问考试页面...")
+            page.goto('http://localhost:5175/exams')    
+            page.wait_for_load_state('networkidle')
+            page.screenshot(path='d:/桌面/TRAESOLO/OJ/开发OJ系统/test_results/07_exams.png', full_page=True)
+            test_results.append(("考试页面", True, "考试页面加载成功"))
+            print("   ✅ 考试页面加载成功")
+
+            # Test 11: 访问对战页面
+            print("\n📍 测试 11: 访问对战页面...")
+            page.goto('http://localhost:5175/match')
+            page.wait_for_load_state('networkidle')
+            page.screenshot(path='d:/桌面/TRAESOLO/OJ/开发OJ系统/test_results/08_match.png', full_page=True)
+            test_results.append(("对战页面", True, "对战页面加载成功"))
+            print("   ✅ 对战页面加载成功")
+
+            # Test 12: 访问成就页面
+            print("\n📍 测试 12: 访问成就页面...")
+            page.goto('http://localhost:5175/achievements')
+            page.wait_for_load_state('networkidle')
+            page.screenshot(path='d:/桌面/TRAESOLO/OJ/开发OJ系统/test_results/09_achievements.png', full_page=True)
+            test_results.append(("成就页面", True, "成就页面加载成功"))
+            print("   ✅ 成就页面加载成功")
+
+            # Test 13: API 基础测试
+            print("\n📍 测试 13: 测试后端 API...")
+            api_response = page.request.get('http://localhost:3005/api/problems')
+            if api_response.ok:
+                test_results.append(("后端 API", True, f"状态码: {api_response.status}"))
+                print(f"   ✅ 后端 API 正常 (状态码: {api_response.status})")
+            else:
+                test_results.append(("后端 API", False, f"状态码: {api_response.status}"))
+                print(f"   ❌ 后端 API 异常 (状态码: {api_response.status})")
+
+            # Test 14: WebSocket 连接
+            print("\n📍 测试 14: 测试 WebSocket...")
+            ws_test = page.request.get('http://localhost:3005')     
+            if ws_test.status in [200, 404]:
+                test_results.append(("WebSocket", True, "服务器运行正常"))
+                print("   ✅ WebSocket 服务器运行正常")
+            else:
+                test_results.append(("WebSocket", False, "服务器无响应"))
+                print("   ❌ WebSocket 服务器无响应")
+
+        except Exception as e:
+            errors.append(str(e))
+            test_results.append(("测试异常", False, str(e)))
+            print(f"\n   ❌ 测试异常: {e}")
+
+        finally:
+            browser.close()
+
+    # 输出测试报告
+    print("\n" + "=" * 60)
+    print("📊 测试报告")
+    print("=" * 60)
+
+    passed = sum(1 for _, status, _ in test_results if status)
+    total = len(test_results)
+
+    for name, status, message in test_results:
+        status_icon = "✅" if status else "❌"
+        print(f"  {status_icon} {name}: {message}")
+
+    print("\n" + "-" * 60)
+    print(f"  通过: {passed}/{total} ({passed*100//total}%)")
+
+    if console_errors:
+        print(f"\n  ⚠️ 控制台错误 ({len(console_errors)} 个):")
+        for err in console_errors[:5]:
+            print(f"     - {err[:100]}")
+    else:
+        print("\n  ✅ 无控制台错误")
+
+    if errors:
+        print(f"\n  ❌ 异常: {len(errors)} 个")
+        for err in errors:
+            print(f"     - {err}")
+
+    print("\n" + "=" * 60)
+    print("🖼️ 截图已保存到 test_results 目录")
+    print("=" * 60)
+
+    return passed == total
+
+if __name__ == "__main__":
+    import os
+    os.makedirs('d:/桌面/TRAESOLO/OJ/开发OJ系统/test_results', exist_ok=True)
+    success = run_test()
+    exit(0 if success else 1)

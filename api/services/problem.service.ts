@@ -1,5 +1,14 @@
 import prisma from '../lib/prisma';
 
+function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
 export interface TestCase {
   input: string;
   output: string;
@@ -47,6 +56,8 @@ export class ProblemService {
     type?: string;
     difficulty?: string;
     search?: string;
+    tag?: string;
+    knowledgeTreeId?: string;
   }) {
     const where: any = {};
 
@@ -62,6 +73,12 @@ export class ProblemService {
         { description: { contains: filters.search } }
       ];
     }
+    if (filters?.tag) {
+      where.tags = { contains: filters.tag };
+    }
+    if (filters?.knowledgeTreeId) {
+      where.knowledgeTreeId = filters.knowledgeTreeId;
+    }
 
     return await prisma.problem.findMany({
       where,
@@ -72,12 +89,13 @@ export class ProblemService {
         type: true,
         difficulty: true,
         tags: true,
+        knowledgeTreeId: true,
         createdAt: true
       }
     });
   }
 
-  async getProblemById(id: string) {
+  async getProblemById(id: string, includeHiddenTestCases: boolean = false) {
     const problem = await prisma.problem.findUnique({
       where: { id },
       include: {
@@ -89,12 +107,17 @@ export class ProblemService {
 
     if (!problem) return null;
 
+    const allTestCases: TestCase[] = safeJsonParse(problem.testCases, []);
+    const visibleTestCases = includeHiddenTestCases
+      ? allTestCases
+      : allTestCases.filter(tc => tc.isSample);
+
     return {
       ...problem,
-      tags: JSON.parse(problem.tags),
-      testCases: JSON.parse(problem.testCases),
-      choices: problem.choices ? JSON.parse(problem.choices) : null,
-      fillBlanks: problem.fillBlanks ? JSON.parse(problem.fillBlanks) : null,
+      tags: safeJsonParse(problem.tags, []),
+      testCases: visibleTestCases,
+      choices: safeJsonParse(problem.choices, null),
+      fillBlanks: safeJsonParse(problem.fillBlanks, null),
       submissionCount: problem._count.submissions
     };
   }

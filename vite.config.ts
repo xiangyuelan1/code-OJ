@@ -26,10 +26,10 @@ export default defineConfig({
   ],
   server: {
     host: '0.0.0.0', // 允许内网访问
-    port: 5173,
+    port: 5175,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:3005',
         changeOrigin: true,
         secure: false,
         configure: (proxy, _options) => {

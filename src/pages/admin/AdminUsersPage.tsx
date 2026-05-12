@@ -1,165 +1,209 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usersAPI } from '../../services/api';
-import { Users, UserCheck, UserX, Shield, GraduationCap } from 'lucide-react';
+import { UserPlus, Lock, ToggleLeft, ToggleRight, Eye, EyeOff, Key, Trophy, FileText, Swords } from 'lucide-react';
 
 export function AdminUsersPage() {
+  const navigate = useNavigate();
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  const [resettingId, setResettingId] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [defaultPasswords] = useState<Record<string, string>>({
+    admin: 'admin123',
+    teacher: '123456',
+  });
 
   useEffect(() => {
-    loadUsers();
+    fetchUsers();
   }, []);
 
-  const loadUsers = async () => {
+  const fetchUsers = async () => {
     try {
       setLoading(true);
       const res = await usersAPI.getAll();
       if (res.success) {
-        setUsers(res.data);
+        setUsers(res.data || []);
       }
     } catch (error) {
-      console.error('加载用户失败', error);
+      console.error('获取用户列表失败', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleUserStatus = async (userId: string) => {
+  const handleToggleStatus = async (id: string) => {
     try {
-      await usersAPI.toggleStatus(userId);
-      loadUsers();
-    } catch (error) {
-      console.error('切换状态失败', error);
-      alert('操作失败');
+      await usersAPI.toggleStatus(id);
+      fetchUsers();
+    } catch (error: any) {
+      alert(error.error?.message || '操作失败');
     }
   };
 
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    });
+  const handleResetPassword = async (id: string) => {
+    if (!newPassword || newPassword.length < 6) {
+      alert('密码长度至少6位');
+      return;
+    }
+    try {
+      await usersAPI.resetPassword(id, newPassword);
+      setResettingId(null);
+      setNewPassword('');
+      alert('密码重置成功');
+    } catch (error: any) {
+      alert(error.error?.message || '重置失败');
+    }
   };
 
-  const getRoleIcon = (role: string) => {
-    return role === 'ADMIN' ? (
-      <Shield className="h-4 w-4 text-purple-400" />
-    ) : (
-      <GraduationCap className="h-4 w-4 text-blue-400" />
+  const getRoleName = (role: string) => {
+    switch (role) {
+      case 'ADMIN': return '管理员';
+      case 'TEACHER': return '教师';
+      case 'STUDENT': return '学生';
+      default: return role;
+    }
+  };
+
+  const getRoleColor = (role: string) => {
+    switch (role) {
+      case 'ADMIN': return 'bg-purple-500/20 text-purple-400';
+      case 'TEACHER': return 'bg-blue-500/20 text-blue-400';
+      default: return 'bg-green-500/20 text-green-400';
+    }
+  };
+
+  const getDefaultPassword = (username: string) => {
+    return defaultPasswords[username] || '123456';
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center py-20">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-cyan-500 border-t-transparent"></div>
+      </div>
     );
-  };
-
-  const activeUsers = users.filter(u => u.isActive).length;
-  const adminCount = users.filter(u => u.role === 'ADMIN').length;
-  const studentCount = users.filter(u => u.role === 'STUDENT').length;
+  }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-white">用户管理</h1>
+        <div className="text-slate-400">共 {users.length} 个用户</div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-slate-800 rounded-xl p-6 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-3xl font-bold text-white mb-1">{users.length}</div>
-              <div className="text-slate-400 text-sm">总用户数</div>
-            </div>
-            <div className="p-3 bg-blue-500/10 rounded-lg">
-              <Users className="h-6 w-6 text-blue-400" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-slate-800 rounded-xl p-6 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-3xl font-bold text-green-400 mb-1">{activeUsers}</div>
-              <div className="text-slate-400 text-sm">活跃用户</div>
-            </div>
-            <div className="p-3 bg-green-500/10 rounded-lg">
-              <UserCheck className="h-6 w-6 text-green-400" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-slate-800 rounded-xl p-6 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-3xl font-bold text-purple-400 mb-1">{adminCount}</div>
-              <div className="text-slate-400 text-sm">管理员</div>
-            </div>
-            <div className="p-3 bg-purple-500/10 rounded-lg">
-              <Shield className="h-6 w-6 text-purple-400" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center items-center py-20">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-cyan-500 border-t-transparent"></div>
-        </div>
-      ) : (
-        <div className="bg-slate-800 rounded-xl overflow-hidden shadow-xl">
+      <div className="bg-slate-800 rounded-xl overflow-hidden shadow-xl">
+        <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-slate-700">
-                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">用户</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">用户名</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">邮箱</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">角色</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">注册时间</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">密码</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">积分/等级</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">状态</th>
-                <th className="px-6 py-4 text-right text-sm font-semibold text-slate-300">操作</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700">
               {users.map((user) => (
                 <tr key={user.id} className="hover:bg-slate-750 transition-colors">
                   <td className="px-6 py-4">
-                    <div className="flex items-center">
-                      <div className="w-10 h-10 bg-cyan-500/20 rounded-full flex items-center justify-center text-cyan-400 font-bold">
-                        {user.username.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="ml-3">
-                        <div className="text-white font-medium">{user.username}</div>
-                      </div>
-                    </div>
+                    <div className="text-white font-medium">{user.username}</div>
                   </td>
-                  <td className="px-6 py-4 text-slate-400">{user.email}</td>
+                  <td className="px-6 py-4 text-slate-400 text-sm">{user.email}</td>
                   <td className="px-6 py-4">
-                    <span className="flex items-center text-slate-300">
-                      {getRoleIcon(user.role)}
-                      <span className="ml-2">{user.role === 'ADMIN' ? '管理员' : '学生'}</span>
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-slate-400 text-sm">{formatDate(user.createdAt)}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-full text-xs ${
-                      user.isActive
-                        ? 'bg-green-500/20 text-green-400'
-                        : 'bg-red-500/20 text-red-400'
-                    }`}>
-                      {user.isActive ? '活跃' : '禁用'}
+                    <span className={`text-xs px-2 py-1 rounded ${getRoleColor(user.role)}`}>
+                      {getRoleName(user.role)}
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex items-center justify-end">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-slate-300 font-mono">
+                        {showPasswords[user.id] ? getDefaultPassword(user.username) : '••••••'}
+                      </span>
                       <button
-                        onClick={() => toggleUserStatus(user.id)}
-                        className={`p-2 transition-colors ${
-                          user.isActive
-                            ? 'text-slate-400 hover:text-red-400'
-                            : 'text-slate-400 hover:text-green-400'
-                        }`}
-                        title={user.isActive ? '禁用用户' : '启用用户'}
+                        onClick={() => setShowPasswords(prev => ({ ...prev, [user.id]: !prev[user.id] }))}
+                        className="text-slate-400 hover:text-white"
                       >
-                        {user.isActive ? (
-                          <UserX className="h-5 w-5" />
+                        {showPasswords[user.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {resettingId === user.id ? (
+                      <div className="flex items-center gap-2 mt-2">
+                        <input
+                          type="text"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm w-32"
+                          placeholder="新密码"
+                        />
+                        <button
+                          onClick={() => handleResetPassword(user.id)}
+                          className="px-2 py-1 bg-cyan-500 text-white text-xs rounded hover:bg-cyan-600"
+                        >
+                          确认
+                        </button>
+                        <button
+                          onClick={() => { setResettingId(null); setNewPassword(''); }}
+                          className="px-2 py-1 bg-slate-600 text-white text-xs rounded hover:bg-slate-500"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setResettingId(user.id); setNewPassword(''); }}
+                        className="text-xs text-cyan-400 hover:text-cyan-300 mt-1 flex items-center gap-1"
+                      >
+                        <Key className="h-3 w-3" /> 重置密码
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-cyan-400 font-semibold">{user.points || 0} 分</div>
+                    <div className="text-slate-500 text-xs">Lv.{user.level || 1}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`text-xs px-2 py-1 rounded ${
+                      user.isActive !== false ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                    }`}>
+                      {user.isActive !== false ? '正常' : '禁用'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleToggleStatus(user.id)}
+                        className="text-slate-400 hover:text-white"
+                        title={user.isActive !== false ? '禁用账户' : '启用账户'}
+                      >
+                        {user.isActive !== false ? (
+                          <ToggleRight className="h-5 w-5 text-green-400" />
                         ) : (
-                          <UserCheck className="h-5 w-5" />
+                          <ToggleLeft className="h-5 w-5 text-red-400" />
                         )}
                       </button>
+                      {user.role === 'STUDENT' && (
+                        <>
+                          <button
+                            onClick={() => navigate(`/admin/submissions?userId=${user.id}`)}
+                            className="text-slate-400 hover:text-cyan-400"
+                            title="查看提交记录"
+                          >
+                            <FileText className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => navigate(`/admin/matches?userId=${user.id}`)}
+                            className="text-slate-400 hover:text-orange-400"
+                            title="查看PK记录"
+                          >
+                            <Swords className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -167,7 +211,7 @@ export function AdminUsersPage() {
             </tbody>
           </table>
         </div>
-      )}
+      </div>
     </div>
   );
 }

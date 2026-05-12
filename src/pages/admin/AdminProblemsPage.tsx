@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { problemsAPI } from '../../services/api';
-import { Plus, Edit, Trash2, Code, CheckCircle, PenTool, Search } from 'lucide-react';
+import { problemsAPI, enhancedAiAPI } from '../../services/api';
+import { Plus, Edit, Trash2, Code, CheckCircle, PenTool, Search, Upload, Loader2, X } from 'lucide-react';
 
 export function AdminProblemsPage() {
   const [problems, setProblems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showImport, setShowImport] = useState(false);
+  const [importContent, setImportContent] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
 
   useEffect(() => {
     loadProblems();
@@ -28,7 +32,6 @@ export function AdminProblemsPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('确定要删除这道题目吗？')) return;
-    
     try {
       await problemsAPI.delete(id);
       loadProblems();
@@ -36,6 +39,58 @@ export function AdminProblemsPage() {
       console.error('删除失败', error);
       alert('删除失败');
     }
+  };
+
+  const handleImport = async () => {
+    if (!importContent.trim()) {
+      alert('请输入题目内容');
+      return;
+    }
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const res = await enhancedAiAPI.parseProblemFile(importContent, 'txt');
+      if (res.success && res.data?.problems) {
+        const problems = res.data.problems;
+        let created = 0;
+        for (const p of problems) {
+          try {
+            await problemsAPI.create({
+              title: p.title,
+              description: p.description,
+              type: p.type || 'PROGRAMMING',
+              difficulty: p.difficulty || 'MEDIUM',
+              tags: p.tags || [],
+              testCases: p.testCases || [],
+              choices: p.choices || undefined,
+              correctAnswer: p.correctAnswer || undefined,
+              fillBlanks: p.fillBlanks || undefined,
+              timeLimit: p.timeLimit || 2000,
+              memoryLimit: p.memoryLimit || 256
+            });
+            created++;
+          } catch (e) {
+            console.error('导入题目失败:', p.title, e);
+          }
+        }
+        setImportResult({ total: problems.length, created });
+        loadProblems();
+      }
+    } catch (error: any) {
+      alert(error.error?.message || 'AI解析失败');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setImportContent(event.target?.result as string);
+    };
+    reader.readAsText(file);
   };
 
   const getTypeIcon = (type: string) => {
@@ -94,13 +149,22 @@ export function AdminProblemsPage() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-white">题目管理</h1>
-        <Link
-          to="/admin/problems/create"
-          className="flex items-center bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-        >
-          <Plus className="h-5 w-5 mr-2" />
-          创建题目
-        </Link>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowImport(true)}
+            className="flex items-center bg-purple-500 hover:bg-purple-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+          >
+            <Upload className="h-5 w-5 mr-2" />
+            批量导入
+          </button>
+          <Link
+            to="/admin/problems/create"
+            className="flex items-center bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            创建题目
+          </Link>
+        </div>
       </div>
 
       <div className="bg-slate-800 rounded-xl p-6 shadow-lg mb-6">
@@ -164,7 +228,7 @@ export function AdminProblemsPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-slate-400 text-sm">
-                    {JSON.parse(problem.tags || '[]').join(', ') || '无'}
+                    {(Array.isArray(problem.tags) ? problem.tags : JSON.parse(problem.tags || '[]')).join(', ') || '无'}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end space-x-2">
@@ -191,6 +255,60 @@ export function AdminProblemsPage() {
               暂无题目，点击上方按钮创建
             </div>
           )}
+        </div>
+      )}
+      {showImport && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-xl p-6 max-w-2xl w-full mx-4 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-white">批量导入题目</h2>
+              <button onClick={() => setShowImport(false)} className="text-slate-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">上传文件</label>
+                <label className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg cursor-pointer transition-colors w-fit">
+                  <Upload className="h-4 w-4" />
+                  <span>选择文件</span>
+                  <input type="file" accept=".txt,.md,.csv" onChange={handleFileUpload} className="hidden" />
+                </label>
+                <p className="text-slate-500 text-sm mt-1">支持 txt、md、csv 文件</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">或直接粘贴内容</label>
+                <textarea
+                  value={importContent}
+                  onChange={(e) => setImportContent(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  rows={8}
+                  placeholder="粘贴题目内容，AI将自动解析并创建题目。格式示例：&#10;&#10;题目：两数之和&#10;描述：给定一个整数数组...&#10;类型：PROGRAMMING&#10;难度：EASY&#10;---&#10;题目：二叉树遍历&#10;描述：...&#10;类型：CHOICE&#10;难度：MEDIUM"
+                />
+              </div>
+              {importResult && (
+                <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400">
+                  成功导入 {importResult.created}/{importResult.total} 道题目
+                </div>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => { setShowImport(false); setImportContent(''); setImportResult(null); }}
+                  className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
+                >
+                  关闭
+                </button>
+                <button
+                  onClick={handleImport}
+                  disabled={importing || !importContent.trim()}
+                  className="flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {importing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+                  {importing ? '导入中...' : '开始导入'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

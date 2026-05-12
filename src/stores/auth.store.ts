@@ -5,6 +5,8 @@ interface User {
   username: string;
   email: string;
   role: string;
+  createdAt?: string;
+  isActive?: boolean;
 }
 
 interface AuthState {

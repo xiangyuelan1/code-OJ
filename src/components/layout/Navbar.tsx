@@ -1,14 +1,31 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.store';
-import { BookOpen, User, LogOut, Menu, X } from 'lucide-react';
-import { useState } from 'react';
+import { usePointsStore } from '../../stores/points.store';
+import { useSocketStore } from '../../services/socket';
+import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 export function Navbar() {
   const { user, isAuthenticated, logout } = useAuthStore();
+  const { points, levelName, rank, fetchMyPoints } = usePointsStore();
+  const { onlineCount, connect, disconnect, isConnected } = useSocketStore();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchMyPoints();
+      const token = localStorage.getItem('token');
+      if (token && !isConnected) {
+        connect(token);
+      }
+    } else {
+      disconnect();
+    }
+  }, [isAuthenticated]);
+
   const handleLogout = () => {
+    disconnect();
     logout();
     navigate('/');
   };
@@ -26,21 +43,61 @@ export function Navbar() {
 
           <div className="hidden md:flex items-center space-x-6">
             <Link to="/" className="hover:text-cyan-400 transition-colors">
-              题目列表
+              题目
             </Link>
-            
+            <Link to="/categories" className="hover:text-cyan-400 transition-colors">
+              题单
+            </Link>
+            {isAuthenticated && (
+              <Link to="/match" className="hover:text-cyan-400 transition-colors">
+                对战
+              </Link>
+            )}
+            {isAuthenticated && (
+              <Link to="/exams" className="hover:text-cyan-400 transition-colors">
+                考试
+              </Link>
+            )}
+            {isAuthenticated && user?.role === 'STUDENT' && (
+              <Link to="/submissions" className="hover:text-cyan-400 transition-colors">
+                我的提交
+              </Link>
+            )}
+            {user?.role === 'ADMIN' && (
+              <Link to="/admin" className="hover:text-cyan-400 transition-colors">
+                管理后台
+              </Link>
+            )}
+
             {isAuthenticated ? (
               <>
-                {user?.role === 'STUDENT' && (
-                  <Link to="/submissions" className="hover:text-cyan-400 transition-colors">
-                    我的提交
-                  </Link>
-                )}
-                {user?.role === 'ADMIN' && (
-                  <Link to="/admin" className="hover:text-cyan-400 transition-colors">
-                    管理后台
-                  </Link>
-                )}
+                <div className="flex items-center space-x-3 px-3 py-1.5 bg-slate-800 rounded-lg border border-slate-700">
+                  <div className="flex items-center space-x-1">
+                    <Users className="h-4 w-4 text-green-400" />
+                    <span className="text-xs text-green-400">{onlineCount}</span>
+                  </div>
+                  <div className="w-px h-4 bg-slate-600"></div>
+                  <div className="flex items-center space-x-1">
+                    <Award className="h-4 w-4 text-yellow-400" />
+                    <span className="text-sm font-medium text-yellow-400">{points}</span>
+                  </div>
+                  <div className="w-px h-4 bg-slate-600"></div>
+                  <div className="flex items-center space-x-1">
+                    {levelName === '王者' ? (
+                      <Crown className="h-4 w-4 text-purple-400" />
+                    ) : (
+                      <span className="text-sm">🏅</span>
+                    )}
+                    <span className="text-sm font-medium text-cyan-400">{levelName}</span>
+                  </div>
+                  {rank > 0 && (
+                    <>
+                      <div className="w-px h-4 bg-slate-600"></div>
+                      <span className="text-xs text-slate-400">排名 #{rank}</span>
+                    </>
+                  )}
+                </div>
+
                 <Link to="/profile" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
                   <User className="h-4 w-4" />
                   <span>{user?.username}</span>
@@ -110,6 +167,13 @@ export function Navbar() {
                     管理后台
                   </Link>
                 )}
+                <div className="flex items-center space-x-4 px-3 py-2 bg-slate-800 rounded-lg">
+                  <div className="flex items-center space-x-1">
+                    <Award className="h-4 w-4 text-yellow-400" />
+                    <span className="text-sm font-medium text-yellow-400">{points} 积分</span>
+                  </div>
+                  <span className="text-sm">🏅 {levelName}</span>
+                </div>
                 <Link
                   to="/profile"
                   className="block hover:text-cyan-400"

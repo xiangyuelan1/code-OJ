@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { solutionsAPI } from '../services/api';
-import { ArrowLeft, Code, Clock, TrendingUp } from 'lucide-react';
+import { solutionsAPI, submissionsAPI } from '../services/api';
+import { useAuthStore } from '../stores/auth.store';
+import { ArrowLeft, Code, Clock, TrendingUp, Lock } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 
 export function SolutionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuthStore();
   const [solution, setSolution] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [hasAC, setHasAC] = useState(false);
 
   useEffect(() => {
     loadSolution();
@@ -20,6 +23,14 @@ export function SolutionDetailPage() {
       const res = await solutionsAPI.getById(id!);
       if (res.success) {
         setSolution(res.data);
+        if (isAuthenticated && res.data.problem?.id) {
+          try {
+            const acRes = await submissionsAPI.checkAC(res.data.problem.id);
+            if (acRes.success) {
+              setHasAC(acRes.data.hasAC);
+            }
+          } catch {}
+        }
       }
     } catch (error) {
       console.error('加载题解失败', error);
@@ -58,6 +69,20 @@ export function SolutionDetailPage() {
       </button>
 
       <div className="bg-slate-800 rounded-xl p-8 shadow-xl mb-8">
+        {!hasAC ? (
+          <div className="text-center py-12">
+            <Lock className="h-16 w-16 text-slate-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-white mb-2">题解已锁定</h2>
+            <p className="text-slate-400 mb-4">请先通过本题后再查看题解</p>
+            <Link
+              to={`/problem/${solution.problem?.id}/solve`}
+              className="inline-block bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors"
+            >
+              前往答题
+            </Link>
+          </div>
+        ) : (
+        <>
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-white mb-4">{solution.title}</h1>
           <div className="flex items-center space-x-4 text-slate-400">
@@ -111,6 +136,8 @@ export function SolutionDetailPage() {
               />
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
 

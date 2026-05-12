@@ -374,8 +374,8 @@ class CustomProvider implements AIProvider { ... }
 ## 8. 部署架构
 
 ### 8.1 开发环境
-- 前端：Vite Dev Server (端口5173)
-- 后端：Node.js (端口3001)
+- 前端：Vite Dev Server (端口5175)
+- 后端：Node.js (端口3005)
 - 数据库：SQLite文件
 
 ### 8.2 生产环境建议
@@ -391,7 +391,7 @@ class CustomProvider implements AIProvider { ... }
 DATABASE_URL=file:./dev.db
 JWT_SECRET=your-secret-key
 JWT_EXPIRES_IN=24h
-PORT=3001
+PORT=3005
 
 # AI配置
 AI_ENABLED=false
@@ -400,7 +400,7 @@ AI_API_KEY=
 AI_BASE_URL=
 
 # 前端
-VITE_API_BASE_URL=http://localhost:3001
+VITE_API_BASE_URL=http://localhost:3005 
 ```
 
 ---

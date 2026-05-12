@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { problemsAPI, submissionsAPI, aiAPI } from '../services/api';
-import { ArrowLeft, Send, Lightbulb, Loader2 } from 'lucide-react';
+import { ArrowLeft, Send, Lightbulb, Loader2, Star } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { useAuthStore } from '../stores/auth.store';
 
@@ -317,6 +317,24 @@ export function SolvePage() {
                   <span className="text-2xl font-bold text-white">{result.score}分</span>
                 )}
               </div>
+              {result.pointsEarned > 0 && (
+                <div className="mb-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-center gap-2">
+                  <Star className="h-5 w-5 text-yellow-400" />
+                  <span className="text-yellow-300 font-semibold">+{result.pointsEarned} 积分</span>
+                  <span className="text-yellow-400/70 text-sm">（{result.status === 'ACCEPTED' ? '首次通过额外奖励' : '答题奖励'}）</span>
+                </div>
+              )}
+              {result.status === 'ACCEPTED' && (
+                <div className="mb-3 p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
+                  <p className="text-cyan-300 text-sm mb-2">🎉 恭喜通过！现在可以查看题解了</p>
+                  <Link
+                    to={`/problem/${id}`}
+                    className="text-cyan-400 hover:text-cyan-300 text-sm underline"
+                  >
+                    返回题目详情查看题解 →
+                  </Link>
+                </div>
+              )}
               {result.result && (
                 <div className="mt-3">
                   {result.result.testResults && (

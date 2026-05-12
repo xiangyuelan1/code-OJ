@@ -13,28 +13,70 @@ model User {
   email       String       @unique
   password    String
   role        String       @default("STUDENT")
-  createdAt   DateTime     @default(now())
-  submissions Submission[]
+  avatar      String?
+  points      Int          @default(0)
+  level       Int          @default(1)
+  rank        Int          @default(0)
+  isOnline    Boolean      @default(false)
   isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  submissions Submission[]
+  sessions    Session[]
+  achievements UserAchievement[]
+  matchParticipations MatchParticipant[]
+  examAttempts   ExamAttempt[]
+  pointLogs     PointLog[]
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  socketId     String
+  connectedAt  DateTime @default(now())
+  lastActivity DateTime @default(now())
+  ip           String?
+}
+
+model KnowledgeTree {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  parentId    String?
+  level       Int      @default(1)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  parent      KnowledgeTree?  @relation("KnowledgeTreeRelation", fields: [parentId], references: [id])
+  children    KnowledgeTree[] @relation("KnowledgeTreeRelation")
+  problems    Problem[]
 }
 
 model Problem {
-  id          String       @id @default(uuid())
-  title       String
-  description String
-  type        String
-  difficulty  String       @default("MEDIUM")
-  tags        String       @default("[]")
-  testCases   String       @default("[]")
-  timeLimit   Int          @default(2000)
-  memoryLimit Int          @default(256)
-  choices     String?
-  fillBlanks  String?
-  correctAnswer String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  solutions   Solution[]
-  submissions Submission[]
+  id                    String       @id @default(uuid())
+  title                 String
+  description           String
+  type                  String
+  difficulty            String       @default("MEDIUM")
+  tags                  String       @default("[]")
+  testCases             String       @default("[]")
+  timeLimit             Int          @default(2000)
+  memoryLimit           Int          @default(256)
+  choices               String?
+  fillBlanks            String?
+  correctAnswer         String?
+  solution              String?
+  knowledgeTreeId       String?
+  knowledgeTree         KnowledgeTree? @relation(fields: [knowledgeTreeId], references: [id])
+  aiGeneratedTestCases  Boolean      @default(false)
+  aiGeneratedSolution   Boolean      @default(false)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  solutions             Solution[]
+  submissions           Submission[]
+  examQuestions         ExamQuestion[]
+  matchProblems         MatchProblem[]
 }
 
 model Solution {
@@ -50,17 +92,149 @@ model Solution {
 }
 
 model Submission {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  problemId   String
+  problem     Problem  @relation(fields: [problemId], references: [id])
+  type        String
+  code        String?
+  answer      String?
+  result      String?
+  status      String   @default("PENDING")
+  score       Int?
+  pointsEarned Int?   @default(0)
+  createdAt   DateTime @default(now())
+  matchParticipantId String?
+  matchParticipant MatchParticipant? @relation(fields: [matchParticipantId], references: [id])
+}
+
+model Match {
+  id                   String   @id @default(uuid())
+  type                 String
+  status               String   @default("WAITING")
+  currentProblemIndex  Int      @default(0)
+  startTime            DateTime @default(now())
+  endTime              DateTime?
+  winnerId             String?
+  rewards              String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  participants         MatchParticipant[]
+  problems             MatchProblem[]
+}
+
+model MatchProblem {
+  id        String  @id @default(uuid())
+  matchId   String
+  match     Match   @relation(fields: [matchId], references: [id])
+  problemId String
+  problem   Problem @relation(fields: [problemId], references: [id])
+  order     Int     @default(0)
+}
+
+model MatchParticipant {
+  id              String   @id @default(uuid())
+  matchId         String
+  match           Match    @relation(fields: [matchId], references: [id])
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  score           Int      @default(0)
+  correctCount    Int      @default(0)
+  totalTime       Int      @default(0)
+  isWinner        Boolean  @default(false)
+  submissions     Submission[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Exam {
+  id                String   @id @default(uuid())
+  title             String
+  description       String?
+  type              String
+  duration          Int      @default(60)
+  startTime         DateTime?
+  endTime           DateTime?
+  enableProctoring  Boolean  @default(false)
+  createdBy         String
+  isActive         Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  questions         ExamQuestion[]
+  attempts         ExamAttempt[]
+}
+
+model ExamQuestion {
+  id        String  @id @default(uuid())
+  examId    String
+  exam      Exam    @relation(fields: [examId], references: [id])
+  problemId String
+  problem   Problem @relation(fields: [problemId], references: [id])
+  order     Int     @default(0)
+  points    Int     @default(10)
+}
+
+model ExamAttempt {
+  id              String   @id @default(uuid())
+  examId          String
+  exam            Exam     @relation(fields: [examId], references: [id])
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  startTime       DateTime @default(now())
+  endTime         DateTime?
+  score           Int?
+  status          String   @default("IN_PROGRESS")
+  answers         String?
+  proctoringLogs  String?
+  violations      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Achievement {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String
+  icon        String?
+  criteria    String
+  points      Int      @default(10)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       UserAchievement[]
+}
+
+model UserAchievement {
+  id            String      @id @default(uuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  achievementId String
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  earnedAt     DateTime    @default(now())
+  progress      String      @default("{}")
+  
+  @@unique([userId, achievementId])
+}
+
+model LevelConfig {
+  id         String   @id @default(uuid())
+  level      Int      @unique
+  name       String
+  minPoints  Int
+  maxPoints  Int?
+  privileges String   @default("[]")
+  icon       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model PointLog {
   id        String   @id @default(uuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id])
-  problemId String
-  problem   Problem  @relation(fields: [problemId], references: [id])
-  type      String
-  code      String?
-  answer    String?
-  result    String?
-  status    String   @default("PENDING")
-  score     Int?
+  delta     Int
+  reason    String
+  details   String?
   createdAt DateTime @default(now())
 }
 

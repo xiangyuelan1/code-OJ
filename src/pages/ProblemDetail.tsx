@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { problemsAPI, solutionsAPI } from '../services/api';
+import { problemsAPI, solutionsAPI, submissionsAPI } from '../services/api';
 import { useAuthStore } from '../stores/auth.store';
-import { ArrowLeft, Clock, MemoryStick, BookOpen, CheckCircle, Code, Lightbulb } from 'lucide-react';
+import { ArrowLeft, Clock, MemoryStick, BookOpen, CheckCircle, Code, Lightbulb, Lock } from 'lucide-react';
+import { MarkdownRenderer } from '../components/MarkdownEditor';
 
 export function ProblemDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -11,6 +12,7 @@ export function ProblemDetailPage() {
   const [problem, setProblem] = useState<any>(null);
   const [solutions, setSolutions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasAC, setHasAC] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -24,15 +26,27 @@ export function ProblemDetailPage() {
       const res = await problemsAPI.getById(id!);
       if (res.success) {
         setProblem(res.data);
-        const solutionsRes = await solutionsAPI.getByProblemId(id!);
-        if (solutionsRes.success) {
-          setSolutions(solutionsRes.data);
-        }
       }
     } catch (error) {
       console.error('加载题目失败', error);
     } finally {
       setLoading(false);
+    }
+
+    if (isAuthenticated && id) {
+      try {
+        const acRes = await submissionsAPI.checkAC(id);
+        if (acRes.success) {
+          setHasAC(acRes.data.hasAC);
+        }
+      } catch {}
+
+      try {
+        const solutionsRes = await solutionsAPI.getByProblemId(id);
+        if (solutionsRes.success) {
+          setSolutions(solutionsRes.data || []);
+        }
+      } catch {}
     }
   };
 
@@ -144,11 +158,11 @@ export function ProblemDetailPage() {
         <div className="border-t border-slate-700 pt-6">
           <h2 className="text-xl font-semibold text-white mb-4">题目描述</h2>
           <div className="prose prose-invert max-w-none">
-            <div className="text-slate-300 whitespace-pre-wrap">{problem.description}</div>
+            <MarkdownRenderer content={problem.description} />
           </div>
         </div>
 
-        {problem.type === 'PROGRAMMING' && problem.testCases?.length > 0 && (
+        {problem.type === 'PROGRAMMING' && Array.isArray(problem.testCases) && problem.testCases.length > 0 && (
           <div className="mt-6">
             <h2 className="text-xl font-semibold text-white mb-4">示例</h2>
             <div className="space-y-4">
@@ -168,7 +182,7 @@ export function ProblemDetailPage() {
           </div>
         )}
 
-        {problem.type === 'CHOICE' && problem.choices && (
+        {problem.type === 'CHOICE' && Array.isArray(problem.choices) && problem.choices.length > 0 && (
           <div className="mt-6">
             <h2 className="text-xl font-semibold text-white mb-4">选项</h2>
             <div className="space-y-2">
@@ -190,7 +204,7 @@ export function ProblemDetailPage() {
           </div>
         )}
 
-        {problem.tags?.length > 0 && (
+        {Array.isArray(problem.tags) && problem.tags.length > 0 && (
           <div className="mt-6">
             <h2 className="text-xl font-semibold text-white mb-4">标签</h2>
             <div className="flex flex-wrap gap-2">
@@ -207,26 +221,39 @@ export function ProblemDetailPage() {
         )}
       </div>
 
-      {solutions.length > 0 && isAuthenticated && (
+      {isAuthenticated && solutions.length > 0 && (
         <div className="bg-slate-800 rounded-xl p-8 shadow-xl">
           <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
             <Lightbulb className="h-5 w-5 mr-2 text-yellow-400" />
             相关题解
           </h2>
-          <div className="space-y-4">
-            {solutions.map((solution) => (
+          {hasAC ? (
+            <div className="space-y-4">
+              {solutions.map((solution) => (
+                <Link
+                  key={solution.id}
+                  to={`/solutions/${solution.id}`}
+                  className="block bg-slate-700 hover:bg-slate-600 rounded-lg p-4 transition-colors"
+                >
+                  <h3 className="text-white font-medium">{solution.title}</h3>
+                  <p className="text-slate-400 text-sm mt-1">
+                    {solution.content.substring(0, 100)}...
+                  </p>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <Lock className="h-12 w-12 text-slate-500 mx-auto mb-4" />
+              <p className="text-slate-400 mb-2">通过本题后即可查看题解</p>
               <Link
-                key={solution.id}
-                to={`/solutions/${solution.id}`}
-                className="block bg-slate-700 hover:bg-slate-600 rounded-lg p-4 transition-colors"
+                to={`/problem/${id}/solve`}
+                className="inline-block bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors"
               >
-                <h3 className="text-white font-medium">{solution.title}</h3>
-                <p className="text-slate-400 text-sm mt-1">
-                  {solution.content.substring(0, 100)}...
-                </p>
+                前往答题
               </Link>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
