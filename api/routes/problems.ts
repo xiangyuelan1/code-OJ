@@ -100,6 +100,33 @@ router.post('/', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, r
   }
 });
 
+router.post('/batch-import', authMiddleware, roleMiddleware('ADMIN', 'TEACHER'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const { problems } = req.body;
+
+    if (!Array.isArray(problems) || problems.length === 0) {
+      res.status(400).json({ success: false, error: { message: '请提供题目数组' } });
+      return;
+    }
+
+    const results = await problemService.batchCreateProblems(problems);
+    const succeeded = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+
+    res.status(201).json({
+      success: true,
+      data: {
+        total: problems.length,
+        succeeded,
+        failed,
+        results
+      }
+    });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
 router.put('/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
     const problem = await problemService.updateProblem(req.params.id, req.body);

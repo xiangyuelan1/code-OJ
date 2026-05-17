@@ -96,7 +96,7 @@ export function ProblemCategoriesPage() {
     const hasChildren = node.children && node.children.length > 0;
     const isExpanded = expandedNodes.has(node.id);
     const isSelected = selectedNode === node.id;
-    const problemCount = node._count?.problems || 0;
+    const problemCount = node.problemCount || 0;
 
     return (
       <div key={node.id}>

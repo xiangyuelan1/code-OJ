@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { knowledgeTreeAPI } from '../../services/api';
-import { Plus, Trash2, Edit3, ChevronRight, ChevronDown, FolderTree, Save, X, BookOpen } from 'lucide-react';
+import { knowledgeTreeAPI, problemsAPI } from '../../services/api';
+import { Plus, Trash2, Edit3, ChevronRight, ChevronDown, FolderTree, Save, X, BookOpen, Link2, Eye, Unlink } from 'lucide-react';
 
 interface TreeNode {
   id: string;
@@ -28,6 +28,11 @@ export function AdminKnowledgeTreePage() {
   const [isCreating, setIsCreating] = useState(false);
   const [createParentId, setCreateParentId] = useState<string | undefined>();
   const [stats, setStats] = useState<any>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [nodeProblems, setNodeProblems] = useState<any[]>([]);
+  const [allProblems, setAllProblems] = useState<any[]>([]);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkSearch, setLinkSearch] = useState('');
 
   useEffect(() => {
     loadTree();
@@ -151,6 +156,54 @@ export function AdminKnowledgeTreePage() {
     setCreateParentId(undefined);
   };
 
+  const viewNodeProblems = async (nodeId: string) => {
+    setSelectedNodeId(nodeId);
+    try {
+      const res = await knowledgeTreeAPI.getNodeProblems(nodeId);
+      if (res.success) {
+        setNodeProblems(res.data || []);
+      }
+    } catch {}
+  };
+
+  const openLinkModal = async (nodeId: string) => {
+    setSelectedNodeId(nodeId);
+    setShowLinkModal(true);
+    setLinkSearch('');
+    try {
+      const res = await problemsAPI.getAll();
+      if (res.success) {
+        setAllProblems(res.data || []);
+      }
+    } catch {}
+  };
+
+  const linkProblemToNode = async (problemId: string) => {
+    if (!selectedNodeId) return;
+    try {
+      await knowledgeTreeAPI.classifyProblem(problemId, selectedNodeId);
+      await viewNodeProblems(selectedNodeId);
+      await loadTree();
+      await loadStats();
+    } catch (error: any) {
+      alert(error.error?.message || '关联失败');
+    }
+  };
+
+  const unlinkProblemFromNode = async (problemId: string) => {
+    if (!confirm('确定解除此题目与知识节点的关联？')) return;
+    try {
+      await knowledgeTreeAPI.classifyProblem(problemId, undefined as any);
+      if (selectedNodeId) {
+        await viewNodeProblems(selectedNodeId);
+      }
+      await loadTree();
+      await loadStats();
+    } catch (error: any) {
+      alert(error.error?.message || '解除关联失败');
+    }
+  };
+
   const renderNode = useCallback((node: TreeNode, depth: number = 0) => {
     const isExpanded = expandedIds.has(node.id);
     const isEditingThis = editing?.id === node.id;
@@ -214,6 +267,20 @@ export function AdminKnowledgeTreePage() {
                 {node.problemCount}
               </span>
               <div className="hidden group-hover:flex items-center gap-1">
+                <button
+                  onClick={() => viewNodeProblems(node.id)}
+                  className="p-1 text-green-400 hover:text-green-300"
+                  title="查看题目"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => openLinkModal(node.id)}
+                  className="p-1 text-yellow-400 hover:text-yellow-300"
+                  title="关联题目"
+                >
+                  <Link2 className="h-3.5 w-3.5" />
+                </button>
                 {node.level === 1 && (
                   <button
                     onClick={() => startCreate(node.id)}
@@ -374,6 +441,101 @@ export function AdminKnowledgeTreePage() {
           </div>
         )}
       </div>
+
+      {selectedNodeId && nodeProblems.length > 0 && (
+        <div className="mt-6 bg-slate-800 rounded-xl p-6 shadow-xl">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-white">节点题目</h2>
+            <button
+              onClick={() => { setSelectedNodeId(null); setNodeProblems([]); }}
+              className="text-slate-400 hover:text-white"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="space-y-2">
+            {nodeProblems.map((problem: any) => (
+              <div key={problem.id} className="flex items-center justify-between p-3 bg-slate-700 rounded-lg">
+                <div className="flex-1">
+                  <span className="text-white font-medium">{problem.title}</span>
+                  <span className={`ml-2 text-xs px-2 py-0.5 rounded ${
+                    problem.type === 'PROGRAMMING' ? 'bg-blue-500/20 text-blue-400' :
+                    problem.type === 'CHOICE' ? 'bg-green-500/20 text-green-400' :
+                    'bg-purple-500/20 text-purple-400'
+                  }`}>
+                    {problem.type === 'PROGRAMMING' ? '编程' : problem.type === 'CHOICE' ? '选择' : '填空'}
+                  </span>
+                  <span className={`ml-1 text-xs px-2 py-0.5 rounded ${
+                    problem.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400' :
+                    problem.difficulty === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
+                    'bg-red-500/20 text-red-400'
+                  }`}>
+                    {problem.difficulty === 'EASY' ? '简单' : problem.difficulty === 'MEDIUM' ? '中等' : '困难'}
+                  </span>
+                </div>
+                <button
+                  onClick={() => unlinkProblemFromNode(problem.id)}
+                  className="p-1 text-red-400 hover:text-red-300"
+                  title="解除关联"
+                >
+                  <Unlink className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showLinkModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-xl p-6 max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-white">关联题目到节点</h2>
+              <button
+                onClick={() => { setShowLinkModal(false); setSelectedNodeId(null); }}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <input
+              type="text"
+              value={linkSearch}
+              onChange={e => setLinkSearch(e.target.value)}
+              placeholder="搜索题目..."
+              className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 mb-4"
+            />
+            <div className="flex-1 overflow-y-auto space-y-2">
+              {allProblems
+                .filter((p: any) => !linkSearch || p.title.toLowerCase().includes(linkSearch.toLowerCase()))
+                .filter((p: any) => p.knowledgeTreeId !== selectedNodeId)
+                .map((problem: any) => (
+                  <div key={problem.id} className="flex items-center justify-between p-3 bg-slate-700 rounded-lg">
+                    <div className="flex-1">
+                      <span className="text-white">{problem.title}</span>
+                      <span className={`ml-2 text-xs px-2 py-0.5 rounded ${
+                        problem.type === 'PROGRAMMING' ? 'bg-blue-500/20 text-blue-400' :
+                        problem.type === 'CHOICE' ? 'bg-green-500/20 text-green-400' :
+                        'bg-purple-500/20 text-purple-400'
+                      }`}>
+                        {problem.type === 'PROGRAMMING' ? '编程' : problem.type === 'CHOICE' ? '选择' : '填空'}
+                      </span>
+                      {problem.knowledgeTreeId && (
+                        <span className="ml-1 text-xs text-slate-500">已关联其他节点</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => linkProblemToNode(problem.id)}
+                      className="px-3 py-1 bg-cyan-500/20 text-cyan-400 rounded hover:bg-cyan-500/30 text-sm"
+                    >
+                      关联
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

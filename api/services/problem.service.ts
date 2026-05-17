@@ -148,6 +148,21 @@ export class ProblemService {
     });
   }
 
+  async batchCreateProblems(problems: ProblemInput[]) {
+    const results: { success: boolean; data?: any; error?: string; title?: string }[] = [];
+
+    for (const problem of problems) {
+      try {
+        const created = await this.createProblem(problem);
+        results.push({ success: true, data: created, title: problem.title });
+      } catch (error: any) {
+        results.push({ success: false, error: error.message, title: problem.title });
+      }
+    }
+
+    return results;
+  }
+
   async getProblemStats() {
     const total = await prisma.problem.count();
     const byType = await prisma.problem.groupBy({

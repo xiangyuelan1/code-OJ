@@ -27,6 +27,14 @@ export default defineConfig({
   server: {
     host: '0.0.0.0', // 允许内网访问
     port: 5175,
+    allowedHosts: [
+      'freight-defendant-tranquil.ngrok-free.dev',
+      '.ngrok-free.dev',
+      '.ngrok.io',
+      '.ngrok.app',
+      'localhost',
+      '127.0.0.1'
+    ],
     proxy: {
       '/api': {
         target: 'http://localhost:3005',

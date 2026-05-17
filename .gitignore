@@ -15,9 +15,14 @@ dist-ssr
 # Environment variables
 .env
 .env.*
+!.env.example
 
 # Uploads
 uploads/
+
+# Database
+*.db
+*.db-journal
 
 # Editor directories and files
 .vscode/*

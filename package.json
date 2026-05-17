@@ -11,6 +11,7 @@
     "check": "tsc --noEmit",
     "server:dev": "nodemon api/dev-server.ts",
     "server:start": "node api/index.js",
+    "server:prod": "NODE_ENV=production npx tsx api/server.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx api/scripts/seed.ts",

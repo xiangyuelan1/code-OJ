@@ -12,11 +12,6 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5175';
 
 const httpServer = createServer(app);
 
-app.use(cors({
-  origin: FRONTEND_URL,
-  credentials: true
-}));
-
 setupSocketIO(httpServer);
 
 httpServer.listen(PORT, () => {

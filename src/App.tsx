@@ -12,12 +12,15 @@ import { SubmissionsPage } from "./pages/Submissions";
 import { AdminDashboard } from "./pages/admin/AdminDashboard";
 import { AdminProblemsPage } from "./pages/admin/AdminProblemsPage";
 import { AdminProblemFormPage } from "./pages/admin/AdminProblemFormPage";
+import { AdminBatchImportPage } from "./pages/admin/AdminBatchImportPage";
 import { AdminUsersPage } from "./pages/admin/AdminUsersPage";
 import { AdminAIConfigPage } from "./pages/admin/AdminAIConfigPage";
 import { AdminExamPage } from "./pages/admin/AdminExamPage";
 import { AdminSubmissionsPage } from "./pages/admin/AdminSubmissionsPage";
 import { AdminMatchesPage } from "./pages/admin/AdminMatchesPage";
 import { AdminKnowledgeTreePage } from "./pages/admin/AdminKnowledgeTreePage";
+import { AdminClassesPage } from './pages/admin/AdminClassesPage';
+import { TeacherClassesPage } from './pages/teacher/TeacherClassesPage';
 import { ProfilePage } from "./pages/Profile";
 import { SolutionDetailPage } from "./pages/SolutionDetail";
 import { KnowledgeTreePage } from "./pages/KnowledgeTreePage";
@@ -27,6 +30,10 @@ import { MatchPage } from "./pages/MatchPage";
 import { MatchBattlePage } from "./pages/MatchBattlePage";
 import { ProblemCategoriesPage } from "./pages/ProblemCategoriesPage";
 import { AchievementPage } from "./pages/AchievementPage";
+import { PaymentPage } from "./pages/PaymentPage";
+import { AdminPaymentPage } from "./pages/admin/AdminPaymentPage";
+import { AdminAccessConfigPage } from "./pages/admin/AdminAccessConfigPage";
+import { AdminAIUsagePage } from "./pages/admin/AdminAIUsagePage";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -102,7 +109,7 @@ export default function App() {
             <Route
               path="/problem/:id/solve"
               element={
-                <ProtectedRoute allowedRole="STUDENT">
+                <ProtectedRoute>
                   <SolvePage />
                 </ProtectedRoute>
               }
@@ -110,7 +117,7 @@ export default function App() {
             <Route
               path="/submissions"
               element={
-                <ProtectedRoute allowedRole="STUDENT">
+                <ProtectedRoute>
                   <SubmissionsPage />
                 </ProtectedRoute>
               }
@@ -187,6 +194,22 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/payment"
+              element={
+                <ProtectedRoute>
+                  <PaymentPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/classes"
+              element={
+                <ProtectedRoute allowedRole="TEACHER">
+                  <TeacherClassesPage />
+                </ProtectedRoute>
+              }
+            />
           </Route>
 
           <Route
@@ -201,13 +224,18 @@ export default function App() {
             <Route path="problems" element={<AdminProblemsPage />} />
             <Route path="problems/create" element={<AdminProblemFormPage />} />
             <Route path="problems/:id/edit" element={<AdminProblemFormPage />} />
+            <Route path="problems/batch-import" element={<AdminBatchImportPage />} />
             <Route path="knowledge-tree" element={<AdminKnowledgeTreePage />} />
             <Route path="exams" element={<AdminExamPage />} />
             <Route path="exams/:id/attempts" element={<AdminExamPage />} />
             <Route path="submissions" element={<AdminSubmissionsPage />} />
             <Route path="matches" element={<AdminMatchesPage />} />
             <Route path="users" element={<AdminUsersPage />} />
+            <Route path="classes" element={<AdminClassesPage />} />
             <Route path="ai-config" element={<AdminAIConfigPage />} />
+            <Route path="ai-usage" element={<AdminAIUsagePage />} />
+            <Route path="payments" element={<AdminPaymentPage />} />
+            <Route path="access-config" element={<AdminAccessConfigPage />} />
           </Route>
         </Routes>
       </Router>

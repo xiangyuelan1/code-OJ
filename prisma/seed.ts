@@ -8,15 +8,23 @@ async function main() {
 
   // 清理旧数据（按依赖顺序）
   console.log('🧹 清理旧数据...');
+  await prisma.aIUsageLog.deleteMany();
+  await prisma.classBattle.deleteMany();
+  await prisma.homeworkSubmission.deleteMany();
+  await prisma.homework.deleteMany();
+  await prisma.classJoinRequest.deleteMany();
+  await prisma.payment.deleteMany();
+  await prisma.classMember.deleteMany();
+  await prisma.examQuestion.deleteMany();
+  await prisma.examAttempt.deleteMany();
+  await prisma.exam.deleteMany();
+  await prisma.class.deleteMany();
   await prisma.pointLog.deleteMany();
   await prisma.userAchievement.deleteMany();
   await prisma.submission.deleteMany();
   await prisma.matchProblem.deleteMany();
   await prisma.matchParticipant.deleteMany();
   await prisma.match.deleteMany();
-  await prisma.examQuestion.deleteMany();
-  await prisma.examAttempt.deleteMany();
-  await prisma.exam.deleteMany();
   await prisma.solution.deleteMany();
   await prisma.problem.deleteMany();
   await prisma.knowledgeTree.deleteMany();
@@ -34,16 +42,28 @@ async function main() {
   const admin = await prisma.user.create({
     data: { username: 'admin', email: 'admin@oj.com', password: adminHash, role: 'ADMIN', points: 500, level: 5 }
   });
-  const teacher = await prisma.user.create({
-    data: { username: 'teacher', email: 'teacher@oj.com', password: passwordHash, role: 'TEACHER', points: 300, level: 4 }
-  });
+  const teachers = [];
+  // 测试教师账户
+  for (let ti = 1; ti <= 2; ti++) {
+    const teacher = await prisma.user.create({
+      data: {
+        username: `tc${ti}`,
+        email: `tc${ti}@oj.com`,
+        password: passwordHash,
+        role: 'TEACHER',
+        points: 300,
+        level: 4
+      }
+    });
+    teachers.push(teacher);
+  }
   const students = [];
-  const studentNames = ['张三', '李四', '王五', '赵六', '孙七', '周八', '吴九', '郑十'];
-  for (let i = 0; i < studentNames.length; i++) {
+  const studentNames = ['张三', '李四', '王五', '赵六', '孙七', '周八', '吴九', '郑十', '钱十一', '陈十二'];
+  for (let i = 0; i < 10; i++) {
     const s = await prisma.user.create({
       data: {
-        username: `student${i + 1}`,
-        email: `student${i + 1}@oj.com`,
+        username: `stu${i + 1}`,
+        email: `stu${i + 1}@oj.com`,
         password: passwordHash,
         role: 'STUDENT',
         points: Math.floor(Math.random() * 200) + 50,
@@ -624,7 +644,7 @@ async function main() {
       type: 'QUIZ',
       duration: 45,
       enableProctoring: false,
-      createdBy: teacher.id,
+      createdBy: teachers[0].id,
       isActive: true
     }
   });
@@ -766,7 +786,7 @@ async function main() {
   });
 
   console.log('✅ 数据填充完成！');
-  console.log(`  用户: ${1 + 1 + students.length} 个`);
+  console.log(`  用户: ${1 + 2 + students.length} 个`);
   console.log(`  知识树: ${knowledgeNodes.length} 个节点`);
   console.log(`  题目: ${problems.length} 道`);
   console.log(`  考试: 3 场`);
@@ -775,8 +795,8 @@ async function main() {
   console.log('');
   console.log('🔑 账户信息:');
   console.log('  管理员: admin / admin123');
-  console.log('  教师: teacher / 123456');
-  console.log('  学生: student1~8 / 123456');
+  console.log('  教师: tc1, tc2 / 123456');
+  console.log('  学生: stu1~10 / 123456');
 }
 
 main()

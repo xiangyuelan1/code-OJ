@@ -55,7 +55,20 @@ export class KnowledgeTreeService {
       }
     });
 
+    this.aggregateProblemCounts(roots);
+
     return roots;
+  }
+
+  /** 递归聚合子节点的题目数到父节点，使一级分类显示包含所有子分类的题目 */
+  private aggregateProblemCounts(nodes: any[]): number {
+    let total = 0;
+    for (const node of nodes) {
+      const childTotal = this.aggregateProblemCounts(node.children);
+      node.problemCount = node.problemCount + childTotal;
+      total += node.problemCount;
+    }
+    return total;
   }
 
   async createNode(data: KnowledgeNodeInput) {

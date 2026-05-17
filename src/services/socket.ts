@@ -1,7 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import { create } from 'zustand';
 
-const SOCKET_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3005';
+const SOCKET_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin;
 
 interface OnlineUser {
   userId: string;
@@ -75,7 +75,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
     const socket = io(SOCKET_URL, {
       auth: { token },
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 10000,

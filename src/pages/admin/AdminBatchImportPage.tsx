@@ -1,0 +1,919 @@
+import { useState, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { uploadAPI, enhancedAiAPI, problemsAPI } from '../../services/api';
+import {
+  ArrowLeft,
+  Upload,
+  FileText,
+  Trash2,
+  Edit3,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Download,
+  X,
+  Plus,
+  FileUp,
+  ClipboardPaste,
+} from 'lucide-react';
+
+interface ParsedProblem {
+  title: string;
+  type: string;
+  difficulty: string;
+  description: string;
+  testCases?: { input: string; output: string; isSample: boolean }[];
+  choices?: { key: string; text: string }[];
+  correctAnswer?: string;
+  fillBlanks?: string[];
+  tags?: string[];
+}
+
+interface ImportResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results?: { index: number; success: boolean; message?: string }[];
+}
+
+const TYPE_MAP: Record<string, string> = {
+  PROGRAMMING: '编程题',
+  CHOICE: '选择题',
+  FILL_BLANK: '填空题',
+};
+
+const DIFFICULTY_MAP: Record<string, string> = {
+  EASY: '简单',
+  MEDIUM: '中等',
+  HARD: '困难',
+};
+
+const DIFFICULTY_COLORS: Record<string, string> = {
+  EASY: 'text-green-400 bg-green-500/20',
+  MEDIUM: 'text-yellow-400 bg-yellow-500/20',
+  HARD: 'text-red-400 bg-red-500/20',
+};
+
+const TYPE_COLORS: Record<string, string> = {
+  PROGRAMMING: 'text-cyan-400 bg-cyan-500/20',
+  CHOICE: 'text-purple-400 bg-purple-500/20',
+  FILL_BLANK: 'text-orange-400 bg-orange-500/20',
+};
+
+export function AdminBatchImportPage() {
+  const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [files, setFiles] = useState<File[]>([]);
+  const [pasteText, setPasteText] = useState('');
+  const [problems, setProblems] = useState<ParsedProblem[]>([]);
+  const [parsing, setParsing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<ParsedProblem | null>(null);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const droppedFiles = Array.from(e.dataTransfer.files).filter(
+      (f) => f.name.endsWith('.txt') || f.name.endsWith('.json')
+    );
+    if (droppedFiles.length > 0) {
+      setFiles((prev) => [...prev, ...droppedFiles]);
+    }
+  }, []);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files || []).filter(
+      (f) => f.name.endsWith('.txt') || f.name.endsWith('.json')
+    );
+    if (selected.length > 0) {
+      setFiles((prev) => [...prev, ...selected]);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleParse = async () => {
+    if (files.length === 0 && !pasteText.trim()) return;
+
+    setParsing(true);
+    setImportResult(null);
+
+    try {
+      const allParsed: ParsedProblem[] = [];
+
+      if (files.length > 0) {
+        const formData = new FormData();
+        files.forEach((file) => {
+          formData.append('files', file);
+        });
+
+        const uploadRes = await uploadAPI.uploadFiles(formData);
+        if (uploadRes.success && uploadRes.data) {
+          const uploadedFiles = Array.isArray(uploadRes.data) ? uploadRes.data : [uploadRes.data];
+          for (const uploaded of uploadedFiles) {
+            const parseRes = await enhancedAiAPI.parseProblemFile(
+              uploaded.content,
+              uploaded.fileType
+            );
+            if (parseRes.success && parseRes.data?.problems) {
+              allParsed.push(...parseRes.data.problems);
+            }
+          }
+        }
+      }
+
+      if (pasteText.trim()) {
+        const parseRes = await enhancedAiAPI.parseProblemFile(pasteText.trim(), 'txt');
+        if (parseRes.success && parseRes.data?.problems) {
+          allParsed.push(...parseRes.data.problems);
+        }
+      }
+
+      setProblems(allParsed);
+    } catch (error: any) {
+      alert(error.error?.message || '解析失败，请检查文件格式或网络连接');
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const handleBatchImport = async () => {
+    if (problems.length === 0) return;
+
+    setImporting(true);
+    try {
+      const res = await problemsAPI.batchImport(problems);
+      if (res.success && res.data) {
+        setImportResult(res.data);
+      }
+    } catch (error: any) {
+      alert(error.error?.message || '批量导入失败');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const removeProblem = (index: number) => {
+    setProblems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const startEdit = (index: number) => {
+    setEditingIndex(index);
+    setEditForm({ ...problems[index] });
+  };
+
+  const saveEdit = () => {
+    if (editingIndex !== null && editForm) {
+      setProblems((prev) =>
+        prev.map((p, i) => (i === editingIndex ? editForm : p))
+      );
+      setEditingIndex(null);
+      setEditForm(null);
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingIndex(null);
+    setEditForm(null);
+  };
+
+  const updateEditField = (field: keyof ParsedProblem, value: any) => {
+    if (editForm) {
+      setEditForm({ ...editForm, [field]: value });
+    }
+  };
+
+  const updateEditChoice = (choiceIndex: number, text: string) => {
+    if (!editForm?.choices) return;
+    const newChoices = [...editForm.choices];
+    newChoices[choiceIndex] = { ...newChoices[choiceIndex], text };
+    setEditForm({ ...editForm, choices: newChoices });
+  };
+
+  const addEditChoice = () => {
+    if (!editForm) return;
+    const choices = editForm.choices || [];
+    const nextKey = String.fromCharCode(65 + choices.length);
+    setEditForm({
+      ...editForm,
+      choices: [...choices, { key: nextKey, text: '' }],
+    });
+  };
+
+  const removeEditChoice = (choiceIndex: number) => {
+    if (!editForm?.choices || editForm.choices.length <= 2) return;
+    const newChoices = editForm.choices.filter((_, i) => i !== choiceIndex);
+    newChoices.forEach((c, i) => {
+      c.key = String.fromCharCode(65 + i);
+    });
+    setEditForm({ ...editForm, choices: newChoices });
+  };
+
+  const updateEditTestCase = (
+    tcIndex: number,
+    field: 'input' | 'output' | 'isSample',
+    value: string | boolean
+  ) => {
+    if (!editForm?.testCases) return;
+    const newTestCases = [...editForm.testCases];
+    newTestCases[tcIndex] = { ...newTestCases[tcIndex], [field]: value };
+    setEditForm({ ...editForm, testCases: newTestCases });
+  };
+
+  const addEditTestCase = () => {
+    if (!editForm) return;
+    const testCases = editForm.testCases || [];
+    setEditForm({
+      ...editForm,
+      testCases: [...testCases, { input: '', output: '', isSample: false }],
+    });
+  };
+
+  const removeEditTestCase = (tcIndex: number) => {
+    if (!editForm?.testCases || editForm.testCases.length <= 1) return;
+    setEditForm({
+      ...editForm,
+      testCases: editForm.testCases.filter((_, i) => i !== tcIndex),
+    });
+  };
+
+  const updateEditFillBlank = (fbIndex: number, value: string) => {
+    if (!editForm?.fillBlanks) return;
+    const newFillBlanks = [...editForm.fillBlanks];
+    newFillBlanks[fbIndex] = value;
+    setEditForm({ ...editForm, fillBlanks: newFillBlanks });
+  };
+
+  const addEditFillBlank = () => {
+    if (!editForm) return;
+    const fillBlanks = editForm.fillBlanks || [];
+    setEditForm({ ...editForm, fillBlanks: [...fillBlanks, ''] });
+  };
+
+  const removeEditFillBlank = (fbIndex: number) => {
+    if (!editForm?.fillBlanks || editForm.fillBlanks.length <= 1) return;
+    setEditForm({
+      ...editForm,
+      fillBlanks: editForm.fillBlanks.filter((_, i) => i !== fbIndex),
+    });
+  };
+
+  const resetAll = () => {
+    setFiles([]);
+    setPasteText('');
+    setProblems([]);
+    setImportResult(null);
+    setEditingIndex(null);
+    setEditForm(null);
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto">
+      <button
+        onClick={() => navigate('/admin/problems')}
+        className="flex items-center text-slate-400 hover:text-white mb-6 transition-colors"
+      >
+        <ArrowLeft className="h-5 w-5 mr-2" />
+        返回题目管理
+      </button>
+
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-white">批量导入题目</h1>
+          <p className="text-slate-400 mt-2">
+            上传 TXT/JSON 文件或直接粘贴文本，AI 自动解析为结构化题目后一键导入
+          </p>
+        </div>
+        {problems.length > 0 && (
+          <button
+            onClick={resetAll}
+            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-colors"
+          >
+            重新开始
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-6">
+        {problems.length === 0 && (
+          <>
+            <div
+              className={`bg-slate-800 rounded-xl p-8 shadow-xl border-2 border-dashed transition-colors ${
+                dragOver
+                  ? 'border-cyan-500 bg-cyan-500/5'
+                  : 'border-slate-600 hover:border-slate-500'
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="w-16 h-16 rounded-full bg-cyan-500/10 flex items-center justify-center mb-4">
+                  <FileUp className="h-8 w-8 text-cyan-500" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2">
+                  拖拽文件到此处上传
+                </h3>
+                <p className="text-slate-400 mb-4">
+                  支持 .txt 和 .json 格式，可同时上传多个文件
+                </p>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center px-6 py-3 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors"
+                >
+                  <Upload className="h-5 w-5 mr-2" />
+                  选择文件
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt,.json"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+              </div>
+            </div>
+
+            {files.length > 0 && (
+              <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+                <h3 className="text-lg font-semibold text-white mb-4">
+                  已选择的文件 ({files.length})
+                </h3>
+                <div className="space-y-2">
+                  {files.map((file, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between bg-slate-700 rounded-lg px-4 py-3"
+                    >
+                      <div className="flex items-center">
+                        <FileText className="h-5 w-5 text-cyan-400 mr-3" />
+                        <span className="text-white">{file.name}</span>
+                        <span className="text-slate-400 ml-3 text-sm">
+                          ({(file.size / 1024).toFixed(1)} KB)
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => removeFile(index)}
+                        className="text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+              <div className="flex items-center mb-4">
+                <ClipboardPaste className="h-5 w-5 text-cyan-400 mr-2" />
+                <h3 className="text-lg font-semibold text-white">粘贴文本内容</h3>
+              </div>
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                rows={8}
+                className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 font-mono text-sm"
+                placeholder="将题目文本直接粘贴到此处，支持多道题目的文本内容..."
+              />
+            </div>
+
+            <div className="flex justify-center">
+              <button
+                onClick={handleParse}
+                disabled={parsing || (files.length === 0 && !pasteText.trim())}
+                className="flex items-center px-8 py-3 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {parsing ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                    AI 解析中...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-5 w-5 mr-2" />
+                    开始解析
+                  </>
+                )}
+              </button>
+            </div>
+          </>
+        )}
+
+        {problems.length > 0 && (
+          <>
+            <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-white">
+                  解析结果预览
+                  <span className="text-slate-400 text-base font-normal ml-2">
+                    共 {problems.length} 道题目
+                  </span>
+                </h2>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleBatchImport}
+                    disabled={importing}
+                    className="flex items-center px-6 py-2 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {importing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        导入中...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4 mr-2" />
+                        一键批量导入
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {importResult && (
+                <div className="mb-6 p-4 rounded-lg bg-slate-700 border border-slate-600">
+                  <div className="flex items-center gap-6">
+                    <div className="flex items-center">
+                      <CheckCircle2 className="h-5 w-5 text-green-400 mr-2" />
+                      <span className="text-white">
+                        成功: {importResult.succeeded}
+                      </span>
+                    </div>
+                    <div className="flex items-center">
+                      <XCircle className="h-5 w-5 text-red-400 mr-2" />
+                      <span className="text-white">
+                        失败: {importResult.failed}
+                      </span>
+                    </div>
+                    <span className="text-slate-400">
+                      总计: {importResult.total}
+                    </span>
+                  </div>
+                  {importResult.results && importResult.results.some((r) => !r.success) && (
+                    <div className="mt-3 space-y-1">
+                      {importResult.results
+                        .filter((r) => !r.success)
+                        .map((r, i) => (
+                          <div key={i} className="text-red-400 text-sm">
+                            第 {r.index + 1} 题导入失败: {r.message || '未知错误'}
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {problems.map((problem, index) => (
+                  <div
+                    key={index}
+                    className="bg-slate-700 rounded-lg p-5 border border-slate-600"
+                  >
+                    {editingIndex === index && editForm ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-white font-medium">
+                            编辑第 {index + 1} 题
+                          </span>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={saveEdit}
+                              className="px-4 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white text-sm rounded-lg transition-colors"
+                            >
+                              保存
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              className="px-4 py-1.5 bg-slate-600 hover:bg-slate-500 text-slate-300 text-sm rounded-lg transition-colors"
+                            >
+                              取消
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-1">
+                              标题
+                            </label>
+                            <input
+                              type="text"
+                              value={editForm.title}
+                              onChange={(e) =>
+                                updateEditField('title', e.target.value)
+                              }
+                              className="w-full px-3 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-sm font-medium text-slate-300 mb-1">
+                                类型
+                              </label>
+                              <select
+                                value={editForm.type}
+                                onChange={(e) =>
+                                  updateEditField('type', e.target.value)
+                                }
+                                className="w-full px-3 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              >
+                                <option value="PROGRAMMING">编程题</option>
+                                <option value="CHOICE">选择题</option>
+                                <option value="FILL_BLANK">填空题</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-300 mb-1">
+                                难度
+                              </label>
+                              <select
+                                value={editForm.difficulty}
+                                onChange={(e) =>
+                                  updateEditField('difficulty', e.target.value)
+                                }
+                                className="w-full px-3 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              >
+                                <option value="EASY">简单</option>
+                                <option value="MEDIUM">中等</option>
+                                <option value="HARD">困难</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-slate-300 mb-1">
+                            描述
+                          </label>
+                          <textarea
+                            value={editForm.description}
+                            onChange={(e) =>
+                              updateEditField('description', e.target.value)
+                            }
+                            rows={4}
+                            className="w-full px-3 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-slate-300 mb-1">
+                            标签（用逗号分隔）
+                          </label>
+                          <input
+                            type="text"
+                            value={editForm.tags?.join(', ') || ''}
+                            onChange={(e) =>
+                              updateEditField(
+                                'tags',
+                                e.target.value
+                                  .split(',')
+                                  .map((t) => t.trim())
+                                  .filter((t) => t)
+                              )
+                            }
+                            className="w-full px-3 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                          />
+                        </div>
+
+                        {editForm.type === 'CHOICE' && (
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-sm font-medium text-slate-300">
+                                选项
+                              </label>
+                              <button
+                                onClick={addEditChoice}
+                                disabled={(editForm.choices?.length || 0) >= 8}
+                                className="flex items-center text-sm text-cyan-400 hover:text-cyan-300 disabled:opacity-50"
+                              >
+                                <Plus className="h-4 w-4 mr-1" />
+                                添加选项
+                              </button>
+                            </div>
+                            <div className="space-y-2">
+                              {editForm.choices?.map((choice, ci) => (
+                                <div
+                                  key={ci}
+                                  className="flex items-center gap-3"
+                                >
+                                  <span className="w-7 h-7 flex items-center justify-center bg-cyan-500/20 text-cyan-400 rounded font-bold text-sm">
+                                    {choice.key}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={choice.text}
+                                    onChange={(e) =>
+                                      updateEditChoice(ci, e.target.value)
+                                    }
+                                    className="flex-1 px-3 py-2 bg-slate-600 border border-slate-500 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                  />
+                                  {(editForm.choices?.length || 0) > 2 && (
+                                    <button
+                                      onClick={() => removeEditChoice(ci)}
+                                      className="text-red-400 hover:text-red-300"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-3">
+                              <label className="block text-sm font-medium text-slate-300 mb-1">
+                                正确答案
+                              </label>
+                              <div className="flex gap-2 flex-wrap">
+                                {editForm.choices?.map((choice) => (
+                                  <button
+                                    key={choice.key}
+                                    onClick={() =>
+                                      updateEditField(
+                                        'correctAnswer',
+                                        choice.key
+                                      )
+                                    }
+                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                      editForm.correctAnswer === choice.key
+                                        ? 'bg-green-500/20 border-2 border-green-500 text-green-400'
+                                        : 'bg-slate-600 border-2 border-slate-500 text-slate-300 hover:border-slate-400'
+                                    }`}
+                                  >
+                                    {choice.key}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {editForm.type === 'PROGRAMMING' && (
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-sm font-medium text-slate-300">
+                                测试用例
+                              </label>
+                              <button
+                                onClick={addEditTestCase}
+                                className="flex items-center text-sm text-cyan-400 hover:text-cyan-300"
+                              >
+                                <Plus className="h-4 w-4 mr-1" />
+                                添加用例
+                              </button>
+                            </div>
+                            <div className="space-y-3">
+                              {editForm.testCases?.map((tc, tci) => (
+                                <div
+                                  key={tci}
+                                  className="bg-slate-600 rounded-lg p-3"
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-slate-300 text-sm font-medium">
+                                      测试点 {tci + 1}
+                                    </span>
+                                    <div className="flex items-center gap-3">
+                                      <label className="flex items-center text-slate-400 text-sm">
+                                        <input
+                                          type="checkbox"
+                                          checked={tc.isSample}
+                                          onChange={(e) =>
+                                            updateEditTestCase(
+                                              tci,
+                                              'isSample',
+                                              e.target.checked
+                                            )
+                                          }
+                                          className="mr-1.5"
+                                        />
+                                        示例
+                                      </label>
+                                      {(editForm.testCases?.length || 0) > 1 && (
+                                        <button
+                                          onClick={() =>
+                                            removeEditTestCase(tci)
+                                          }
+                                          className="text-red-400 hover:text-red-300"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <textarea
+                                      value={tc.input}
+                                      onChange={(e) =>
+                                        updateEditTestCase(
+                                          tci,
+                                          'input',
+                                          e.target.value
+                                        )
+                                      }
+                                      rows={2}
+                                      className="px-2 py-1.5 bg-slate-500 border border-slate-400 rounded text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                      placeholder="输入"
+                                    />
+                                    <textarea
+                                      value={tc.output}
+                                      onChange={(e) =>
+                                        updateEditTestCase(
+                                          tci,
+                                          'output',
+                                          e.target.value
+                                        )
+                                      }
+                                      rows={2}
+                                      className="px-2 py-1.5 bg-slate-500 border border-slate-400 rounded text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                      placeholder="输出"
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {editForm.type === 'FILL_BLANK' && (
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-sm font-medium text-slate-300">
+                                填空答案
+                              </label>
+                              <button
+                                onClick={addEditFillBlank}
+                                disabled={(editForm.fillBlanks?.length || 0) >= 10}
+                                className="flex items-center text-sm text-cyan-400 hover:text-cyan-300 disabled:opacity-50"
+                              >
+                                <Plus className="h-4 w-4 mr-1" />
+                                添加填空
+                              </button>
+                            </div>
+                            <div className="space-y-2">
+                              {editForm.fillBlanks?.map((fb, fbi) => (
+                                <div
+                                  key={fbi}
+                                  className="flex items-center gap-3"
+                                >
+                                  <span className="w-7 h-7 flex items-center justify-center bg-cyan-500/20 text-cyan-400 rounded font-bold text-sm">
+                                    {fbi + 1}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={fb}
+                                    onChange={(e) =>
+                                      updateEditFillBlank(fbi, e.target.value)
+                                    }
+                                    className="flex-1 px-3 py-2 bg-slate-600 border border-slate-500 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                    placeholder={`第 ${fbi + 1} 个填空的答案`}
+                                  />
+                                  {(editForm.fillBlanks?.length || 0) > 1 && (
+                                    <button
+                                      onClick={() => removeEditFillBlank(fbi)}
+                                      className="text-red-400 hover:text-red-300"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-slate-400 text-sm font-mono">
+                              #{index + 1}
+                            </span>
+                            <h3 className="text-white font-medium text-lg">
+                              {problem.title || '未命名题目'}
+                            </h3>
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                TYPE_COLORS[problem.type] ||
+                                'text-slate-400 bg-slate-500/20'
+                              }`}
+                            >
+                              {TYPE_MAP[problem.type] || problem.type}
+                            </span>
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                DIFFICULTY_COLORS[problem.difficulty] ||
+                                'text-slate-400 bg-slate-500/20'
+                              }`}
+                            >
+                              {DIFFICULTY_MAP[problem.difficulty] ||
+                                problem.difficulty}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => startEdit(index)}
+                              className="p-2 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-lg transition-colors"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => removeProblem(index)}
+                              className="p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <p className="text-slate-400 text-sm line-clamp-3 mb-3">
+                          {problem.description || '暂无描述'}
+                        </p>
+
+                        {problem.tags && problem.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mb-3">
+                            {problem.tags.map((tag, ti) => (
+                              <span
+                                key={ti}
+                                className="px-2 py-0.5 bg-slate-600 text-slate-300 rounded text-xs"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-4 text-xs text-slate-500">
+                          {problem.type === 'PROGRAMMING' && (
+                            <span>
+                              测试用例: {problem.testCases?.length || 0}
+                            </span>
+                          )}
+                          {problem.type === 'CHOICE' && (
+                            <span>
+                              选项: {problem.choices?.length || 0} | 正确答案:{' '}
+                              {problem.correctAnswer || '-'}
+                            </span>
+                          )}
+                          {problem.type === 'FILL_BLANK' && (
+                            <span>
+                              填空数: {problem.fillBlanks?.length || 0}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-4">
+              <button
+                onClick={() => navigate('/admin/problems')}
+                className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+              >
+                返回题目列表
+              </button>
+              <button
+                onClick={handleBatchImport}
+                disabled={importing || problems.length === 0}
+                className="flex items-center bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {importing ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                    导入中...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-5 w-5 mr-2" />
+                    批量导入 ({problems.length} 题)
+                  </>
+                )}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

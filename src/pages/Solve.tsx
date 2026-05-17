@@ -1,9 +1,158 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { problemsAPI, submissionsAPI, aiAPI } from '../services/api';
-import { ArrowLeft, Send, Lightbulb, Loader2, Star } from 'lucide-react';
+import { ArrowLeft, Send, Lightbulb, Loader2, Star, Settings, X } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { useAuthStore } from '../stores/auth.store';
+
+const EDITOR_SETTINGS_KEY = 'oj_editor_settings';
+
+interface EditorSettings {
+  fontSize: number;
+  theme: string;
+  tabSize: number;
+  wordWrap: 'on' | 'off' | 'wordWrapColumn';
+  minimap: boolean;
+}
+
+const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
+  fontSize: 14,
+  theme: 'vs-dark',
+  tabSize: 2,
+  wordWrap: 'on',
+  minimap: false,
+};
+
+function loadEditorSettings(): EditorSettings {
+  try {
+    const saved = localStorage.getItem(EDITOR_SETTINGS_KEY);
+    if (saved) return { ...DEFAULT_EDITOR_SETTINGS, ...JSON.parse(saved) };
+  } catch {}
+  return { ...DEFAULT_EDITOR_SETTINGS };
+}
+
+function saveEditorSettings(settings: EditorSettings) {
+  localStorage.setItem(EDITOR_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function renderHintContent(text: string) {
+  const lines = text.split('\n');
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (/^━{6,}$/.test(line.trim())) {
+      elements.push(<div key={key++} className="border-t border-yellow-500/30 my-3" />);
+      i++;
+      continue;
+    }
+
+    if (line.startsWith('# ')) {
+      elements.push(<h2 key={key++} className="text-lg font-bold text-yellow-300 mt-3 mb-2">{line.slice(2)}</h2>);
+      i++;
+      continue;
+    }
+
+    if (line.startsWith('## ')) {
+      elements.push(
+        <h3 key={key++} className="text-base font-semibold text-yellow-200 mt-4 mb-2 flex items-center gap-1">
+          <span className="text-yellow-400">▸</span>
+          <span>{line.slice(3).replace(/^▸\s*/, '')}</span>
+        </h3>
+      );
+      i++;
+      continue;
+    }
+
+    if (line.trim().startsWith('```')) {
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++;
+      elements.push(
+        <pre key={key++} className="bg-slate-900/80 border border-yellow-500/20 rounded-lg p-3 my-2 overflow-x-auto text-sm">
+          <code className="text-yellow-100/90 font-mono whitespace-pre">{codeLines.join('\n')}</code>
+        </pre>
+      );
+      continue;
+    }
+
+    if (line.startsWith('> ')) {
+      elements.push(<div key={key++} className="pl-3 border-l-2 border-yellow-500/50 text-yellow-200/80 text-sm my-2 italic">{line.slice(2)}</div>);
+      i++;
+      continue;
+    }
+
+    if (line.match(/^- /)) {
+      const listItems: string[] = [];
+      while (i < lines.length && lines[i].match(/^- /)) {
+        listItems.push(lines[i].slice(2));
+        i++;
+      }
+      elements.push(
+        <ul key={key++} className="space-y-1 my-2">
+          {listItems.map((item, idx) => (
+            <li key={idx} className="flex items-start gap-2 text-sm text-yellow-200/90">
+              <span className="text-yellow-400 mt-0.5 shrink-0">•</span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      );
+      continue;
+    }
+
+    if (line.match(/^\d+\.\s/)) {
+      const listItems: string[] = [];
+      while (i < lines.length && lines[i].match(/^\d+\.\s/)) {
+        listItems.push(lines[i].replace(/^\d+\.\s/, ''));
+        i++;
+      }
+      elements.push(
+        <ol key={key++} className="space-y-1 my-2">
+          {listItems.map((item, idx) => (
+            <li key={idx} className="flex items-start gap-2 text-sm text-yellow-200/90">
+              <span className="text-yellow-400 font-semibold shrink-0">{idx + 1}.</span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ol>
+      );
+      continue;
+    }
+
+    if (line.trim() === '') {
+      i++;
+      continue;
+    }
+
+    const paragraphLines: string[] = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() !== '' &&
+      !lines[i].startsWith('#') &&
+      !lines[i].startsWith('```') &&
+      !lines[i].startsWith('- ') &&
+      !lines[i].match(/^\d+\.\s/) &&
+      !lines[i].startsWith('> ') &&
+      !/^━{6,}$/.test(lines[i].trim())
+    ) {
+      paragraphLines.push(lines[i]);
+      i++;
+    }
+    if (paragraphLines.length > 0) {
+      elements.push(<p key={key++} className="text-sm text-yellow-200/90 my-1 leading-relaxed">{paragraphLines.join('\n')}</p>);
+    }
+  }
+
+  return elements;
+}
 
 export function SolvePage() {
   const { id } = useParams<{ id: string }>();
@@ -20,11 +169,11 @@ export function SolvePage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiHint, setAiHint] = useState('');
   const [showHint, setShowHint] = useState(false);
+  const [editorSettings, setEditorSettings] = useState<EditorSettings>(loadEditorSettings);
+  const [showEditorSettings, setShowEditorSettings] = useState(false);
 
   useEffect(() => {
-    if (id) {
-      loadProblem();
-    }
+    if (id) loadProblem();
   }, [id]);
 
   const loadProblem = async () => {
@@ -32,10 +181,26 @@ export function SolvePage() {
       setLoading(true);
       const res = await problemsAPI.getById(id!);
       if (res.success) {
-        setProblem(res.data);
-        if (res.data.type === 'FILL_BLANK') {
-          const blankCount = (res.data.description.match(/_____/g) || []).length;
+        const data = res.data;
+        setProblem(data);
+        if (data.type === 'FILL_BLANK') {
+          let blankCount = 0;
+          try {
+            const blanks = data.fillBlanks ? JSON.parse(data.fillBlanks) : [];
+            blankCount = Array.isArray(blanks) ? blanks.length : 0;
+          } catch {
+            blankCount = (data.description.match(/_____/g) || []).length;
+          }
+          blankCount = Math.max(blankCount, 1);
           setFillAnswers(Array(blankCount).fill(''));
+        }
+        if (data.type === 'CHOICE') {
+          try {
+            const choices = data.choices ? (typeof data.choices === 'string' ? JSON.parse(data.choices) : data.choices) : [];
+            if (Array.isArray(choices) && choices.length > 0) {
+              setAnswer('');
+            }
+          } catch {}
         }
       }
     } catch (error) {
@@ -46,14 +211,29 @@ export function SolvePage() {
   };
 
   const handleSubmit = async () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+
+    if (problem.type === 'PROGRAMMING' && !code.trim()) {
+      alert('请编写代码后再提交');
+      return;
+    }
+    if (problem.type === 'CHOICE' && !answer) {
+      alert('请选择答案后再提交');
+      return;
+    }
+    if (problem.type === 'FILL_BLANK' && fillAnswers.every(a => !a.trim())) {
+      alert('请填写答案后再提交');
+      return;
+    }
+
     setSubmitting(true);
     setResult(null);
 
     try {
-      let data: any = {
-        problemId: id,
-        type: problem.type
-      };
+      let data: any = { problemId: id, type: problem.type };
 
       if (problem.type === 'PROGRAMMING') {
         data.code = code;
@@ -73,7 +253,8 @@ export function SolvePage() {
       }
     } catch (error: any) {
       console.error('提交失败', error);
-      alert(error.error?.message || '提交失败');
+      const msg = error?.error?.message || error?.message || '提交失败';
+      alert(msg);
     } finally {
       setSubmitting(false);
     }
@@ -84,54 +265,64 @@ export function SolvePage() {
     setShowHint(true);
     try {
       const res = await aiAPI.getHint({
-        problem: {
-          title: problem.title,
-          description: problem.description
-        }
+        problem: { title: problem.title, description: problem.description }
       });
       if (res.success) {
         setAiHint(res.data.hint);
       }
-    } catch (error: any) {
+    } catch {
       setAiHint('AI功能未启用或配置错误');
     } finally {
       setAiLoading(false);
     }
   };
 
+  const updateEditorSetting = useCallback(<K extends keyof EditorSettings>(key: K, value: EditorSettings[K]) => {
+    setEditorSettings(prev => {
+      const next = { ...prev, [key]: value };
+      saveEditorSettings(next);
+      return next;
+    });
+  }, []);
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'ACCEPTED':
-        return 'text-green-400 bg-green-400/10';
-      case 'WRONG_ANSWER':
-        return 'text-red-400 bg-red-400/10';
-      case 'TIME_LIMIT_EXCEEDED':
-        return 'text-orange-400 bg-orange-400/10';
-      case 'RUNTIME_ERROR':
-        return 'text-purple-400 bg-purple-400/10';
-      case 'COMPILE_ERROR':
-        return 'text-red-400 bg-red-400/10';
-      default:
-        return 'text-yellow-400 bg-yellow-400/10';
+      case 'ACCEPTED': return 'text-green-400 bg-green-400/10';
+      case 'WRONG_ANSWER': return 'text-red-400 bg-red-400/10';
+      case 'TIME_LIMIT_EXCEEDED': return 'text-orange-400 bg-orange-400/10';
+      case 'RUNTIME_ERROR': return 'text-purple-400 bg-purple-400/10';
+      case 'COMPILE_ERROR': return 'text-red-400 bg-red-400/10';
+      default: return 'text-yellow-400 bg-yellow-400/10';
     }
   };
 
   const getStatusName = (status: string) => {
     switch (status) {
-      case 'ACCEPTED':
-        return '通过';
-      case 'WRONG_ANSWER':
-        return '答案错误';
-      case 'TIME_LIMIT_EXCEEDED':
-        return '超时';
-      case 'RUNTIME_ERROR':
-        return '运行错误';
-      case 'COMPILE_ERROR':
-        return '编译错误';
-      case 'JUDGING':
-        return '判题中';
-      default:
-        return status;
+      case 'ACCEPTED': return '通过';
+      case 'WRONG_ANSWER': return '答案错误';
+      case 'TIME_LIMIT_EXCEEDED': return '超时';
+      case 'RUNTIME_ERROR': return '运行错误';
+      case 'COMPILE_ERROR': return '编译错误';
+      case 'JUDGING': return '判题中';
+      default: return status;
+    }
+  };
+
+  const getDifficultyBadge = (d: string) => {
+    switch (d) {
+      case 'EASY': return 'bg-green-500/20 text-green-400';
+      case 'MEDIUM': return 'bg-yellow-500/20 text-yellow-400';
+      case 'HARD': return 'bg-red-500/20 text-red-400';
+      default: return 'bg-slate-500/20 text-slate-400';
+    }
+  };
+
+  const getDifficultyName = (d: string) => {
+    switch (d) {
+      case 'EASY': return '简单';
+      case 'MEDIUM': return '中等';
+      case 'HARD': return '困难';
+      default: return d;
     }
   };
 
@@ -147,12 +338,24 @@ export function SolvePage() {
     return (
       <div className="text-center py-20">
         <p className="text-xl text-slate-400">题目不存在</p>
-        <Link to="/" className="text-cyan-400 hover:text-cyan-300 mt-4 inline-block">
-          返回首页
-        </Link>
+        <Link to="/" className="text-cyan-400 hover:text-cyan-300 mt-4 inline-block">返回首页</Link>
       </div>
     );
   }
+
+  const parsedChoices = (() => {
+    try {
+      const raw = problem.choices;
+      return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : [];
+    } catch { return []; }
+  })();
+
+  const parsedTestCases = (() => {
+    try {
+      const raw = problem.testCases;
+      return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : [];
+    } catch { return []; }
+  })();
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -165,41 +368,50 @@ export function SolvePage() {
       </button>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
-          <h1 className="text-2xl font-bold text-white mb-4">{problem.title}</h1>
-          <div className="prose prose-invert max-w-none mb-6">
-            <div className="text-slate-300 whitespace-pre-wrap">{problem.description}</div>
+        {/* 左侧：题目描述 + 答题区 */}
+        <div className="space-y-6">
+          <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <h1 className="text-2xl font-bold text-white">{problem.title}</h1>
+              <span className={`text-xs px-2 py-0.5 rounded ${getDifficultyBadge(problem.difficulty)}`}>
+                {getDifficultyName(problem.difficulty)}
+              </span>
+            </div>
+            <div className="prose prose-invert max-w-none mb-6">
+              <div className="text-slate-300 whitespace-pre-wrap">{problem.description}</div>
+            </div>
+
+            {problem.type === 'PROGRAMMING' && parsedTestCases.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-white mb-3">示例</h3>
+                {parsedTestCases.filter((tc: any) => tc.isSample).map((tc: any, index: number) => (
+                  <div key={index} className="bg-slate-700 rounded-lg p-4 mb-2">
+                    <div className="mb-1">
+                      <span className="text-slate-400 text-sm">输入：</span>
+                      <pre className="text-white mt-1 font-mono text-sm">{tc.input}</pre>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-sm">输出：</span>
+                      <pre className="text-white mt-1 font-mono text-sm">{tc.output}</pre>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {problem.type === 'PROGRAMMING' && problem.testCases?.length > 0 && (
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-white mb-3">示例</h3>
-              {problem.testCases.filter((tc: any) => tc.isSample).map((tc: any, index: number) => (
-                <div key={index} className="bg-slate-700 rounded-lg p-4 mb-2">
-                  <div className="mb-1">
-                    <span className="text-slate-400 text-sm">输入：</span>
-                    <pre className="text-white mt-1 font-mono text-sm">{tc.input}</pre>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-sm">输出：</span>
-                    <pre className="text-white mt-1 font-mono text-sm">{tc.output}</pre>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {problem.type === 'CHOICE' && problem.choices && (
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-white mb-3">选项</h3>
-              <div className="space-y-2">
-                {problem.choices.map((choice: any) => (
+          {/* 选择题答题区 */}
+          {problem.type === 'CHOICE' && (
+            <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+              <h3 className="text-lg font-semibold text-white mb-4">选择答案</h3>
+              <div className="space-y-3">
+                {parsedChoices.map((choice: any) => (
                   <label
                     key={choice.key}
-                    className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${
+                    className={`flex items-center p-4 rounded-lg cursor-pointer transition-all ${
                       answer === choice.key
-                        ? 'bg-cyan-500/20 border-2 border-cyan-500'
-                        : 'bg-slate-700 hover:bg-slate-600'
+                        ? 'bg-cyan-500/20 border-2 border-cyan-500 shadow-lg shadow-cyan-500/10'
+                        : 'bg-slate-700 hover:bg-slate-600 border-2 border-transparent'
                     }`}
                   >
                     <input
@@ -208,58 +420,75 @@ export function SolvePage() {
                       value={choice.key}
                       checked={answer === choice.key}
                       onChange={(e) => setAnswer(e.target.value)}
-                      className="mr-3"
+                      className="mr-3 accent-cyan-500"
                     />
-                    <span className="text-white">{choice.key}. {choice.text}</span>
+                    <span className="font-semibold text-cyan-400 mr-2">{choice.key}.</span>
+                    <span className="text-white">{choice.text}</span>
                   </label>
                 ))}
               </div>
             </div>
           )}
 
+          {/* 填空题答题区 */}
           {problem.type === 'FILL_BLANK' && (
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-white mb-3">填空答案</h3>
-              <div className="space-y-3">
-                {fillAnswers.map((_, index) => (
-                  <input
-                    key={index}
-                    type="text"
-                    value={fillAnswers[index]}
-                    onChange={(e) => {
-                      const newAnswers = [...fillAnswers];
-                      newAnswers[index] = e.target.value;
-                      setFillAnswers(newAnswers);
-                    }}
-                    placeholder={`第 ${index + 1} 空`}
-                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  />
+            <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+              <h3 className="text-lg font-semibold text-white mb-4">填写答案</h3>
+              <div className="space-y-4">
+                {fillAnswers.map((val, index) => (
+                  <div key={index} className="flex items-center gap-3">
+                    <span className="text-cyan-400 font-semibold min-w-[60px]">第 {index + 1} 空</span>
+                    <input
+                      type="text"
+                      value={val}
+                      onChange={(e) => {
+                        const next = [...fillAnswers];
+                        next[index] = e.target.value;
+                        setFillAnswers(next);
+                      }}
+                      placeholder={`请输入第 ${index + 1} 空的答案`}
+                      className="flex-1 px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                    />
+                  </div>
                 ))}
               </div>
             </div>
           )}
 
-          <button
-            onClick={getHint}
-            disabled={aiLoading}
-            className="flex items-center px-4 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
-          >
-            {aiLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Lightbulb className="h-4 w-4 mr-2" />}
-            AI提示
-          </button>
+          {/* AI 提示 */}
+          <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+            <button
+              onClick={getHint}
+              disabled={aiLoading}
+              className="flex items-center px-4 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
+            >
+              {aiLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Lightbulb className="h-4 w-4 mr-2" />}
+              AI提示
+            </button>
 
-          {showHint && aiHint && (
-            <div className="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-              <p className="text-yellow-300 text-sm">{aiHint}</p>
-            </div>
-          )}
+            {showHint && aiHint && (
+              <div className="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                {renderHintContent(aiHint)}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="bg-slate-800 rounded-xl p-6 shadow-xl flex flex-col">
-          {problem.type === 'PROGRAMMING' ? (
-            <>
+        {/* 右侧：代码编辑器 / 提交 / 结果 */}
+        <div className="space-y-6">
+          {problem.type === 'PROGRAMMING' && (
+            <div className="bg-slate-800 rounded-xl p-6 shadow-xl flex flex-col">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white">代码编辑器</h3>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-lg font-semibold text-white">代码编辑器</h3>
+                  <button
+                    onClick={() => setShowEditorSettings(!showEditorSettings)}
+                    className="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                    title="编辑器设置"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </button>
+                </div>
                 <select
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
@@ -267,53 +496,118 @@ export function SolvePage() {
                 >
                   <option value="javascript">JavaScript</option>
                   <option value="python">Python</option>
+                  <option value="cpp">C++</option>
+                  <option value="c">C</option>
                 </select>
               </div>
+
+              {showEditorSettings && (
+                <div className="mb-4 p-4 bg-slate-700 rounded-lg space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-slate-300">编辑器设置</h4>
+                    <button onClick={() => setShowEditorSettings(false)} className="text-slate-400 hover:text-white">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">字体大小</label>
+                      <select
+                        value={editorSettings.fontSize}
+                        onChange={(e) => updateEditorSetting('fontSize', Number(e.target.value))}
+                        className="w-full px-2 py-1.5 bg-slate-600 border border-slate-500 rounded text-white text-sm"
+                      >
+                        {[12, 13, 14, 15, 16, 18, 20, 22].map(s => (
+                          <option key={s} value={s}>{s}px</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">主题</label>
+                      <select
+                        value={editorSettings.theme}
+                        onChange={(e) => updateEditorSetting('theme', e.target.value)}
+                        className="w-full px-2 py-1.5 bg-slate-600 border border-slate-500 rounded text-white text-sm"
+                      >
+                        <option value="vs-dark">深色</option>
+                        <option value="vs">浅色</option>
+                        <option value="hc-black">高对比度</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Tab 大小</label>
+                      <select
+                        value={editorSettings.tabSize}
+                        onChange={(e) => updateEditorSetting('tabSize', Number(e.target.value))}
+                        className="w-full px-2 py-1.5 bg-slate-600 border border-slate-500 rounded text-white text-sm"
+                      >
+                        <option value={2}>2 空格</option>
+                        <option value={4}>4 空格</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">自动换行</label>
+                      <select
+                        value={editorSettings.wordWrap}
+                        onChange={(e) => updateEditorSetting('wordWrap', e.target.value as any)}
+                        className="w-full px-2 py-1.5 bg-slate-600 border border-slate-500 rounded text-white text-sm"
+                      >
+                        <option value="on">开启</option>
+                        <option value="off">关闭</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex-1 min-h-[400px]">
                 <Editor
                   height="100%"
-                  language={language === 'python' ? 'python' : 'javascript'}
+                  language={language === 'python' ? 'python' : language === 'cpp' || language === 'c' ? 'cpp' : 'javascript'}
                   value={code}
                   onChange={(value) => setCode(value || '')}
-                  theme="vs-dark"
+                  theme={editorSettings.theme}
                   options={{
-                    minimap: { enabled: false },
-                    fontSize: 14,
+                    minimap: { enabled: editorSettings.minimap },
+                    fontSize: editorSettings.fontSize,
+                    tabSize: editorSettings.tabSize,
+                    wordWrap: editorSettings.wordWrap,
                     lineNumbers: 'on',
                     scrollBeyondLastLine: false,
                     automaticLayout: true,
+                    padding: { top: 12 },
+                    renderLineHighlight: 'gutter',
+                    smoothScrolling: true,
+                    cursorBlinking: 'smooth',
+                    bracketPairColorization: { enabled: true },
                   }}
                 />
               </div>
-            </>
-          ) : null}
+            </div>
+          )}
 
+          {/* 提交按钮 */}
           <button
             onClick={handleSubmit}
             disabled={submitting || !user}
-            className="mt-4 flex items-center justify-center bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? (
-              <>
-                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                提交中...
-              </>
+              <><Loader2 className="h-5 w-5 mr-2 animate-spin" />提交中...</>
             ) : (
-              <>
-                <Send className="h-5 w-5 mr-2" />
-                提交答案
-              </>
+              <><Send className="h-5 w-5 mr-2" />提交答案</>
             )}
           </button>
 
+          {/* 判题结果 */}
           {result && (
-            <div className="mt-6 p-4 bg-slate-700 rounded-lg">
+            <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
               <h4 className="text-lg font-semibold text-white mb-3">判题结果</h4>
               <div className="flex items-center justify-between mb-3">
                 <span className={`px-3 py-1 rounded-full text-sm ${getStatusColor(result.status)}`}>
                   {getStatusName(result.status)}
                 </span>
-                {result.score !== null && (
+                {result.score !== null && result.score !== undefined && (
                   <span className="text-2xl font-bold text-white">{result.score}分</span>
                 )}
               </div>
@@ -321,16 +615,12 @@ export function SolvePage() {
                 <div className="mb-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-center gap-2">
                   <Star className="h-5 w-5 text-yellow-400" />
                   <span className="text-yellow-300 font-semibold">+{result.pointsEarned} 积分</span>
-                  <span className="text-yellow-400/70 text-sm">（{result.status === 'ACCEPTED' ? '首次通过额外奖励' : '答题奖励'}）</span>
                 </div>
               )}
               {result.status === 'ACCEPTED' && (
                 <div className="mb-3 p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
                   <p className="text-cyan-300 text-sm mb-2">🎉 恭喜通过！现在可以查看题解了</p>
-                  <Link
-                    to={`/problem/${id}`}
-                    className="text-cyan-400 hover:text-cyan-300 text-sm underline"
-                  >
+                  <Link to={`/problem/${id}`} className="text-cyan-400 hover:text-cyan-300 text-sm underline">
                     返回题目详情查看题解 →
                   </Link>
                 </div>
@@ -340,12 +630,7 @@ export function SolvePage() {
                   {result.result.testResults && (
                     <div className="space-y-2">
                       {result.result.testResults.map((tr: any, index: number) => (
-                        <div
-                          key={index}
-                          className={`p-3 rounded-lg text-sm ${
-                            tr.passed ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                          }`}
-                        >
+                        <div key={index} className={`p-3 rounded-lg text-sm ${tr.passed ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
                           <div className="flex items-center justify-between">
                             <span>测试点 {tr.testCase}</span>
                             <span>{tr.passed ? '通过' : '未通过'}</span>
@@ -362,6 +647,25 @@ export function SolvePage() {
                   )}
                   {result.result.message && (
                     <p className="text-slate-300 mt-2">{result.result.message}</p>
+                  )}
+                  {result.result.isCorrect !== undefined && problem.type === 'CHOICE' && (
+                    <div className="mt-2 text-sm">
+                      <span className="text-slate-400">正确答案：</span>
+                      <span className="text-green-400 font-semibold">{result.result.correctAnswer}</span>
+                    </div>
+                  )}
+                  {result.result.correctAnswers && problem.type === 'FILL_BLANK' && (
+                    <div className="mt-2 text-sm space-y-1">
+                      {result.result.correctAnswers.map((ans: string, idx: number) => (
+                        <div key={idx}>
+                          <span className="text-slate-400">第 {idx + 1} 空：</span>
+                          <span className="text-green-400 font-semibold">{ans}</span>
+                          {result.result.userAnswers?.[idx] !== undefined && result.result.userAnswers[idx] !== ans && (
+                            <span className="text-red-400 ml-2">（你的答案：{result.result.userAnswers[idx]}）</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}

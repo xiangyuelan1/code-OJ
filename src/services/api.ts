@@ -10,7 +10,7 @@ interface ApiSuccessResponse<T = any> {
 }
 
 const axiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3005',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '',
   timeout: 30000,
 });
 
@@ -65,6 +65,7 @@ export const problemsAPI = {
   delete: (id: string) => api.delete(`/api/problems/${id}`),
   getStats: () => api.get('/api/problems/stats/overview'),
   getPublicStats: () => api.get('/api/problems/stats/public'),
+  batchImport: (problems: any[]) => api.post('/api/problems/batch-import', { problems }),
 };
 
 export const submissionsAPI = {
@@ -99,6 +100,11 @@ export const usersAPI = {
   getAll: () => api.get('/api/admin/users'),
   toggleStatus: (id: string) => api.patch(`/api/admin/users/${id}/toggle-status`),
   resetPassword: (id: string, password: string) => api.post(`/api/admin/users/${id}/reset-password`, { password }),
+  changeRole: (id: string, role: string) => api.patch(`/api/admin/users/${id}/role`, { role }),
+  getAccess: (id: string) => api.get(`/api/admin/users/${id}/access`),
+  updateAccess: (id: string, data: { accessType?: string; accessExpiresAt?: string | null; trialStartsAt?: string | null }) =>
+    api.patch(`/api/admin/users/${id}/access`, data),
+  getSystemOverview: () => api.get('/api/admin/users/system/overview'),
 };
 
 export const adminSubmissionsAPI = {
@@ -144,6 +150,18 @@ export const enhancedAiAPI = {
     api.post('/api/ai/parse-problem-file', { content, fileType }),
   parseKnowledgeTree: (content: string) =>
     api.post('/api/ai/parse-knowledge-tree', { content }),
+  aiJudge: (data: any) => api.post('/api/ai/ai-judge', data),
+  getUsageStats: (params?: any) => api.get('/api/ai/usage/stats', { params }),
+  getUsageLogs: (params?: any) => api.get('/api/ai/usage/logs', { params }),
+};
+
+export const uploadAPI = {
+  uploadImage: (formData: FormData) =>
+    api.post('/api/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  uploadFile: (formData: FormData) =>
+    api.post('/api/upload/file', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  uploadFiles: (formData: FormData) =>
+    api.post('/api/upload/files', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
 };
 
 export const examAPI = {
@@ -182,6 +200,62 @@ export const achievementAPI = {
   getProgress: () => api.get('/api/achievements/progress'),
   getStats: () => api.get('/api/achievements/stats'),
   check: () => api.post('/api/achievements/check'),
+};
+
+export const classAPI = {
+  getAll: () => api.get('/api/classes'),
+  create: (data: any) => api.post('/api/classes', data),
+  update: (id: string, data: any) => api.put(`/api/classes/${id}`, data),
+  delete: (id: string) => api.delete(`/api/classes/${id}`),
+  getById: (id: string) => api.get(`/api/classes/${id}`),
+  getMembers: (id: string) => api.get(`/api/classes/${id}/members`),
+  addMember: (id: string, userId: string, role?: string) =>
+    api.post(`/api/classes/${id}/members`, { userId, role }),
+  removeMember: (id: string, userId: string) =>
+    api.delete(`/api/classes/${id}/members/${userId}`),
+  join: (id: string) => api.post(`/api/classes/${id}/join`),
+  leave: (id: string) => api.post(`/api/classes/${id}/leave`),
+  requestJoin: (id: string, message?: string) =>
+    api.post(`/api/access/classes/${id}/join-request`, { message }),
+  getJoinRequests: (id: string) => api.get(`/api/access/classes/${id}/join-requests`),
+  reviewJoinRequest: (requestId: string, approved: boolean) =>
+    api.put(`/api/access/classes/join-requests/${requestId}`, { approved }),
+  getAnalytics: (id: string) => api.get(`/api/classes/${id}/analytics`),
+  getHomework: (id: string) => api.get(`/api/classes/${id}/homework`),
+  createHomework: (id: string, data: any) => api.post(`/api/classes/${id}/homework`, data),
+  getHomeworkDetail: (homeworkId: string) => api.get(`/api/classes/homework/${homeworkId}`),
+  getHomeworkProgress: (homeworkId: string) => api.get(`/api/classes/homework/${homeworkId}/progress`),
+  submitHomework: (homeworkId: string, data: any) => api.post(`/api/classes/homework/${homeworkId}/submit`, data),
+  getMemberDetail: (classId: string, userId: string) => api.get(`/api/classes/${classId}/members/${userId}/detail`),
+  joinByCode: (classCode: string, message?: string) => api.post('/api/classes/join-by-code', { classCode, message }),
+  generateClassCode: (id: string) => api.post(`/api/classes/${id}/generate-code`),
+  createClassExam: (id: string, data: any) => api.post(`/api/classes/${id}/exams`, data),
+  getClassExams: (id: string) => api.get(`/api/classes/${id}/exams`),
+  createClassBattle: (data: any) => api.post('/api/classes/battle', data),
+  acceptClassBattle: (battleId: string) => api.post(`/api/classes/battle/${battleId}/accept`),
+  submitClassBattleAnswer: (battleId: string, data: any) => api.post(`/api/classes/battle/${battleId}/answer`, data),
+  completeClassBattle: (battleId: string) => api.post(`/api/classes/battle/${battleId}/complete`),
+  getClassBattles: (id: string) => api.get(`/api/classes/${id}/battles`),
+};
+
+export const accessAPI = {
+  check: () => api.get('/api/access/check'),
+  getConfig: () => api.get('/api/access/config'),
+  updateConfig: (key: string, value: string) => api.put('/api/access/config', { key, value }),
+};
+
+export const paymentAPI = {
+  submit: (data: any) => api.post('/api/payments', data),
+  getAll: () => api.get('/api/payments'),
+  approve: (id: string) => api.patch(`/api/payments/${id}/approve`),
+  reject: (id: string) => api.patch(`/api/payments/${id}/reject`),
+  uploadQrCode: (data: FormData) =>
+    api.post('/api/payments/qr-code', data, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  getMethods: () => api.get('/api/payments/methods'),
+  getConfig: () => api.get('/api/payments/config'),
+  deleteQrCode: (method: string) => api.delete(`/api/payments/qr-code/${method}`),
+  updateChannel: (method: string, data: { enabled: boolean; config?: Record<string, string> }) =>
+    api.put(`/api/payments/channel/${method}`, data),
 };
 
 export default api;

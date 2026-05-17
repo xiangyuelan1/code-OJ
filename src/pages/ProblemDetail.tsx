@@ -137,9 +137,9 @@ export function ProblemDetailPage() {
           {isAuthenticated && (
             <Link
               to={`/problem/${id}/solve`}
-              className="bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              className="bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold py-4 px-10 rounded-xl text-lg shadow-lg shadow-cyan-500/25 animate-glow-pulse transition-all hover:scale-105"
             >
-              开始答题
+              立即作答
             </Link>
           )}
         </div>
@@ -248,9 +248,9 @@ export function ProblemDetailPage() {
               <p className="text-slate-400 mb-2">通过本题后即可查看题解</p>
               <Link
                 to={`/problem/${id}/solve`}
-                className="inline-block bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors"
+                className="inline-block bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold py-3 px-8 rounded-xl shadow-lg shadow-cyan-500/25 transition-all hover:scale-105"
               >
-                前往答题
+                立即作答
               </Link>
             </div>
           )}

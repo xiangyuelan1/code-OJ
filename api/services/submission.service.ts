@@ -1,4 +1,6 @@
 import { spawn } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 import prisma from '../lib/prisma';
 import { pointsService } from './points.service';
 import { judge0Service } from './judge0.service';
@@ -39,9 +41,11 @@ export class CodeExecutor {
       let resolved = false;
       const startTime = Date.now();
 
-      const langConfig: Record<string, { cmd: string; args: string[]; fileExt: string }> = {
+      const langConfig: Record<string, { cmd: string; args: string[]; fileExt: string; compileCmd?: string; compileArgs?: string[] }> = {
         javascript: { cmd: 'node', args: ['--max-old-space-size=256'], fileExt: '.js' },
-        python: { cmd: 'python3', args: [], fileExt: '.py' }
+        python: { cmd: 'python3', args: [], fileExt: '.py' },
+        cpp: { cmd: 'g++', args: [], fileExt: '.cpp', compileCmd: 'g++', compileArgs: ['-std=c++17', '-O2', '-o'] },
+        c: { cmd: 'gcc', args: [], fileExt: '.c', compileCmd: 'gcc', compileArgs: ['-std=c11', '-O2', '-o'] }
       };
 
       const config = langConfig[language];
@@ -50,8 +54,6 @@ export class CodeExecutor {
         return;
       }
 
-      const fs = require('fs');
-      const path = require('path');
       const tempDir = path.join(process.cwd(), 'temp');
 
       if (!fs.existsSync(tempDir)) {
@@ -68,53 +70,96 @@ export class CodeExecutor {
         return;
       }
 
+      const execPath = config.compileCmd
+        ? path.join(tempDir, `temp_${Date.now()}_${Math.random().toString(36).slice(2)}.exe`)
+        : filePath;
+
       const cleanup = () => {
         try { fs.unlinkSync(filePath); } catch {}
+        if (config.compileCmd) {
+          try { fs.unlinkSync(execPath); } catch {}
+        }
       };
 
-      const proc = spawn(config.cmd, [...config.args, filePath], {
-        timeout: this.timeout,
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
+      const timeoutMs = this.timeout || 2000;
 
-      proc.stdin.write(input);
-      proc.stdin.end();
+      if (config.compileCmd) {
+        const compileProc = spawn(config.compileCmd, [...(config.compileArgs || []), execPath, filePath], {
+          timeout: 10000,
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
 
-      proc.stdout.on('data', (data: Buffer) => {
-        output += data.toString();
-      });
+        let compileError = '';
+        compileProc.stderr.on('data', (data: Buffer) => {
+          compileError += data.toString();
+        });
 
-      proc.stderr.on('data', (data: Buffer) => {
-        error += data.toString();
-      });
+        compileProc.on('close', (compileCode: number) => {
+          if (compileCode !== 0) {
+            cleanup();
+            resolve({ output: '', error: `编译错误:\n${compileError}` });
+            return;
+          }
 
-      proc.on('close', (code: number) => {
-        if (resolved) return;
-        resolved = true;
-        const time = Date.now() - startTime;
-        cleanup();
+          runExecutable();
+        });
 
-        if (code === 0) {
-          resolve({ output: output.trim(), time });
-        } else {
-          resolve({ output: '', error: error || `程序异常退出，退出码: ${code}`, time });
-        }
-      });
+        compileProc.on('error', (err: Error) => {
+          cleanup();
+          resolve({ output: '', error: `编译器启动失败: ${err.message}。请确保已安装 ${config.compileCmd}` });
+        });
+      } else {
+        runExecutable();
+      }
 
-      proc.on('error', (err: Error) => {
-        if (resolved) return;
-        resolved = true;
-        cleanup();
-        resolve({ output: '', error: `执行错误: ${err.message}` });
-      });
+      function runExecutable() {
+        const runCmd = config.compileCmd ? execPath : config.cmd;
+        const runArgs = config.compileCmd ? [] : [...config.args, filePath];
 
-      setTimeout(() => {
-        if (resolved) return;
-        resolved = true;
-        proc.kill('SIGKILL');
-        cleanup();
-        resolve({ output: '', error: '程序执行超时', timedOut: true });
-      }, this.timeout + 500);
+        const proc = spawn(runCmd, runArgs, {
+          timeout: config.compileCmd ? undefined : timeoutMs,
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        proc.stdin.write(input);
+        proc.stdin.end();
+
+        proc.stdout.on('data', (data: Buffer) => {
+          output += data.toString();
+        });
+
+        proc.stderr.on('data', (data: Buffer) => {
+          error += data.toString();
+        });
+
+        proc.on('close', (code: number) => {
+          if (resolved) return;
+          resolved = true;
+          const time = Date.now() - startTime;
+          cleanup();
+
+          if (code === 0) {
+            resolve({ output: output.trim(), time });
+          } else {
+            resolve({ output: '', error: error || `程序异常退出，退出码: ${code}`, time });
+          }
+        });
+
+        proc.on('error', (err: Error) => {
+          if (resolved) return;
+          resolved = true;
+          cleanup();
+          resolve({ output: '', error: `执行错误: ${err.message}` });
+        });
+
+        setTimeout(() => {
+          if (resolved) return;
+          resolved = true;
+          proc.kill('SIGKILL');
+          cleanup();
+          resolve({ output: '', error: '程序执行超时', timedOut: true });
+        }, timeoutMs + 500);
+      }
     });
   }
 }
@@ -155,12 +200,12 @@ export class SubmissionService {
     );
 
     let pointsEarned = 0;
-    if (result.status === 'ACCEPTED') {
+    if (result.status === 'ACCEPTED' && isFirstAC) {
       const pointResult = await pointsService.awardPointsForProblem(
         userId,
         problemId,
         problem.difficulty,
-        isFirstAC
+        true
       );
       pointsEarned = pointResult.pointsEarned;
     }
@@ -195,12 +240,12 @@ export class SubmissionService {
     );
 
     let pointsEarned = 0;
-    if (isCorrect) {
+    if (isCorrect && isFirstAC) {
       const pointResult = await pointsService.awardPointsForProblem(
         userId,
         problemId,
         problem.difficulty,
-        isFirstAC
+        true
       );
       pointsEarned = pointResult.pointsEarned;
     }
@@ -247,12 +292,12 @@ export class SubmissionService {
     );
 
     let pointsEarned = 0;
-    if (isCorrect) {
+    if (isCorrect && isFirstAC) {
       const pointResult = await pointsService.awardPointsForProblem(
         userId,
         problemId,
         problem.difficulty,
-        isFirstAC
+        true
       );
       pointsEarned = pointResult.pointsEarned;
     }

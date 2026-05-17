@@ -18,16 +18,29 @@ import examRoutes from './routes/exam.js';
 import matchRoutes from './routes/match.js';
 import achievementRoutes from './routes/achievement.js';
 import uploadRoutes from './routes/upload.js';
+import classRoutes from './routes/class.js';
+import accessRoutes from './routes/access.js';
+import paymentRoutes from './routes/payment.js';
 
 dotenv.config();
 
 const app: express.Application = express();
 
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use('/api/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
+
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.resolve(process.cwd(), 'dist');
+  app.use(express.static(distPath));
+  app.get('*', (req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 app.use('/api/auth', authRoutes);
 app.use('/api/problems', problemRoutes);
 app.use('/api/submissions', submissionRoutes);
@@ -40,6 +53,9 @@ app.use('/api/exams', examRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/achievements', achievementRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/classes', classRoutes);
+app.use('/api/access', accessRoutes);
+app.use('/api/payments', paymentRoutes);
 
 app.use(
   '/api/health',

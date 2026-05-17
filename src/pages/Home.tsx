@@ -213,24 +213,32 @@ export function HomePage() {
               <div className="px-6 py-10 text-center text-slate-500">暂无题目</div>
             ) : (
               recentProblems.map((p) => (
-                <Link
+                <div
                   key={p.id}
-                  to={`/problem/${p.id}`}
                   className="flex items-center justify-between px-6 py-3.5 hover:bg-slate-700/30 transition-colors group"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <Link
+                    to={`/problem/${p.id}/solve`}
+                    className="flex items-center gap-3 min-w-0 flex-1"
+                  >
                     <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium border ${getDifficultyStyle(p.difficulty)}`}>
                       {getDifficultyLabel(p.difficulty)}
                     </span>
                     <span className="text-white font-medium truncate group-hover:text-cyan-400 transition-colors">
                       {p.title}
                     </span>
-                  </div>
+                  </Link>
                   <div className="flex items-center gap-3 shrink-0 ml-4">
                     <span className="text-xs text-slate-500">{getTypeLabel(p.type)}</span>
+                    <Link
+                      to={`/problem/${p.id}`}
+                      className="text-xs text-slate-500 hover:text-cyan-400 transition-colors"
+                    >
+                      详情
+                    </Link>
                     <ChevronRight className="h-4 w-4 text-slate-600 group-hover:text-cyan-400 transition-colors" />
                   </div>
-                </Link>
+                </div>
               ))
             )}
           </div>

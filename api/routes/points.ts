@@ -8,7 +8,10 @@ router.get('/me', authMiddleware, async (req: Request, res: any): Promise<void> 
   try {
     const userId = (req as any).user.userId;
     const pointsData = await pointsService.getUserPoints(userId);
-    const rankData = await pointsService.getUserRank(userId);
+    let rankData = { rank: 0, totalUsers: 0 };
+    try {
+      rankData = await pointsService.getUserRank(userId);
+    } catch {}
 
     res.json({
       success: true,

@@ -29,7 +29,19 @@ export class AuthService {
     });
 
     const token = this.generateToken(user.id, user.role);
-    return { user, token };
+    return {
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        points: user.points,
+        level: user.level,
+        isActive: user.isActive,
+        createdAt: user.createdAt
+      },
+      token
+    };
   }
 
   async login(username: string, password: string) {
@@ -53,7 +65,19 @@ export class AuthService {
     }
 
     const token = this.generateToken(user.id, user.role);
-    return { user, token };
+    return {
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        points: user.points,
+        level: user.level,
+        isActive: user.isActive,
+        createdAt: user.createdAt
+      },
+      token
+    };
   }
 
   async getUserById(id: string) {
@@ -64,8 +88,10 @@ export class AuthService {
         username: true,
         email: true,
         role: true,
-        createdAt: true,
-        isActive: true
+        points: true,
+        level: true,
+        isActive: true,
+        createdAt: true
       }
     });
   }
@@ -77,8 +103,13 @@ export class AuthService {
         username: true,
         email: true,
         role: true,
-        createdAt: true,
-        isActive: true
+        points: true,
+        level: true,
+        isActive: true,
+        accessType: true,
+        accessExpiresAt: true,
+        trialStartsAt: true,
+        createdAt: true
       }
     });
   }

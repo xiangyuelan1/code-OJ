@@ -8,25 +8,36 @@ datasource db {
 }
 
 model User {
-  id          String       @id @default(uuid())
-  username    String       @unique
-  email       String       @unique
-  password    String
-  role        String       @default("STUDENT")
-  avatar      String?
-  points      Int          @default(0)
-  level       Int          @default(1)
-  rank        Int          @default(0)
-  isOnline    Boolean      @default(false)
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  submissions Submission[]
-  sessions    Session[]
-  achievements UserAchievement[]
+  id              String       @id @default(uuid())
+  username        String       @unique
+  email           String       @unique
+  password        String
+  role            String       @default("STUDENT")
+  avatar          String?
+  points          Int          @default(0)
+  level           Int          @default(1)
+  rank            Int          @default(0)
+  isOnline        Boolean      @default(false)
+  isActive        Boolean      @default(true)
+  trialStartsAt   DateTime?
+  accessExpiresAt DateTime?
+  accessType      String       @default("TRIAL")
+  paymentId       String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  submissions     Submission[]
+  sessions        Session[]
+  achievements    UserAchievement[]
   matchParticipations MatchParticipant[]
-  examAttempts   ExamAttempt[]
-  pointLogs     PointLog[]
+  examAttempts    ExamAttempt[]
+  pointLogs       PointLog[]
+  classes         Class[]           @relation("UserClasses")
+  classMemberships ClassMember[]
+  payments        Payment[]
+  joinRequests    ClassJoinRequest[]
+  createdHomework Homework[]        @relation("UserCreatedHomework")
+  homeworkSubmissions HomeworkSubmission[]
+  aiUsageLogs    AIUsageLog[]
 }
 
 model Session {
@@ -158,11 +169,13 @@ model Exam {
   endTime           DateTime?
   enableProctoring  Boolean  @default(false)
   createdBy         String
+  classId           String?
   isActive         Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   questions         ExamQuestion[]
   attempts         ExamAttempt[]
+  class            Class?   @relation(fields: [classId], references: [id])
 }
 
 model ExamQuestion {
@@ -246,4 +259,136 @@ model AIConfig {
   baseUrl   String?
   model     String   @default("gpt-3.5-turbo")
   updatedAt DateTime @updatedAt
+}
+
+model Class {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  grade       String?
+  classCode   String   @default("")
+  createdBy   String
+  creator     User     @relation("UserClasses", fields: [createdBy], references: [id])
+  members      ClassMember[]
+  joinRequests ClassJoinRequest[]
+  homeworks    Homework[]
+  exams        Exam[]
+  initiatorBattles  ClassBattle[] @relation("InitiatorBattles")
+  challengerBattles ClassBattle[] @relation("ChallengerBattles")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("classes")
+}
+
+model ClassMember {
+  id        String   @id @default(uuid())
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  role      String   @default("STUDENT")
+  joinedAt  DateTime @default(now())
+  
+  @@unique([classId, userId])
+  @@map("class_members")
+}
+
+model SystemConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model Payment {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  amount      Float
+  method      String
+  status      String    @default("PENDING")
+  proof       String?
+  qrCodeUrl   String?
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ClassJoinRequest {
+  id         String   @id @default(uuid())
+  classId    String
+  class      Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  status     String   @default("PENDING")
+  message    String?
+  reviewedBy String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([classId, userId])
+}
+
+model Homework {
+  id          String   @id @default(uuid())
+  classId     String
+  class       Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  problemIds  String   @default("[]")
+  dueDate     DateTime?
+  createdBy   String
+  creator     User     @relation("UserCreatedHomework", fields: [createdBy], references: [id])
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  submissions HomeworkSubmission[]
+}
+
+model HomeworkSubmission {
+  id          String    @id @default(uuid())
+  homeworkId  String
+  homework    Homework  @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  problemId   String
+  status      String    @default("PENDING")
+  score       Int?
+  submittedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([homeworkId, userId, problemId])
+}
+
+model ClassBattle {
+  id                String   @id @default(uuid())
+  initiatorClassId  String
+  initiatorClass    Class    @relation("InitiatorBattles", fields: [initiatorClassId], references: [id])
+  challengerClassId String
+  challengerClass   Class    @relation("ChallengerBattles", fields: [challengerClassId], references: [id])
+  status            String   @default("PENDING")
+  problemIds        String   @default("[]")
+  initiatorScore    Int      @default(0)
+  challengerScore   Int      @default(0)
+  winnerId          String?
+  startTime         DateTime?
+  endTime           DateTime?
+  createdBy         String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model AIUsageLog {
+  id                String   @id @default(uuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  feature           String
+  model             String?
+  promptTokens      Int      @default(0)
+  completionTokens  Int      @default(0)
+  totalTokens       Int      @default(0)
+  cost              Float    @default(0)
+  createdAt         DateTime @default(now())
 }

@@ -8,19 +8,13 @@ import { useState, useEffect } from 'react';
 export function Navbar() {
   const { user, isAuthenticated, logout } = useAuthStore();
   const { points, levelName, rank, fetchMyPoints } = usePointsStore();
-  const { onlineCount, connect, disconnect, isConnected } = useSocketStore();
+  const { onlineCount, disconnect } = useSocketStore();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) {
       fetchMyPoints();
-      const token = localStorage.getItem('token');
-      if (token && !isConnected) {
-        connect(token);
-      }
-    } else {
-      disconnect();
     }
   }, [isAuthenticated]);
 
@@ -58,7 +52,7 @@ export function Navbar() {
                 考试
               </Link>
             )}
-            {isAuthenticated && user?.role === 'STUDENT' && (
+            {isAuthenticated && (user?.role === 'STUDENT' || user?.role === 'TEACHER') && (
               <Link to="/submissions" className="hover:text-cyan-400 transition-colors">
                 我的提交
               </Link>
@@ -66,6 +60,11 @@ export function Navbar() {
             {user?.role === 'ADMIN' && (
               <Link to="/admin" className="hover:text-cyan-400 transition-colors">
                 管理后台
+              </Link>
+            )}
+            {isAuthenticated && user?.role === 'TEACHER' && (
+              <Link to="/teacher/classes" className="hover:text-cyan-400 transition-colors">
+                班级管理
               </Link>
             )}
 
@@ -149,7 +148,7 @@ export function Navbar() {
             </Link>
             {isAuthenticated ? (
               <>
-                {user?.role === 'STUDENT' && (
+                {(user?.role === 'STUDENT' || user?.role === 'TEACHER') && (
                   <Link
                     to="/submissions"
                     className="block hover:text-cyan-400"
@@ -165,6 +164,15 @@ export function Navbar() {
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     管理后台
+                  </Link>
+                )}
+                {user?.role === 'TEACHER' && (
+                  <Link
+                    to="/teacher/classes"
+                    className="block hover:text-cyan-400"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    班级管理
                   </Link>
                 )}
                 <div className="flex items-center space-x-4 px-3 py-2 bg-slate-800 rounded-lg">

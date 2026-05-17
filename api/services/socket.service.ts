@@ -27,7 +27,13 @@ const waitingQueues = new Map<string, WaitingPlayer[]>();
 export function setupSocketIO(httpServer: any) {
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: process.env.FRONTEND_URL || 'http://localhost:5175',  
+      origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+        if (!origin || origin.startsWith('http://localhost')) {
+          callback(null, true);
+        } else {
+          callback(null, true);
+        }
+      },
       credentials: true
     }
   });
@@ -176,10 +182,11 @@ export function setupSocketIO(httpServer: any) {
 }
 
 function getOnlineUsersList(): OnlineUser[] {
+  const seen = new Set<string>();
   const users: OnlineUser[] = [];
-  for (const socketId of socketToUser.keys()) {
-    const user = socketToUser.get(socketId);
-    if (user) {
+  for (const user of socketToUser.values()) {
+    if (!seen.has(user.userId)) {
+      seen.add(user.userId);
       users.push(user);
     }
   }

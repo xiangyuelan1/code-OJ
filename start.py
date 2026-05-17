@@ -99,9 +99,22 @@ def init_database():
 
 
 def seed_data():
-    log("STEP", "初始化种子数据...")
-    run("npx tsx api/scripts/seed.ts", check=False, quiet=True)
-    log("OK", "种子数据已初始化")
+    log("STEP", "检查种子数据...")
+    result = subprocess.run(
+        'npx tsx -e "const{PrismaClient}=require(\'@prisma/client\');const p=new PrismaClient();p.user.count().then(c=>{console.log(c);p.$disconnect()}).catch(()=>{console.log(0);p.$disconnect()})"',
+        shell=True, cwd=str(PROJECT_DIR), capture_output=True, text=True, encoding="utf-8"
+    )
+    user_count = 0
+    try:
+        user_count = int(result.stdout.strip().split('\n')[-1])
+    except:
+        pass
+    if user_count > 0:
+        log("OK", f"数据库已有 {user_count} 个用户，跳过种子数据填充")
+    else:
+        log("STEP", "数据库为空，初始化种子数据...")
+        run("npx tsx api/scripts/seed.ts", check=False, quiet=True)
+        log("OK", "种子数据已初始化")
 
 
 def wait_for_backend(timeout: int = 30) -> bool:

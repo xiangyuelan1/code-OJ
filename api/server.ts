@@ -1,55 +1,51 @@
-/**
- * local server entry file, for local development
- */
+import express from 'express';
+import { createServer } from 'http';
+import dotenv from 'dotenv';
 import app from './app.js';
 import prisma from './lib/prisma.js';
+import { setupSocketIO } from './services/socket.service.js';
 
-/**
- * initialize database connection
- */
+dotenv.config();
+
+const PORT = parseInt(process.env.PORT || '5000', 10);
+const HOST = process.env.HOST || '0.0.0.0';
+
 async function initDatabase() {
   try {
     await prisma.$connect();
-    console.log('✅ Database connected');
+    console.log('Database connected');
   } catch (error) {
-    console.error('❌ Database connection failed:', error);
+    console.error('Database connection failed:', error);
     process.exit(1);
   }
 }
 
-/**
- * start server with port
- */
-const PORT = parseInt(process.env.PORT || '3005', 10);
-const HOST = '0.0.0.0'; // 允许内网访问
-
 async function startServer() {
   await initDatabase();
 
-  const server = app.listen(PORT, HOST, () => {
-    console.log(`✅ Server ready on http://${HOST}:${PORT}`);
-    console.log(`📡 LAN访问地址: http://你的IP地址:${PORT}`);
+  const httpServer = createServer(app);
+  setupSocketIO(httpServer);
+
+  httpServer.listen(PORT, HOST, () => {
+    console.log(`OJ System running on http://${HOST}:${PORT}`);
+    console.log(`Mode: ${process.env.NODE_ENV || 'development'}`);
   });
 
   process.on('SIGTERM', () => {
-    console.log('SIGTERM signal received');
-    server.close(async () => {
+    console.log('SIGTERM received, shutting down...');
+    httpServer.close(async () => {
       await prisma.$disconnect();
-      console.log('Server closed');
       process.exit(0);
     });
   });
 
   process.on('SIGINT', () => {
-    console.log('SIGINT signal received');
-    server.close(async () => {
+    console.log('SIGINT received, shutting down...');
+    httpServer.close(async () => {
       await prisma.$disconnect();
-      console.log('Server closed');
       process.exit(0);
     });
   });
 }
 
 startServer();
-
-export default app;
