@@ -10,7 +10,7 @@ set -e
 
 APP_NAME="oj-system"
 APP_DIR="/opt/oj-system"
-REPO_URL=""
+REPO_URL="https://github.com/xiangyuelan1/code-OJ.git"
 BRANCH="main"
 NODE_VERSION="20"
 SERVICE_NAME="oj-system"
