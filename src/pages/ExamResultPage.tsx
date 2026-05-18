@@ -437,6 +437,36 @@ export function ExamResultPage() {
           </div>
         )}
 
+        {/* 题号导航 */}
+        <div className="mb-6 bg-slate-800 rounded-xl p-4 shadow-xl">
+          <h2 className="text-sm font-semibold text-slate-400 mb-3">题号导航</h2>
+          <div className="flex flex-wrap gap-2">
+            {questions.map((q: any, idx: number) => {
+              const qr = questionResults.find((r: any) => r.problemId === q.problemId);
+              const isCorrect = qr?.isCorrect;
+              return (
+                <button
+                  key={q.id}
+                  onClick={() => {
+                    const el = document.getElementById(`question-${idx}`);
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }}
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold transition-colors ${
+                    isCorrect
+                      ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
+                      : 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30'
+                  }`}
+                  title={q.problem?.title || `第 ${idx + 1} 题`}
+                >
+                  {idx + 1}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* 答题详情 */}
         <h2 className="text-xl font-semibold text-white mb-4">答题详情</h2>
         <div className="space-y-4">
@@ -449,6 +479,7 @@ export function ExamResultPage() {
             return (
               <div
                 key={q.id}
+                id={`question-${idx}`}
                 className={`bg-slate-800 rounded-lg p-6 border-l-4 ${
                   isCorrect ? 'border-l-green-500' : 'border-l-red-500'
                 }`}

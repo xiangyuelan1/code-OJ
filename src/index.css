@@ -62,3 +62,25 @@
   padding: 0.5rem 1rem;
   border-radius: 0 0.375rem 0.375rem 0;
 }
+
+.prose-invert [style*="color: black"],
+.prose-invert [style*="color:black"],
+.prose-invert [style*="color: #000"],
+.prose-invert [style*="color:#000"],
+.prose-invert [style*="color: #000000"],
+.prose-invert [style*="color:#000000"],
+.prose-invert font[color="black"] {
+  color: theme('colors.slate.300') !important;
+}
+
+.prose-invert [style*="color: rgb(0"],
+.prose-invert [style*="color:rgb(0"] {
+  color: theme('colors.slate.300') !important;
+}
+
+.prose-invert p,
+.prose-invert li,
+.prose-invert td,
+.prose-invert span:not([class]) {
+  color: theme('colors.slate.300');
+}

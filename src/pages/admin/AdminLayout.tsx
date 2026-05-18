@@ -43,7 +43,7 @@ export function AdminLayout() {
 
   return (
     <div className="flex min-h-screen bg-slate-900">
-      <aside className="w-64 bg-slate-800 border-r border-slate-700">
+      <aside className="w-64 bg-slate-800 border-r border-slate-700 flex flex-col">
         <div className="p-6">
           <Link to="/" className="flex items-center space-x-2">
             <BookOpen className="h-8 w-8 text-cyan-400" />
@@ -51,7 +51,7 @@ export function AdminLayout() {
           </Link>
         </div>
 
-        <nav className="mt-6 px-4">
+        <nav className="flex-1 mt-6 px-4 overflow-y-auto pb-4">
           {menuItems.map((item) => (
             <Link
               key={item.path}
@@ -64,7 +64,7 @@ export function AdminLayout() {
           ))}
         </nav>
 
-        <div className="absolute bottom-0 w-64 p-4 border-t border-slate-700">
+        <div className="p-4 border-t border-slate-700">
           <div className="flex items-center justify-between">
             <div className="text-sm text-slate-400">
               <div className="font-medium text-white">{user?.username}</div>

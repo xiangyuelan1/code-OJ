@@ -361,11 +361,11 @@ export function SolvePage() {
   return (
     <div className="max-w-7xl mx-auto">
       <button
-        onClick={() => navigate(`/problem/${id}`)}
+        onClick={() => navigate(-1)}
         className="flex items-center text-slate-400 hover:text-white mb-6 transition-colors"
       >
         <ArrowLeft className="h-5 w-5 mr-2" />
-        返回题目
+        返回
       </button>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -621,9 +621,12 @@ export function SolvePage() {
               {result.status === 'ACCEPTED' && (
                 <div className="mb-3 p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
                   <p className="text-cyan-300 text-sm mb-2">🎉 恭喜通过！现在可以查看题解了</p>
-                  <Link to={`/problem/${id}`} className="text-cyan-400 hover:text-cyan-300 text-sm underline">
+                  <button
+                    onClick={() => navigate(-1)}
+                    className="text-cyan-400 hover:text-cyan-300 text-sm underline"
+                  >
                     返回题目详情查看题解 →
-                  </Link>
+                  </button>
                 </div>
               )}
               {result.result && (

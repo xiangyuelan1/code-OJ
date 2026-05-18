@@ -444,6 +444,35 @@ export function AdminUsersPage() {
                   {/* 访问权限标签页 */}
                   {detailTab === 'access' && accessData && (
                     <div className="space-y-6">
+                      {/* 重置密码 */}
+                      <div className="bg-slate-700/50 rounded-lg p-4">
+                        <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                          <Key className="h-4 w-4" />
+                          重置密码
+                        </h3>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="text"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            className="flex-1 px-3 py-2 bg-slate-600 border border-slate-500 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-400"
+                            placeholder="输入新密码（至少6位）"
+                          />
+                          <button
+                            onClick={() => {
+                              if (detailUser && newPassword.length >= 6) {
+                                handleResetPassword(detailUser);
+                              }
+                            }}
+                            disabled={!newPassword || newPassword.length < 6}
+                            className="px-4 py-2 bg-red-500/20 text-red-400 text-sm rounded-lg hover:bg-red-500/30 disabled:opacity-50 transition-colors"
+                          >
+                            重置密码
+                          </button>
+                        </div>
+                        <p className="text-slate-500 text-xs mt-2">密码在数据库中加密存储，无法查看原始密码，只能重置为新密码</p>
+                      </div>
+
                       {/* 当前访问状态 */}
                       <div className="bg-slate-700/50 rounded-lg p-4">
                         <h3 className="text-sm font-semibold text-slate-300 mb-3">当前访问状态</h3>

@@ -32,6 +32,7 @@ export interface ProblemInput {
   choices?: Choice[];
   correctAnswer?: string;
   fillBlanks?: string[];
+  sourceFile?: string;
 }
 
 export class ProblemService {
@@ -47,7 +48,8 @@ export class ProblemService {
         timeLimit: data.timeLimit || 2000,
         memoryLimit: data.memoryLimit || 256,
         choices: data.choices ? JSON.stringify(data.choices) : null,
-        fillBlanks: data.fillBlanks ? JSON.stringify(data.fillBlanks) : null
+        fillBlanks: data.fillBlanks ? JSON.stringify(data.fillBlanks) : null,
+        sourceFile: data.sourceFile || null
       }
     });
   }
@@ -135,6 +137,7 @@ export class ProblemService {
     if (data.memoryLimit) updateData.memoryLimit = data.memoryLimit;
     if (data.choices) updateData.choices = JSON.stringify(data.choices);
     if (data.fillBlanks) updateData.fillBlanks = JSON.stringify(data.fillBlanks);
+    if (data.sourceFile !== undefined) updateData.sourceFile = data.sourceFile;
 
     return await prisma.problem.update({
       where: { id },

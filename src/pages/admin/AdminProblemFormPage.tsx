@@ -124,7 +124,7 @@ export function AdminProblemFormPage() {
     };
 
     if (type === 'PROGRAMMING') {
-      data.testCases = testCases.filter(tc => tc.input && tc.output);
+      data.testCases = testCases.filter(tc => tc.output);
     } else if (type === 'CHOICE') {
       data.choices = choices.filter(c => c.text);
       data.correctAnswer = correctAnswer;

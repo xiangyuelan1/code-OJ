@@ -15,6 +15,7 @@ import {
   Plus,
   FileUp,
   ClipboardPaste,
+  FolderTree,
 } from 'lucide-react';
 
 interface ParsedProblem {
@@ -27,6 +28,9 @@ interface ParsedProblem {
   correctAnswer?: string;
   fillBlanks?: string[];
   tags?: string[];
+  sourceFile?: string;
+  timeLimit?: number;
+  memoryLimit?: number;
 }
 
 interface ImportResult {
@@ -63,7 +67,9 @@ const TYPE_COLORS: Record<string, string> = {
 export function AdminBatchImportPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
+  const [importMode, setImportMode] = useState<'ai' | 'file'>('ai');
   const [files, setFiles] = useState<File[]>([]);
   const [pasteText, setPasteText] = useState('');
   const [problems, setProblems] = useState<ParsedProblem[]>([]);
@@ -88,16 +94,20 @@ export function AdminBatchImportPage() {
     e.preventDefault();
     setDragOver(false);
     const droppedFiles = Array.from(e.dataTransfer.files).filter(
-      (f) => f.name.endsWith('.txt') || f.name.endsWith('.json')
+      (f) => importMode === 'ai'
+        ? (f.name.endsWith('.txt') || f.name.endsWith('.json'))
+        : (f.name.endsWith('.json') || f.name.endsWith('.in') || f.name.endsWith('.out'))
     );
     if (droppedFiles.length > 0) {
       setFiles((prev) => [...prev, ...droppedFiles]);
     }
-  }, []);
+  }, [importMode]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files || []).filter(
-      (f) => f.name.endsWith('.txt') || f.name.endsWith('.json')
+      (f) => importMode === 'ai'
+        ? (f.name.endsWith('.txt') || f.name.endsWith('.json'))
+        : (f.name.endsWith('.json') || f.name.endsWith('.in') || f.name.endsWith('.out'))
     );
     if (selected.length > 0) {
       setFiles((prev) => [...prev, ...selected]);
@@ -151,6 +161,145 @@ export function AdminBatchImportPage() {
       setProblems(allParsed);
     } catch (error: any) {
       alert(error.error?.message || '解析失败，请检查文件格式或网络连接');
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const parseJsonProblem = (data: any, fileName: string): ParsedProblem => {
+    const prob = data.problem || data;
+    const type = prob.type === 1 || prob.type === 'PROGRAMMING' ? 'PROGRAMMING'
+      : prob.type === 2 || prob.type === 'CHOICE' ? 'CHOICE'
+      : 'PROGRAMMING';
+    const difficulty = prob.difficulty === 1 || prob.difficulty === 'EASY' ? 'EASY'
+      : prob.difficulty === 2 || prob.difficulty === 'MEDIUM' ? 'MEDIUM'
+      : prob.difficulty === 3 || prob.difficulty === 'HARD' ? 'HARD'
+      : 'MEDIUM';
+
+    const testCases: { input: string; output: string; isSample: boolean }[] = [];
+    if (data.samples && Array.isArray(data.samples)) {
+      for (const sample of data.samples) {
+        testCases.push({
+          input: sample.input || '',
+          output: sample.output || '',
+          isSample: true
+        });
+      }
+    }
+    if (prob.examples && Array.isArray(prob.examples)) {
+      for (const ex of prob.examples) {
+        testCases.push({
+          input: ex.input || '',
+          output: ex.output || '',
+          isSample: true
+        });
+      }
+    }
+
+    const tags: string[] = [];
+    if (data.tags && Array.isArray(data.tags)) {
+      tags.push(...data.tags);
+    }
+    if (prob.tags && Array.isArray(prob.tags)) {
+      tags.push(...prob.tags);
+    }
+    if (prob.source) {
+      tags.push(prob.source);
+    }
+
+    let description = prob.description || prob.input || '';
+    if (prob.input) {
+      description += `\n\n**输入格式**\n${prob.input}`;
+    }
+    if (prob.output) {
+      description += `\n\n**输出格式**\n${prob.output}`;
+    }
+    if (prob.hint) {
+      description += `\n\n**提示**\n${prob.hint}`;
+    }
+
+    return {
+      title: prob.title || fileName.replace(/\.\w+$/, ''),
+      type,
+      difficulty,
+      description,
+      testCases: testCases.length > 0 ? testCases : undefined,
+      tags: tags.length > 0 ? tags : undefined,
+      sourceFile: fileName,
+      timeLimit: prob.timeLimit || undefined,
+      memoryLimit: prob.memoryLimit || undefined,
+    };
+  };
+
+  const handleFileParse = async () => {
+    if (files.length === 0) return;
+    setParsing(true);
+    setImportResult(null);
+
+    try {
+      const allParsed: ParsedProblem[] = [];
+      const folderDataMap: Record<string, { inFiles: File[]; outFiles: File[]; jsonFile: File | null }> = {};
+
+      for (const file of files) {
+        const name = file.name;
+        if (name.endsWith('.json')) {
+          const text = await file.text();
+          try {
+            const data = JSON.parse(text);
+            if (Array.isArray(data)) {
+              for (const item of data) {
+                allParsed.push(parseJsonProblem(item, name));
+              }
+            } else {
+              allParsed.push(parseJsonProblem(data, name));
+            }
+          } catch {
+            alert(`文件 ${name} JSON 解析失败，请检查格式`);
+          }
+        } else if (name.endsWith('.in')) {
+          const folderName = file.webkitRelativePath ? file.webkitRelativePath.split('/')[0] : '';
+          if (folderName) {
+            if (!folderDataMap[folderName]) {
+              folderDataMap[folderName] = { inFiles: [], outFiles: [], jsonFile: null };
+            }
+            folderDataMap[folderName].inFiles.push(file);
+          }
+        } else if (name.endsWith('.out')) {
+          const folderName = file.webkitRelativePath ? file.webkitRelativePath.split('/')[0] : '';
+          if (folderName) {
+            if (!folderDataMap[folderName]) {
+              folderDataMap[folderName] = { inFiles: [], outFiles: [], jsonFile: null };
+            }
+            folderDataMap[folderName].outFiles.push(file);
+          }
+        }
+      }
+
+      for (const [folderName, folderData] of Object.entries(folderDataMap)) {
+        const testCases: { input: string; output: string; isSample: boolean }[] = [];
+        const inFiles = folderData.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        const outFiles = folderData.outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+        const maxLen = Math.max(inFiles.length, outFiles.length);
+        for (let i = 0; i < maxLen; i++) {
+          const input = i < inFiles.length ? await inFiles[i].text() : '';
+          const output = i < outFiles.length ? await outFiles[i].text() : '';
+          testCases.push({ input, output, isSample: i === 0 });
+        }
+
+        allParsed.push({
+          title: folderName,
+          type: 'PROGRAMMING',
+          difficulty: 'MEDIUM',
+          description: `题目来源: ${folderName}`,
+          testCases,
+          sourceFile: folderName,
+        });
+      }
+
+      setProblems(allParsed);
+    } catch (error: any) {
+      alert('文件解析失败: ' + (error.message || '未知错误'));
     } finally {
       setParsing(false);
     }
@@ -300,17 +449,39 @@ export function AdminBatchImportPage() {
         <div>
           <h1 className="text-3xl font-bold text-white">批量导入题目</h1>
           <p className="text-slate-400 mt-2">
-            上传 TXT/JSON 文件或直接粘贴文本，AI 自动解析为结构化题目后一键导入
+            {importMode === 'ai'
+              ? '上传 TXT/JSON 文件或直接粘贴文本，AI 自动解析为结构化题目后一键导入'
+              : '上传 JSON 题目文件或包含 .in/.out 测试数据点的文件夹，直接解析导入'}
           </p>
         </div>
-        {problems.length > 0 && (
-          <button
-            onClick={resetAll}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-colors"
-          >
-            重新开始
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <div className="flex bg-slate-700 rounded-lg p-1">
+            <button
+              onClick={() => setImportMode('ai')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                importMode === 'ai' ? 'bg-cyan-500 text-white' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              AI解析导入
+            </button>
+            <button
+              onClick={() => setImportMode('file')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                importMode === 'file' ? 'bg-cyan-500 text-white' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              文件直接导入
+            </button>
+          </div>
+          {problems.length > 0 && (
+            <button
+              onClick={resetAll}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-colors"
+            >
+              重新开始
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-6">
@@ -334,23 +505,54 @@ export function AdminBatchImportPage() {
                   拖拽文件到此处上传
                 </h3>
                 <p className="text-slate-400 mb-4">
-                  支持 .txt 和 .json 格式，可同时上传多个文件
+                  {importMode === 'ai'
+                    ? '支持 .txt 和 .json 格式，可同时上传多个文件'
+                    : '支持 .json 题目文件和包含 .in/.out 文件的文件夹'}
                 </p>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center px-6 py-3 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors"
-                >
-                  <Upload className="h-5 w-5 mr-2" />
-                  选择文件
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center px-6 py-3 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors"
+                  >
+                    <Upload className="h-5 w-5 mr-2" />
+                    选择文件
+                  </button>
+                  {importMode === 'file' && (
+                    <button
+                      onClick={() => folderInputRef.current?.click()}
+                      className="flex items-center px-6 py-3 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors"
+                    >
+                      <FolderTree className="h-5 w-5 mr-2" />
+                      选择文件夹
+                    </button>
+                  )}
+                </div>
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".txt,.json"
+                  accept={importMode === 'ai' ? '.txt,.json' : '.json,.in,.out'}
                   multiple
                   onChange={handleFileSelect}
                   className="hidden"
                 />
+                {importMode === 'file' && (
+                  <input
+                    ref={folderInputRef}
+                    type="file"
+                    multiple
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.files || []);
+                      if (selected.length > 0) {
+                        setFiles((prev) => [...prev, ...selected]);
+                      }
+                      if (folderInputRef.current) {
+                        folderInputRef.current.value = '';
+                      }
+                    }}
+                    className="hidden"
+                    {...({ webkitdirectory: '', directory: '' } as any)}
+                  />
+                )}
               </div>
             </div>
 
@@ -384,35 +586,37 @@ export function AdminBatchImportPage() {
               </div>
             )}
 
-            <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
-              <div className="flex items-center mb-4">
-                <ClipboardPaste className="h-5 w-5 text-cyan-400 mr-2" />
-                <h3 className="text-lg font-semibold text-white">粘贴文本内容</h3>
+            {importMode === 'ai' && (
+              <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+                <div className="flex items-center mb-4">
+                  <ClipboardPaste className="h-5 w-5 text-cyan-400 mr-2" />
+                  <h3 className="text-lg font-semibold text-white">粘贴文本内容</h3>
+                </div>
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  rows={8}
+                  className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 font-mono text-sm"
+                  placeholder="将题目文本直接粘贴到此处，支持多道题目的文本内容..."
+                />
               </div>
-              <textarea
-                value={pasteText}
-                onChange={(e) => setPasteText(e.target.value)}
-                rows={8}
-                className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 font-mono text-sm"
-                placeholder="将题目文本直接粘贴到此处，支持多道题目的文本内容..."
-              />
-            </div>
+            )}
 
             <div className="flex justify-center">
               <button
-                onClick={handleParse}
-                disabled={parsing || (files.length === 0 && !pasteText.trim())}
+                onClick={importMode === 'ai' ? handleParse : handleFileParse}
+                disabled={parsing || (files.length === 0 && (importMode === 'file' || !pasteText.trim()))}
                 className="flex items-center px-8 py-3 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {parsing ? (
                   <>
                     <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                    AI 解析中...
+                    {importMode === 'ai' ? 'AI 解析中...' : '解析中...'}
                   </>
                 ) : (
                   <>
                     <Download className="h-5 w-5 mr-2" />
-                    开始解析
+                    {importMode === 'ai' ? '开始解析' : '解析文件'}
                   </>
                 )}
               </button>

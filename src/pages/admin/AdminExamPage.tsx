@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { examAPI, problemsAPI } from '../../services/api';
-import { Plus, Trash2, Clock, FileText, Users, ArrowLeft, Save, Eye, ChevronDown, ChevronUp, Trophy, Code, CheckCircle, XCircle, User } from 'lucide-react';
+import { examAPI, problemsAPI, knowledgeTreeAPI } from '../../services/api';
+import { Plus, Trash2, Clock, FileText, Users, ArrowLeft, Save, Eye, ChevronDown, ChevronUp, Trophy, Code, CheckCircle, XCircle, User, FolderTree, Filter } from 'lucide-react';
 
 export function AdminExamPage() {
   const navigate = useNavigate();
@@ -24,6 +24,10 @@ export function AdminExamPage() {
     enableProctoring: false,
     problemIds: [] as string[]
   });
+  const [knowledgeTree, setKnowledgeTree] = useState<any[]>([]);
+  const [selectedKnowledgeNodeId, setSelectedKnowledgeNodeId] = useState<string>('');
+  const [problemTypeFilter, setProblemTypeFilter] = useState<string>('');
+  const [difficultyFilter, setDifficultyFilter] = useState<string>('');
 
   useEffect(() => {
     fetchExams();
@@ -59,6 +63,38 @@ export function AdminExamPage() {
       console.error('获取题目列表失败', error);
     }
   };
+
+  const fetchKnowledgeTree = async () => {
+    try {
+      const res = await knowledgeTreeAPI.getTree();
+      if (res.success) {
+        setKnowledgeTree(res.data || []);
+      }
+    } catch (error) {
+      console.error('获取知识树失败', error);
+    }
+  };
+
+  const flattenTree = (nodes: any[]): any[] => {
+    const result: any[] = [];
+    for (const node of nodes) {
+      result.push(node);
+      if (node.children && node.children.length > 0) {
+        result.push(...flattenTree(node.children));
+      }
+    }
+    return result;
+  };
+
+  const filteredProblems = problems.filter((p: any) => {
+    if (problemTypeFilter && p.type !== problemTypeFilter) return false;
+    if (difficultyFilter && p.difficulty !== difficultyFilter) return false;
+    if (selectedKnowledgeNodeId) {
+      const nodeId = p.knowledgeTreeId || p.knowledgeTree?.id;
+      if (nodeId !== selectedKnowledgeNodeId) return false;
+    }
+    return true;
+  });
 
   const handleViewAttempts = async (examId: string) => {
     setViewingAttempts(examId);
@@ -268,21 +304,83 @@ export function AdminExamPage() {
           <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold text-white">选择题目</h2>
-              <span className="text-slate-400">已选 {form.problemIds.length} 题</span>
+              <span className="text-slate-400">已选 {form.problemIds.length} 题 / 筛选后 {filteredProblems.length} 题</span>
             </div>
 
             {problems.length === 0 && (
-              <button
-                onClick={fetchProblems}
-                className="px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors"
-              >
-                加载题目列表
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={fetchProblems}
+                  className="px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors"
+                >
+                  加载题目列表
+                </button>
+                <button
+                  onClick={fetchKnowledgeTree}
+                  className="px-4 py-2 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors"
+                >
+                  加载知识树
+                </button>
+              </div>
             )}
 
             {problems.length > 0 && (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {problems.map((problem) => (
+              <>
+                <div className="flex flex-wrap gap-3 mb-4 p-3 bg-slate-700/50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-slate-400" />
+                    <span className="text-sm text-slate-400">筛选：</span>
+                  </div>
+                  <select
+                    value={problemTypeFilter}
+                    onChange={(e) => setProblemTypeFilter(e.target.value)}
+                    className="px-3 py-1.5 bg-slate-600 border border-slate-500 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  >
+                    <option value="">全部类型</option>
+                    <option value="PROGRAMMING">编程题</option>
+                    <option value="CHOICE">选择题</option>
+                    <option value="FILL_BLANK">填空题</option>
+                  </select>
+                  <select
+                    value={difficultyFilter}
+                    onChange={(e) => setDifficultyFilter(e.target.value)}
+                    className="px-3 py-1.5 bg-slate-600 border border-slate-500 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  >
+                    <option value="">全部难度</option>
+                    <option value="EASY">简单</option>
+                    <option value="MEDIUM">中等</option>
+                    <option value="HARD">困难</option>
+                  </select>
+                  {knowledgeTree.length > 0 && (
+                    <select
+                      value={selectedKnowledgeNodeId}
+                      onChange={(e) => setSelectedKnowledgeNodeId(e.target.value)}
+                      className="px-3 py-1.5 bg-slate-600 border border-slate-500 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 max-w-[200px]"
+                    >
+                      <option value="">全部知识节点</option>
+                      {flattenTree(knowledgeTree).map((node: any) => (
+                        <option key={node.id} value={node.id}>
+                          {'  '.repeat(node.level - 1)}{node.name} ({node.problemCount || 0})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {(problemTypeFilter || difficultyFilter || selectedKnowledgeNodeId) && (
+                    <button
+                      onClick={() => {
+                        setProblemTypeFilter('');
+                        setDifficultyFilter('');
+                        setSelectedKnowledgeNodeId('');
+                      }}
+                      className="text-xs text-slate-400 hover:text-white transition-colors"
+                    >
+                      清除筛选
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {filteredProblems.map((problem) => (
                   <label
                     key={problem.id}
                     className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
@@ -313,6 +411,7 @@ export function AdminExamPage() {
                   </label>
                 ))}
               </div>
+              </>
             )}
           </div>
 

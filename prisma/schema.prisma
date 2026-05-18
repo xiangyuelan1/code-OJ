@@ -81,6 +81,7 @@ model Problem {
   correctAnswer         String?
   solution              String?
   knowledgeTreeId       String?
+  sourceFile            String?
   knowledgeTree         KnowledgeTree? @relation(fields: [knowledgeTreeId], references: [id])
   aiGeneratedTestCases  Boolean      @default(false)
   aiGeneratedSolution   Boolean      @default(false)
