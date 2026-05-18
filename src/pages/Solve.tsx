@@ -478,7 +478,7 @@ export function SolvePage() {
         {/* 右侧：代码编辑器 / 提交 / 结果 */}
         <div className="space-y-6">
           {problem.type === 'PROGRAMMING' && (
-            <div className="bg-slate-800 rounded-xl p-6 shadow-xl flex flex-col">
+            <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <h3 className="text-lg font-semibold text-white">代码编辑器</h3>
@@ -561,7 +561,7 @@ export function SolvePage() {
                 </div>
               )}
 
-              <div className="flex-1 min-h-[400px]">
+              <div style={{ height: '500px' }}>
                 <Editor
                   height="100%"
                   language={language === 'python' ? 'python' : language === 'cpp' || language === 'c' ? 'cpp' : 'javascript'}

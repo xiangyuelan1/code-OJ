@@ -126,6 +126,9 @@ export class ExamService {
     return await prisma.exam.findMany({
       where: createdBy ? { createdBy } : {},
       include: {
+        creator: {
+          select: { id: true, username: true }
+        },
         _count: {
           select: {
             attempts: true,

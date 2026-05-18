@@ -491,9 +491,9 @@ export function MatchBattlePage() {
                     <option value="c">C</option>
                   </select>
                 </div>
-                <div className="min-h-[300px] border border-slate-600 rounded-lg overflow-hidden">
+                <div style={{ height: '400px' }}>
                   <Editor
-                    height="300px"
+                    height="100%"
                     language={
                       programmingLanguage === 'python' ? 'python'
                       : programmingLanguage === 'cpp' || programmingLanguage === 'c' ? 'cpp'

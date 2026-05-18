@@ -39,6 +39,7 @@ model User {
   createdHomework Homework[]        @relation("UserCreatedHomework")
   homeworkSubmissions HomeworkSubmission[]
   aiUsageLogs    AIUsageLog[]
+  createdExams   Exam[]             @relation("UserExams")
 }
 
 model Session {
@@ -170,6 +171,7 @@ model Exam {
   endTime           DateTime?
   enableProctoring  Boolean  @default(false)
   createdBy         String
+  creator           User     @relation("UserExams", fields: [createdBy], references: [id])
   classId           String?
   isActive         Boolean  @default(true)
   createdAt         DateTime @default(now())

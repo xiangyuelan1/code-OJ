@@ -33,7 +33,12 @@ router.get('/admin/all', authMiddleware, roleMiddleware('ADMIN'), async (req: Re
       prisma.submission.count({ where })
     ]);
 
-    res.json({ success: true, data: { submissions, total, page, pageSize } });
+    const parsedSubmissions = submissions.map(s => ({
+      ...s,
+      result: s.result ? (() => { try { return JSON.parse(s.result); } catch { return s.result; } })() : null
+    }));
+
+    res.json({ success: true, data: { submissions: parsedSubmissions, total, page, pageSize } });
   } catch (error: any) {
     res.status(500).json({ success: false, error: { message: error.message } });
   }
@@ -56,7 +61,12 @@ router.post('/', authMiddleware, async (req: Request, res: any): Promise<void> =
           res.status(400).json({ success: false, error: { message: '编程题需要提供代码和语言' } });
           return;
         }
-        submission = await submissionService.submitProgramming(problemId, userId, code, language);
+        try {
+          submission = await submissionService.submitProgramming(problemId, userId, code, language);
+        } catch (error: any) {
+          res.status(400).json({ success: false, error: { message: error.message || '判题失败，请重试' } });
+          return;
+        }
         break;
       case 'CHOICE':
         if (!answer) {
@@ -79,7 +89,8 @@ router.post('/', authMiddleware, async (req: Request, res: any): Promise<void> =
 
     res.status(201).json({ success: true, data: submission });
   } catch (error: any) {
-    res.status(400).json({ success: false, error: { message: error.message } });
+    console.error('提交失败:', error);
+    res.status(500).json({ success: false, error: { message: error.message || '提交失败，请重试' } });
   }
 });
 

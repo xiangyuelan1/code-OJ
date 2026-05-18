@@ -337,15 +337,38 @@ export class MatchService {
   }
 
   async surrenderMatch(matchId: string, userId: string): Promise<void> {
-    const participant = await prisma.matchParticipant.findFirst({
-      where: { matchId, userId }
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+      include: { participants: true }
     });
-    if (participant) {
+
+    if (!match) return;
+
+    const surrenderingParticipant = match.participants.find(p => p.userId === userId);
+    const otherParticipant = match.participants.find(p => p.userId !== userId);
+
+    if (surrenderingParticipant) {
       await prisma.matchParticipant.update({
-        where: { id: participant.id },
-        data: { score: 0, correctCount: 0 }
+        where: { id: surrenderingParticipant.id },
+        data: { score: 0, correctCount: 0, isWinner: false }
       });
     }
+
+    if (otherParticipant) {
+      await prisma.matchParticipant.update({
+        where: { id: otherParticipant.id },
+        data: { isWinner: true }
+      });
+    }
+
+    await prisma.match.update({
+      where: { id: matchId },
+      data: {
+        status: 'COMPLETED',
+        endTime: new Date(),
+        winnerId: otherParticipant?.userId || null
+      }
+    });
   }
 
   async getMatch(matchId: string): Promise<any> {

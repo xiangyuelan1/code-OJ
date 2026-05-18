@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { examAPI } from '../services/api';
-import { Clock, Users, FileText, Trophy, ArrowLeft } from 'lucide-react';
+import { Clock, Users, FileText, Trophy, ArrowLeft, User } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { MarkdownRenderer } from '../components/MarkdownEditor';
 
@@ -85,6 +85,12 @@ export function ExamListPage() {
                       <Users className="h-4 w-4" />
                       <span>参与人数: {exam._count?.attempts || 0}</span>
                     </div>
+                    {exam.creator && (
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        <span>创建者: {exam.creator.username}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-4 flex items-center justify-between">
@@ -323,9 +329,9 @@ export function ExamPage() {
                             <option value="c">C</option>
                           </select>
                         </div>
-                        <div className="min-h-[350px] border border-slate-600 rounded-lg overflow-hidden">
+                        <div style={{ height: '400px' }}>
                           <Editor
-                            height="350px"
+                            height="100%"
                             language={
                               (answers[currentQ.problem.id]?.language || 'javascript') === 'python'
                                 ? 'python'

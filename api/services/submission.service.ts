@@ -181,8 +181,17 @@ export class SubmissionService {
       throw new Error('题目不存在');
     }
 
-    const testCases: TestCase[] = JSON.parse(problem.testCases);
-    
+    let testCases: TestCase[];
+    try {
+      testCases = JSON.parse(problem.testCases);
+    } catch {
+      throw new Error('题目测试用例格式错误');
+    }
+
+    if (!testCases || testCases.length === 0) {
+      throw new Error('题目缺少测试用例');
+    }
+
     const submission = await prisma.submission.create({
       data: {
         problemId,
@@ -193,21 +202,32 @@ export class SubmissionService {
       }
     });
 
-    const result = await this.judgeProgramming(code, language, testCases, problem.timeLimit);
+    let result: JudgeResult;
+    try {
+      result = await this.judgeProgramming(code, language, testCases, problem.timeLimit);
+    } catch (error: any) {
+      result = {
+        status: 'RUNTIME_ERROR',
+        message: `判题异常: ${error.message}`,
+        score: 0
+      };
+    }
 
-    const isFirstAC = !problem.submissions.some(s => 
+    const isFirstAC = !problem.submissions.some(s =>
       s.userId === userId && s.status === 'ACCEPTED'
     );
 
     let pointsEarned = 0;
     if (result.status === 'ACCEPTED' && isFirstAC) {
-      const pointResult = await pointsService.awardPointsForProblem(
-        userId,
-        problemId,
-        problem.difficulty,
-        true
-      );
-      pointsEarned = pointResult.pointsEarned;
+      try {
+        const pointResult = await pointsService.awardPointsForProblem(
+          userId,
+          problemId,
+          problem.difficulty,
+          true
+        );
+        pointsEarned = pointResult.pointsEarned;
+      } catch {}
     }
 
     const updatedSubmission = await prisma.submission.update({
@@ -432,7 +452,7 @@ export class SubmissionService {
   }
 
   async getUserSubmissions(userId: string) {
-    return await prisma.submission.findMany({
+    const submissions = await prisma.submission.findMany({
       where: { userId },
       include: {
         problem: {
@@ -441,10 +461,15 @@ export class SubmissionService {
       },
       orderBy: { createdAt: 'desc' }
     });
+
+    return submissions.map(s => ({
+      ...s,
+      result: s.result ? (() => { try { return JSON.parse(s.result); } catch { return s.result; } })() : null
+    }));
   }
 
   async getProblemSubmissions(problemId: string) {
-    return await prisma.submission.findMany({
+    const submissions = await prisma.submission.findMany({
       where: { problemId },
       include: {
         user: {
@@ -453,6 +478,11 @@ export class SubmissionService {
       },
       orderBy: { createdAt: 'desc' }
     });
+
+    return submissions.map(s => ({
+      ...s,
+      result: s.result ? (() => { try { return JSON.parse(s.result); } catch { return s.result; } })() : null
+    }));
   }
 
   async checkUserAC(problemId: string, userId: string): Promise<boolean> {

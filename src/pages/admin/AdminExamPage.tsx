@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { examAPI, problemsAPI } from '../../services/api';
-import { Plus, Trash2, Clock, FileText, Users, ArrowLeft, Save, Eye, ChevronDown, ChevronUp, Trophy, Code, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Trash2, Clock, FileText, Users, ArrowLeft, Save, Eye, ChevronDown, ChevronUp, Trophy, Code, CheckCircle, XCircle, User } from 'lucide-react';
 
 export function AdminExamPage() {
   const navigate = useNavigate();
@@ -539,6 +539,12 @@ export function AdminExamPage() {
                       <Users className="h-4 w-4 mr-1" />
                       {exam._count?.attempts || 0} 次参加
                     </span>
+                    {exam.creator && (
+                      <span className="flex items-center">
+                        <User className="h-4 w-4 mr-1" />
+                        {exam.creator.username}
+                      </span>
+                    )}
                   </div>
                   {exam.description && (
                     <p className="text-slate-400 mt-2 text-sm">{exam.description}</p>

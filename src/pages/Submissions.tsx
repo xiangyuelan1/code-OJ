@@ -37,6 +37,8 @@ export function SubmissionsPage() {
         return <AlertCircle className="h-5 w-5 text-purple-400" />;
       case 'TIME_LIMIT_EXCEEDED':
         return <Clock className="h-5 w-5 text-orange-400" />;
+      case 'COMPILE_ERROR':
+        return <XCircle className="h-5 w-5 text-red-300" />;
       default:
         return <AlertCircle className="h-5 w-5 text-yellow-400" />;
     }
@@ -52,6 +54,8 @@ export function SubmissionsPage() {
         return 'bg-purple-500/10 border-purple-500/30';
       case 'TIME_LIMIT_EXCEEDED':
         return 'bg-orange-500/10 border-orange-500/30';
+      case 'COMPILE_ERROR':
+        return 'bg-red-500/10 border-red-400/30';
       default:
         return 'bg-yellow-500/10 border-yellow-500/30';
     }
@@ -139,7 +143,9 @@ export function SubmissionsPage() {
                            submission.status === 'WRONG_ANSWER' ? '错误' :
                            submission.status === 'RUNTIME_ERROR' ? '运行错误' :
                            submission.status === 'TIME_LIMIT_EXCEEDED' ? '超时' :
-                           submission.status === 'JUDGING' ? '判题中' : '等待'}
+                           submission.status === 'COMPILE_ERROR' ? '编译错误' :
+                           submission.status === 'JUDGING' ? '判题中' :
+                           submission.status === 'PENDING' ? '等待' : submission.status}
                         </span>
                       </div>
                     </td>

@@ -175,6 +175,24 @@ export function AdminSubmissionsPage() {
                     <pre className="bg-slate-900 p-3 rounded text-xs font-mono text-slate-400 overflow-auto max-h-32">
                       {typeof sub.result === 'string' ? sub.result : JSON.stringify(sub.result, null, 2)}
                     </pre>
+                    {sub.result.testResults && (
+                      <div className="mt-2 space-y-1">
+                        {sub.result.testResults.map((tr: any, idx: number) => (
+                          <div key={idx} className={`text-xs px-2 py-1 rounded ${tr.passed ? 'text-green-400' : 'text-red-400'}`}>
+                            测试点 {tr.testCase}: {tr.passed ? '通过' : `未通过 (期望: ${tr.expected}, 实际: ${tr.actual || '(无)'})`}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {sub.result.isCorrect !== undefined && sub.type === 'CHOICE' && (
+                      <div className="mt-2 text-xs">
+                        <span className="text-slate-400">正确答案：</span>
+                        <span className="text-green-400">{sub.result.correctAnswer}</span>
+                      </div>
+                    )}
+                    {sub.result.message && (
+                      <div className="mt-1 text-xs text-slate-400">{sub.result.message}</div>
+                    )}
                   </div>
                 )}
               </div>
