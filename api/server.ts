@@ -1,5 +1,6 @@
 import express from 'express';
 import { createServer } from 'http';
+import { execSync } from 'child_process';
 import dotenv from 'dotenv';
 import app from './app.js';
 import prisma from './lib/prisma.js';
@@ -12,11 +13,36 @@ const HOST = process.env.HOST || '0.0.0.0';
 
 async function initDatabase() {
   try {
+    console.log('Running prisma migrate deploy...');
+    execSync('npx prisma migrate deploy', { stdio: 'inherit' });
+  } catch {
+    console.log('prisma migrate deploy failed, trying migrate dev...');
+    try {
+      execSync('npx prisma migrate dev --name init', { stdio: 'inherit' });
+    } catch (e) {
+      console.error('Database migration failed:', e);
+    }
+  }
+
+  try {
     await prisma.$connect();
     console.log('Database connected');
   } catch (error) {
     console.error('Database connection failed:', error);
     process.exit(1);
+  }
+
+  const userCount = await prisma.user.count();
+  if (userCount === 0) {
+    console.log('Database is empty, seeding...');
+    try {
+      execSync('npx tsx api/scripts/seed.ts', { stdio: 'inherit' });
+      console.log('Seed data initialized');
+    } catch (e) {
+      console.error('Seed failed:', e);
+    }
+  } else {
+    console.log(`Database has ${userCount} users, skipping seed`);
   }
 }
 
