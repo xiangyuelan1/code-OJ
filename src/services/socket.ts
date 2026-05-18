@@ -28,6 +28,7 @@ interface SocketState {
   emitMatchAnswer: (data: { matchId: string; problemIndex: number; answer: string; time: number }) => void;
   emitSurrender: (matchId: string) => void;
   emitSettlementRequest: (matchId: string) => void;
+  emitSettlementAgree: (matchId: string) => void;
   emitSettlementReject: (matchId: string) => void;
   emitExamHeartbeat: (examId: string) => void;
   sendHeartbeat: () => void;
@@ -188,6 +189,13 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     const socket = get().socket;
     if (socket?.connected) {
       socket.emit('match:settlement-request', matchId);
+    }
+  },
+
+  emitSettlementAgree: (matchId: string) => {
+    const socket = get().socket;
+    if (socket?.connected) {
+      socket.emit('match:settlement-agree', matchId);
     }
   },
 

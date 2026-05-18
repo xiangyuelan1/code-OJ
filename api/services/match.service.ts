@@ -336,6 +336,18 @@ export class MatchService {
     };
   }
 
+  async surrenderMatch(matchId: string, userId: string): Promise<void> {
+    const participant = await prisma.matchParticipant.findFirst({
+      where: { matchId, userId }
+    });
+    if (participant) {
+      await prisma.matchParticipant.update({
+        where: { id: participant.id },
+        data: { score: 0, correctCount: 0 }
+      });
+    }
+  }
+
   async getMatch(matchId: string): Promise<any> {
     return await prisma.match.findUnique({
       where: { id: matchId },
@@ -351,6 +363,7 @@ export class MatchService {
                 difficulty: true,
                 choices: true,
                 fillBlanks: true,
+                testCases: true,
                 timeLimit: true,
                 memoryLimit: true
               }

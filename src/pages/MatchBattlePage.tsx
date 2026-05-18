@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { matchAPI } from '../services/api';
+import { matchAPI, submissionsAPI } from '../services/api';
 import { useSocketStore } from '../services/socket';
 import { useAuthStore } from '../stores/auth.store';
 import { ArrowLeft, Clock, CheckCircle, XCircle, Loader2, Flag, Handshake, X, MessageCircle } from 'lucide-react';
+import Editor from '@monaco-editor/react';
+import { MarkdownRenderer } from '../components/MarkdownEditor';
 
 export function MatchBattlePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { matchEvents, emitSurrender, emitSettlementRequest, emitSettlementReject, clearMatchEvents } = useSocketStore();
+  const { matchEvents, emitSurrender, emitSettlementRequest, emitSettlementAgree, emitSettlementReject, clearMatchEvents } = useSocketStore();
 
   const [match, setMatch] = useState<any>(null);
   const [currentProblemIndex, setCurrentProblemIndex] = useState(0);
@@ -26,6 +28,9 @@ export function MatchBattlePage() {
   const [settlementFrom, setSettlementFrom] = useState('');
   const [opponentAnswered, setOpponentAnswered] = useState<Record<number, boolean>>({});
   const [notifications, setNotifications] = useState<string[]>([]);
+  const [programmingCode, setProgrammingCode] = useState('');
+  const [programmingLanguage, setProgrammingLanguage] = useState('javascript');
+  const [programmingSubmitting, setProgrammingSubmitting] = useState(false);
 
   const addNotification = useCallback((msg: string) => {
     setNotifications(prev => [...prev.slice(-4), msg]);
@@ -65,6 +70,8 @@ export function MatchBattlePage() {
     }
     setProblemStartTime(Date.now());
     setLastResult(null);
+    setProgrammingCode('');
+    setProgrammingSubmitting(false);
   }, [currentProblemIndex, match]);
 
   useEffect(() => {
@@ -165,6 +172,48 @@ export function MatchBattlePage() {
     }
   };
 
+  const handleSubmitProgramming = async () => {
+    if (!match || programmingSubmitting || !programmingCode.trim()) return;
+    setProgrammingSubmitting(true);
+    setLastResult(null);
+    const time = Date.now() - problemStartTime;
+    try {
+      const submitRes = await submissionsAPI.submit({
+        problemId: getCurrentProblem()?.problem?.id,
+        type: 'PROGRAMMING',
+        code: programmingCode,
+        language: programmingLanguage
+      });
+      if (submitRes.success) {
+        const resultRes = await submissionsAPI.getById(submitRes.data.id);
+        const status = resultRes.success ? resultRes.data.status : '';
+        const res = await matchAPI.submitAnswer(id!, {
+          problemIndex: currentProblemIndex,
+          answer: status,
+          time
+        });
+        if (res.success) {
+          setLastResult({
+            ...res.data,
+            judgeStatus: status,
+            isCorrect: status === 'ACCEPTED'
+          });
+          if (res.data && match.problems && currentProblemIndex < match.problems.length - 1) {
+            setTimeout(() => {
+              setCurrentProblemIndex(prev => prev + 1);
+            }, 1500);
+          } else {
+            setTimeout(() => handleEndMatch(), 1500);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('提交编程题失败', error);
+    } finally {
+      setProgrammingSubmitting(false);
+    }
+  };
+
   const handleEndMatch = async () => {
     if (matchEnded) return;
     setMatchEnded(true);
@@ -189,7 +238,7 @@ export function MatchBattlePage() {
   };
 
   const handleAcceptSettlement = () => {
-    emitSettlementRequest(id!);
+    emitSettlementAgree(id!);
     setShowSettlementDialog(false);
   };
 
@@ -377,7 +426,9 @@ export function MatchBattlePage() {
                 {problemData.difficulty === 'EASY' ? '简单' : problemData.difficulty === 'MEDIUM' ? '中等' : '困难'}
               </span>
             </div>
-            <div className="text-slate-300 whitespace-pre-wrap mb-6">{problemData.description}</div>
+            <div className="prose prose-invert max-w-none mb-6">
+              <MarkdownRenderer content={problemData.description} />
+            </div>
 
             {problemData.type === 'CHOICE' && problemData.choices && (
               <div className="space-y-3">
@@ -425,17 +476,70 @@ export function MatchBattlePage() {
               </div>
             )}
 
-            <button
-              onClick={handleSubmitAnswer}
-              disabled={submitting || (!selectedAnswer && fillAnswers.every(a => !a))}
-              className="mt-6 w-full bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {submitting ? (
-                <><Loader2 className="h-5 w-5 animate-spin" /> 提交中...</>
-              ) : (
-                <><CheckCircle className="h-5 w-5" /> 提交答案</>
-              )}
-            </button>
+            {problemData.type === 'PROGRAMMING' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold text-slate-300">代码编辑器</h4>
+                  <select
+                    value={programmingLanguage}
+                    onChange={(e) => setProgrammingLanguage(e.target.value)}
+                    className="px-3 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  >
+                    <option value="javascript">JavaScript</option>
+                    <option value="python">Python</option>
+                    <option value="cpp">C++</option>
+                    <option value="c">C</option>
+                  </select>
+                </div>
+                <div className="min-h-[300px] border border-slate-600 rounded-lg overflow-hidden">
+                  <Editor
+                    height="300px"
+                    language={
+                      programmingLanguage === 'python' ? 'python'
+                      : programmingLanguage === 'cpp' || programmingLanguage === 'c' ? 'cpp'
+                      : 'javascript'
+                    }
+                    value={programmingCode}
+                    onChange={(value) => setProgrammingCode(value || '')}
+                    theme="vs-dark"
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 14,
+                      lineNumbers: 'on',
+                      scrollBeyondLastLine: false,
+                      automaticLayout: true,
+                      padding: { top: 8 },
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {problemData.type === 'PROGRAMMING' ? (
+              <button
+                onClick={handleSubmitProgramming}
+                disabled={programmingSubmitting || !programmingCode.trim()}
+                className="mt-6 w-full bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {programmingSubmitting ? (
+                  <><Loader2 className="h-5 w-5 animate-spin" /> 判题中...</>
+                ) : (
+                  <><CheckCircle className="h-5 w-5" /> 提交代码</>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmitAnswer}
+                disabled={submitting || (!selectedAnswer && fillAnswers.every(a => !a))}
+                className="mt-6 w-full bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {submitting ? (
+                  <><Loader2 className="h-5 w-5 animate-spin" /> 提交中...</>
+                ) : (
+                  <><CheckCircle className="h-5 w-5" /> 提交答案</>
+                )}
+              </button>
+            )}
 
             {lastResult && (
               <div className={`mt-4 p-4 rounded-lg ${lastResult.isCorrect ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>

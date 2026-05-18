@@ -144,6 +144,8 @@ export function TeacherClassesPage() {
     courseId: string; stageId: string; sessionId: string;
   } | null>(null);
   const [materialEditText, setMaterialEditText] = useState('');
+  const [joinRequests, setJoinRequests] = useState<any[]>([]);
+  const [joinRequestsLoading, setJoinRequestsLoading] = useState(false);
 
   useEffect(() => { fetchClasses(); }, []);
 
@@ -186,6 +188,20 @@ export function TeacherClassesPage() {
       if (res.success) { setAllUsers(res.data || []); }
     } catch (error) {
       console.error('获取用户列表失败', error);
+    }
+  };
+
+  const fetchJoinRequests = async (classId: string) => {
+    setJoinRequestsLoading(true);
+    try {
+      const res = await classAPI.getJoinRequests(classId);
+      if (res.success) {
+        setJoinRequests(res.data || []);
+      }
+    } catch (error) {
+      console.error('获取加入申请失败', error);
+    } finally {
+      setJoinRequestsLoading(false);
     }
   };
 
@@ -338,6 +354,20 @@ export function TeacherClassesPage() {
     }
   };
 
+  const handleReviewJoinRequest = async (requestId: string, approved: boolean) => {
+    try {
+      const res = await classAPI.reviewJoinRequest(requestId, approved);
+      if (res.success) {
+        if (selectedClass) {
+          fetchJoinRequests(selectedClass.id);
+          fetchMembers(selectedClass.id);
+        }
+      }
+    } catch (error: any) {
+      alert(error.error?.message || (approved ? '审批通过失败' : '拒绝申请失败'));
+    }
+  };
+
   const handleCreateHomework = async () => {
     if (!selectedClass || !homeworkForm.title.trim()) { alert('请填写作业标题'); return; }
     if (homeworkForm.problemIds.length === 0) { alert('请至少选择一道题目'); return; }
@@ -404,8 +434,10 @@ export function TeacherClassesPage() {
     setShowSessionForm(null);
     setEditingSessionProblems(null);
     setEditingSessionMaterial(null);
+    setJoinRequests([]);
     fetchMembers(cls.id);
     fetchAllUsers();
+    fetchJoinRequests(cls.id);
   };
 
   const openCreate = () => {
@@ -1359,43 +1391,45 @@ export function TeacherClassesPage() {
         {activeTab === 'members' && (
           <div>
             <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-6">
-              <h2 className="text-xl font-semibold text-white mb-4">添加成员</h2>
-              <div className="flex items-end gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">选择用户</label>
-                  <select
-                    value={selectedUserId}
-                    onChange={(e) => setSelectedUserId(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  >
-                    <option value="">-- 选择用户 --</option>
-                    {availableUsers.map((u: any) => (
-                      <option key={u.id} value={u.id}>
-                        {u.username} ({u.email}) - {getRoleName(u.role)}
-                      </option>
-                    ))}
-                  </select>
+              <h2 className="text-xl font-semibold text-white mb-4">加入申请</h2>
+              {joinRequestsLoading ? (
+                <div className="flex justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-2 border-cyan-500 border-t-transparent"></div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">角色</label>
-                  <select
-                    value={selectedRole}
-                    onChange={(e) => setSelectedRole(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  >
-                    <option value="STUDENT">学生</option>
-                    <option value="TEACHER">教师</option>
-                  </select>
+              ) : joinRequests.filter((r: any) => r.status === 'PENDING').length === 0 ? (
+                <p className="text-slate-400 text-sm">暂无待审核的加入申请</p>
+              ) : (
+                <div className="space-y-3">
+                  {joinRequests.filter((r: any) => r.status === 'PENDING').map((req: any) => (
+                    <div key={req.id} className="flex items-center justify-between p-4 bg-slate-700 rounded-lg">
+                      <div>
+                        <div className="text-white font-medium">{req.user?.username || '未知用户'}</div>
+                        <div className="text-slate-400 text-sm">{req.user?.email || ''}</div>
+                        {req.message && (
+                          <div className="text-slate-300 text-sm mt-1 italic">"{req.message}"</div>
+                        )}
+                        <div className="text-slate-500 text-xs mt-1">{new Date(req.createdAt).toLocaleString()}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleReviewJoinRequest(req.id, true)}
+                          className="flex items-center gap-1 px-3 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors text-sm"
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          通过
+                        </button>
+                        <button
+                          onClick={() => handleReviewJoinRequest(req.id, false)}
+                          className="flex items-center gap-1 px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors text-sm"
+                        >
+                          <XCircle className="h-4 w-4" />
+                          拒绝
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <button
-                  onClick={handleAddMember}
-                  disabled={!selectedUserId}
-                  className="flex items-center px-4 py-3 bg-cyan-500 hover:bg-cyan-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-                >
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  添加
-                </button>
-              </div>
+              )}
             </div>
 
             <div className="bg-slate-800 rounded-xl overflow-hidden shadow-xl">

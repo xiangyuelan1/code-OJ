@@ -124,6 +124,10 @@ export function setupSocketIO(httpServer: any) {
       await handleSettlementRequest(io, socket, matchId);
     });
 
+    socket.on('match:settlement-agree', async (matchId: string) => {
+      await handleSettlementAgree(io, socket, matchId);
+    });
+
     socket.on('match:settlement-reject', async (matchId: string) => {
       await handleSettlementReject(io, socket, matchId);
     });
@@ -305,6 +309,11 @@ const settlementRequests = new Map<string, Set<string>>();
 
 async function handleSurrender(io: SocketIOServer, socket: any, matchId: string) {
   const matchRoom = `match-room:${matchId}`;
+  try {
+    await matchService.surrenderMatch(matchId, socket.userId);
+  } catch (e) {
+    console.error('surrenderMatch error:', e);
+  }
   io.to(matchRoom).emit('match:surrender', {
     userId: socket.userId,
     username: socket.username
@@ -324,6 +333,21 @@ async function handleSettlementRequest(io: SocketIOServer, socket: any, matchId:
     username: socket.username,
     agreedCount: requests.size
   });
+
+  const match = await matchService.getMatch(matchId);
+  if (match?.participants?.length && requests.size >= match.participants.length) {
+    settlementRequests.delete(matchId);
+    io.to(matchRoom).emit('match:settlement-agreed', { matchId });
+  }
+}
+
+async function handleSettlementAgree(io: SocketIOServer, socket: any, matchId: string) {
+  const matchRoom = `match-room:${matchId}`;
+  if (!settlementRequests.has(matchId)) {
+    settlementRequests.set(matchId, new Set());
+  }
+  const requests = settlementRequests.get(matchId)!;
+  requests.add(socket.userId);
 
   const match = await matchService.getMatch(matchId);
   if (match?.participants?.length && requests.size >= match.participants.length) {

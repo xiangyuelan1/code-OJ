@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { examAPI } from '../services/api';
 import { Clock, Users, FileText, Trophy, ArrowLeft } from 'lucide-react';
 import Editor from '@monaco-editor/react';
+import { MarkdownRenderer } from '../components/MarkdownEditor';
 
 export function ExamListPage() {
   const [exams, setExams] = useState<any[]>([]);
@@ -276,7 +277,7 @@ export function ExamPage() {
                 <>
                   <h2 className="text-xl font-semibold mb-4">{currentQ.problem.title}</h2>
                   <div className="prose prose-invert max-w-none mb-6">
-                    <p className="whitespace-pre-wrap">{currentQ.problem.description}</p>
+                    <MarkdownRenderer content={currentQ.problem.description} />
                   </div>
 
                   {currentQ.problem.type === 'PROGRAMMING' && (
@@ -318,6 +319,8 @@ export function ExamPage() {
                           >
                             <option value="javascript">JavaScript</option>
                             <option value="python">Python</option>
+                            <option value="cpp">C++</option>
+                            <option value="c">C</option>
                           </select>
                         </div>
                         <div className="min-h-[350px] border border-slate-600 rounded-lg overflow-hidden">
@@ -326,6 +329,8 @@ export function ExamPage() {
                             language={
                               (answers[currentQ.problem.id]?.language || 'javascript') === 'python'
                                 ? 'python'
+                                : (answers[currentQ.problem.id]?.language || 'javascript') === 'cpp' || (answers[currentQ.problem.id]?.language || 'javascript') === 'c'
+                                ? 'cpp'
                                 : 'javascript'
                             }
                             value={answers[currentQ.problem.id]?.code || ''}

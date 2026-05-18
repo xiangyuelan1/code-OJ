@@ -4,6 +4,7 @@ import { problemsAPI, submissionsAPI, aiAPI } from '../services/api';
 import { ArrowLeft, Send, Lightbulb, Loader2, Star, Settings, X } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { useAuthStore } from '../stores/auth.store';
+import { MarkdownRenderer } from '../components/MarkdownEditor';
 
 const EDITOR_SETTINGS_KEY = 'oj_editor_settings';
 
@@ -378,7 +379,7 @@ export function SolvePage() {
               </span>
             </div>
             <div className="prose prose-invert max-w-none mb-6">
-              <div className="text-slate-300 whitespace-pre-wrap">{problem.description}</div>
+              <MarkdownRenderer content={problem.description} />
             </div>
 
             {problem.type === 'PROGRAMMING' && parsedTestCases.length > 0 && (
