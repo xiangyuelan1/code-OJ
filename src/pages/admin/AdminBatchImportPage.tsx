@@ -70,7 +70,8 @@ export function AdminBatchImportPage() {
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   const [importMode, setImportMode] = useState<'ai' | 'file'>('ai');
-  const [files, setFiles] = useState<File[]>([]);
+  const [problemFiles, setProblemFiles] = useState<File[]>([]);
+  const [testDataFiles, setTestDataFiles] = useState<File[]>([]);
   const [pasteText, setPasteText] = useState('');
   const [problems, setProblems] = useState<ParsedProblem[]>([]);
   const [parsing, setParsing] = useState(false);
@@ -93,77 +94,108 @@ export function AdminBatchImportPage() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
+    // 默认拖放处理 - 如果没有明确的目标区域，默认放到题目文件
     const droppedFiles = Array.from(e.dataTransfer.files).filter(
       (f) => importMode === 'ai'
         ? (f.name.endsWith('.txt') || f.name.endsWith('.json'))
         : (f.name.endsWith('.json') || f.name.endsWith('.in') || f.name.endsWith('.out'))
     );
     if (droppedFiles.length > 0) {
-      setFiles((prev) => [...prev, ...droppedFiles]);
+      setProblemFiles((prev) => [...prev, ...droppedFiles.filter(f => f.name.endsWith('.json') || f.name.endsWith('.txt'))]);
+      setTestDataFiles((prev) => [...prev, ...droppedFiles.filter(f => f.name.endsWith('.in') || f.name.endsWith('.out'))]);
     }
   }, [importMode]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProblemFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files || []).filter(
       (f) => importMode === 'ai'
         ? (f.name.endsWith('.txt') || f.name.endsWith('.json'))
-        : (f.name.endsWith('.json') || f.name.endsWith('.in') || f.name.endsWith('.out'))
+        : f.name.endsWith('.json')
     );
     if (selected.length > 0) {
-      setFiles((prev) => [...prev, ...selected]);
+      setProblemFiles((prev) => [...prev, ...selected]);
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
+  const handleTestDataFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files || []).filter(
+      (f) => f.name.endsWith('.in') || f.name.endsWith('.out')
+    );
+    if (selected.length > 0) {
+      setTestDataFiles((prev) => [...prev, ...selected]);
+    }
+    if (folderInputRef.current) {
+      folderInputRef.current.value = '';
+    }
+  };
+
+  const removeProblemFile = (index: number) => {
+    setProblemFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const removeTestDataFile = (index: number) => {
+    setTestDataFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
+    // 兼容旧代码，暂时保留
   };
 
   const handleParse = async () => {
-    if (files.length === 0 && !pasteText.trim()) return;
+    if (problemFiles.length === 0 && testDataFiles.length === 0 && !pasteText.trim()) return;
 
     setParsing(true);
     setImportResult(null);
 
     try {
-      const allParsed: ParsedProblem[] = [];
-
-      if (files.length > 0) {
-        const formData = new FormData();
-        files.forEach((file) => {
-          formData.append('files', file);
-        });
-
-        const uploadRes = await uploadAPI.uploadFiles(formData);
-        if (uploadRes.success && uploadRes.data) {
-          const uploadedFiles = Array.isArray(uploadRes.data) ? uploadRes.data : [uploadRes.data];
-          for (const uploaded of uploadedFiles) {
-            const parseRes = await enhancedAiAPI.parseProblemFile(
-              uploaded.content,
-              uploaded.fileType
-            );
-            if (parseRes.success && parseRes.data?.problems) {
-              allParsed.push(...parseRes.data.problems);
-            }
-          }
-        }
+      if (importMode === 'ai') {
+        await handleAiParse();
+      } else {
+        await handleFileParse();
       }
-
-      if (pasteText.trim()) {
-        const parseRes = await enhancedAiAPI.parseProblemFile(pasteText.trim(), 'txt');
-        if (parseRes.success && parseRes.data?.problems) {
-          allParsed.push(...parseRes.data.problems);
-        }
-      }
-
-      setProblems(allParsed);
     } catch (error: any) {
       alert(error.error?.message || '解析失败，请检查文件格式或网络连接');
     } finally {
       setParsing(false);
     }
+  };
+
+  const handleAiParse = async () => {
+    const allParsed: ParsedProblem[] = [];
+    const allFiles = [...problemFiles, ...testDataFiles];
+
+    if (allFiles.length > 0) {
+      const formData = new FormData();
+      allFiles.forEach((file) => {
+        formData.append('files', file);
+      });
+
+      const uploadRes = await uploadAPI.uploadFiles(formData);
+      if (uploadRes.success && uploadRes.data) {
+        const uploadedFiles = Array.isArray(uploadRes.data) ? uploadRes.data : [uploadRes.data];
+        for (const uploaded of uploadedFiles) {
+          const parseRes = await enhancedAiAPI.parseProblemFile(
+            uploaded.content,
+            uploaded.fileType
+          );
+          if (parseRes.success && parseRes.data?.problems) {
+            allParsed.push(...parseRes.data.problems);
+          }
+        }
+      }
+    }
+
+    if (pasteText.trim()) {
+      const parseRes = await enhancedAiAPI.parseProblemFile(pasteText.trim(), 'txt');
+      if (parseRes.success && parseRes.data?.problems) {
+        allParsed.push(...parseRes.data.problems);
+      }
+    }
+
+    setProblems(allParsed);
   };
 
   const parseJsonProblem = (data: any, fileName: string, fileContentMap: Record<string, string>): ParsedProblem => {
@@ -260,7 +292,7 @@ export function AdminBatchImportPage() {
   };
 
   const handleFileParse = async () => {
-    if (files.length === 0) return;
+    if (problemFiles.length === 0 && testDataFiles.length === 0) return;
     setParsing(true);
     setImportResult(null);
 
@@ -270,13 +302,19 @@ export function AdminBatchImportPage() {
       const jsonFiles: { file: File; relPath: string }[] = [];
       const dataFileMap: Record<string, { inFiles: File[]; outFiles: File[] }> = {};
 
-      for (const file of files) {
+      // 收集题目JSON文件
+      for (const file of problemFiles) {
+        if (file.name.endsWith('.json')) {
+          jsonFiles.push({ file, relPath: file.webkitRelativePath || file.name });
+        }
+      }
+
+      // 收集测试数据文件并建立文件夹索引
+      for (const file of testDataFiles) {
         const name = file.name;
         const relPath = file.webkitRelativePath || name;
 
-        if (name.endsWith('.json')) {
-          jsonFiles.push({ file, relPath });
-        } else if (name.endsWith('.in')) {
+        if (name.endsWith('.in')) {
           const dirKey = relPath.includes('/') ? relPath.substring(0, relPath.lastIndexOf('/')) : '__root__';
           if (!dataFileMap[dirKey]) dataFileMap[dirKey] = { inFiles: [], outFiles: [] };
           dataFileMap[dirKey].inFiles.push(file);
@@ -571,7 +609,8 @@ export function AdminBatchImportPage() {
   };
 
   const resetAll = () => {
-    setFiles([]);
+    setProblemFiles([]);
+    setTestDataFiles([]);
     setPasteText('');
     setProblems([]);
     setImportResult(null);
@@ -631,95 +670,178 @@ export function AdminBatchImportPage() {
       <div className="space-y-6">
         {problems.length === 0 && (
           <>
-            <div
-              className={`bg-slate-800 rounded-xl p-8 shadow-xl border-2 border-dashed transition-colors ${
-                dragOver
-                  ? 'border-cyan-500 bg-cyan-500/5'
-                  : 'border-slate-600 hover:border-slate-500'
-              }`}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              <div className="flex flex-col items-center text-center">
-                <div className="w-16 h-16 rounded-full bg-cyan-500/10 flex items-center justify-center mb-4">
-                  <FileUp className="h-8 w-8 text-cyan-500" />
-                </div>
-                <h3 className="text-lg font-semibold text-white mb-2">
-                  拖拽文件到此处上传
-                </h3>
-                <p className="text-slate-400 mb-4">
-                  {importMode === 'ai'
-                    ? '支持 .txt 和 .json 格式，可同时上传多个文件'
-                    : '支持 .json 题目文件 + .in/.out 测试数据文件，可同时选择文件和文件夹批量导入'}
-                </p>
-                <div className="flex gap-3">
+            {importMode === 'file' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* 题目文件区域 */}
+                <div className="bg-slate-800 rounded-xl p-6 shadow-xl border-2 border-dashed border-cyan-500/50">
+                  <div className="flex items-center mb-4">
+                    <FileText className="h-6 w-6 text-cyan-400 mr-2" />
+                    <h3 className="text-lg font-semibold text-white">题目文件</h3>
+                  </div>
+                  <p className="text-slate-400 text-sm mb-4">
+                    选择 .json 格式的题目文件，可多选
+                  </p>
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center px-6 py-3 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors"
+                    className="w-full flex items-center justify-center px-6 py-3 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors mb-4"
                   >
                     <Upload className="h-5 w-5 mr-2" />
-                    选择文件
+                    选择题目文件
                   </button>
-                  {importMode === 'file' && (
-                    <button
-                      onClick={() => folderInputRef.current?.click()}
-                      className="flex items-center px-6 py-3 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors"
-                    >
-                      <FolderTree className="h-5 w-5 mr-2" />
-                      选择文件夹
-                    </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json"
+                    multiple
+                    onChange={handleProblemFileSelect}
+                    className="hidden"
+                  />
+                  {problemFiles.length > 0 && (
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-slate-300 text-sm">已选择 {problemFiles.length} 个文件</span>
+                        <button
+                          onClick={() => setProblemFiles([])}
+                          className="text-xs text-red-400 hover:text-red-300"
+                        >
+                          清空
+                        </button>
+                      </div>
+                      {problemFiles.map((file, index) => (
+                        <div key={index} className="flex items-center justify-between bg-slate-700 rounded-lg px-3 py-2">
+                          <div className="flex items-center min-w-0">
+                            <FileText className="h-4 w-4 text-cyan-400 mr-2 shrink-0" />
+                            <span className="text-white text-sm truncate">{file.name}</span>
+                          </div>
+                          <button
+                            onClick={() => removeProblemFile(index)}
+                            className="text-red-400 hover:text-red-300"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
-                {importMode === 'file' && (
-                  <p className="text-slate-500 text-xs mt-3">
-                    提示：可先选择文件夹导入 .in/.out 数据文件，再选择 .json 题目文件，系统会自动按文件名/文件夹名匹配题目与测试数据
+
+                {/* 测试数据区域 */}
+                <div className="bg-slate-800 rounded-xl p-6 shadow-xl border-2 border-dashed border-purple-500/50">
+                  <div className="flex items-center mb-4">
+                    <FolderTree className="h-6 w-6 text-purple-400 mr-2" />
+                    <h3 className="text-lg font-semibold text-white">测试数据</h3>
+                  </div>
+                  <p className="text-slate-400 text-sm mb-4">
+                    选择包含 .in/.out 文件的文件夹，或直接选择 .in/.out 文件
                   </p>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={importMode === 'ai' ? '.txt,.json' : '.json,.in,.out'}
-                  multiple
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-                {importMode === 'file' && (
+                  <button
+                    onClick={() => folderInputRef.current?.click()}
+                    className="w-full flex items-center justify-center px-6 py-3 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors mb-4"
+                  >
+                    <FolderTree className="h-5 w-5 mr-2" />
+                    选择测试数据文件夹
+                  </button>
                   <input
                     ref={folderInputRef}
                     type="file"
                     multiple
-                    onChange={(e) => {
-                      const selected = Array.from(e.target.files || []);
-                      if (selected.length > 0) {
-                        setFiles((prev) => [...prev, ...selected]);
-                      }
-                      if (folderInputRef.current) {
-                        folderInputRef.current.value = '';
-                      }
-                    }}
+                    onChange={handleTestDataFolderSelect}
                     className="hidden"
                     {...({ webkitdirectory: '', directory: '' } as any)}
                   />
-                )}
+                  {testDataFiles.length > 0 && (
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-slate-300 text-sm">已选择 {testDataFiles.length} 个文件</span>
+                        <button
+                          onClick={() => setTestDataFiles([])}
+                          className="text-xs text-red-400 hover:text-red-300"
+                        >
+                          清空
+                        </button>
+                      </div>
+                      {testDataFiles.slice(0, 20).map((file, index) => (
+                        <div key={index} className="flex items-center justify-between bg-slate-700 rounded-lg px-3 py-2">
+                          <div className="flex items-center min-w-0">
+                            <FileText className="h-4 w-4 text-purple-400 mr-2 shrink-0" />
+                            <span className="text-white text-sm truncate">
+                              {file.webkitRelativePath || file.name}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => removeTestDataFile(index)}
+                            className="text-red-400 hover:text-red-300"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                      {testDataFiles.length > 20 && (
+                        <div className="text-slate-400 text-sm text-center py-2">
+                          还有 {testDataFiles.length - 20} 个文件未显示
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div
+                className={`bg-slate-800 rounded-xl p-8 shadow-xl border-2 border-dashed transition-colors ${
+                  dragOver
+                    ? 'border-cyan-500 bg-cyan-500/5'
+                    : 'border-slate-600 hover:border-slate-500'
+                }`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+              >
+                <div className="flex flex-col items-center text-center">
+                  <div className="w-16 h-16 rounded-full bg-cyan-500/10 flex items-center justify-center mb-4">
+                    <FileUp className="h-8 w-8 text-cyan-500" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-white mb-2">
+                    拖拽文件到此处上传
+                  </h3>
+                  <p className="text-slate-400 mb-4">
+                    支持 .txt 和 .json 格式，可同时上传多个文件
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center px-6 py-3 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors"
+                    >
+                      <Upload className="h-5 w-5 mr-2" />
+                      选择文件
+                    </button>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".txt,.json"
+                    multiple
+                    onChange={handleProblemFileSelect}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+            )}
 
-            {files.length > 0 && (
+            {importMode === 'ai' && problemFiles.length > 0 && (
               <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-white">
-                    已选择的文件 ({files.length})
+                    已选择的文件 ({problemFiles.length})
                   </h3>
                   <button
-                    onClick={() => setFiles([])}
+                    onClick={() => setProblemFiles([])}
                     className="text-sm text-slate-400 hover:text-red-400 transition-colors"
                   >
                     清空全部
                   </button>
                 </div>
                 <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {files.map((file, index) => (
+                  {problemFiles.map((file, index) => (
                     <div
                       key={index}
                       className="flex items-center justify-between bg-slate-700 rounded-lg px-4 py-3"
@@ -729,12 +851,9 @@ export function AdminBatchImportPage() {
                         <span className="text-white truncate">
                           {file.webkitRelativePath || file.name}
                         </span>
-                        <span className="text-slate-400 ml-3 text-sm shrink-0">
-                          ({(file.size / 1024).toFixed(1)} KB)
-                        </span>
                       </div>
                       <button
-                        onClick={() => removeFile(index)}
+                        onClick={() => removeProblemFile(index)}
                         className="text-red-400 hover:text-red-300 transition-colors"
                       >
                         <X className="h-5 w-5" />
@@ -763,19 +882,19 @@ export function AdminBatchImportPage() {
 
             <div className="flex justify-center">
               <button
-                onClick={importMode === 'ai' ? handleParse : handleFileParse}
-                disabled={parsing || (files.length === 0 && (importMode === 'file' || !pasteText.trim()))}
+                onClick={handleParse}
+                disabled={parsing || ((importMode === 'file' ? problemFiles.length === 0 : problemFiles.length === 0 && !pasteText.trim()))}
                 className="flex items-center px-8 py-3 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {parsing ? (
                   <>
                     <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                    {importMode === 'ai' ? 'AI 解析中...' : '解析中...'}
+                    解析中...
                   </>
                 ) : (
                   <>
                     <Download className="h-5 w-5 mr-2" />
-                    {importMode === 'ai' ? '开始解析' : '解析文件'}
+                    开始解析
                   </>
                 )}
               </button>
