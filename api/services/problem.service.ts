@@ -48,6 +48,7 @@ export class ProblemService {
         timeLimit: data.timeLimit || 2000,
         memoryLimit: data.memoryLimit || 256,
         choices: data.choices ? JSON.stringify(data.choices) : null,
+        correctAnswer: data.correctAnswer || null,
         fillBlanks: data.fillBlanks ? JSON.stringify(data.fillBlanks) : null,
         sourceFile: data.sourceFile || null
       }
@@ -136,6 +137,7 @@ export class ProblemService {
     if (data.timeLimit) updateData.timeLimit = data.timeLimit;
     if (data.memoryLimit) updateData.memoryLimit = data.memoryLimit;
     if (data.choices) updateData.choices = JSON.stringify(data.choices);
+    if (data.correctAnswer !== undefined) updateData.correctAnswer = data.correctAnswer;
     if (data.fillBlanks) updateData.fillBlanks = JSON.stringify(data.fillBlanks);
     if (data.sourceFile !== undefined) updateData.sourceFile = data.sourceFile;
 
