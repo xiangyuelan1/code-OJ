@@ -166,7 +166,7 @@ export function AdminBatchImportPage() {
     }
   };
 
-  const parseJsonProblem = (data: any, fileName: string): ParsedProblem => {
+  const parseJsonProblem = (data: any, fileName: string, fileContentMap: Record<string, string>): ParsedProblem => {
     const prob = data.problem || data;
     const type = prob.type === 1 || prob.type === 'PROGRAMMING' ? 'PROGRAMMING'
       : prob.type === 2 || prob.type === 'CHOICE' ? 'CHOICE'
@@ -177,20 +177,38 @@ export function AdminBatchImportPage() {
       : 'MEDIUM';
 
     const testCases: { input: string; output: string; isSample: boolean }[] = [];
+
+    const resolveFileRef = (ref: string): string => {
+      if (!ref) return '';
+      if (ref.endsWith('.in') || ref.endsWith('.out') || ref.endsWith('.txt')) {
+        const content = fileContentMap[ref];
+        if (content !== undefined) return content;
+        const baseName = ref.replace(/\.\w+$/, '');
+        for (const [key, val] of Object.entries(fileContentMap)) {
+          if (key.startsWith(baseName + '.')) return val;
+        }
+      }
+      return ref;
+    };
+
     if (data.samples && Array.isArray(data.samples)) {
       for (const sample of data.samples) {
+        const inputVal = resolveFileRef(sample.input || '');
+        const outputVal = resolveFileRef(sample.output || '');
         testCases.push({
-          input: sample.input || '',
-          output: sample.output || '',
+          input: inputVal,
+          output: outputVal,
           isSample: true
         });
       }
     }
     if (prob.examples && Array.isArray(prob.examples)) {
       for (const ex of prob.examples) {
+        const inputVal = resolveFileRef(ex.input || '');
+        const outputVal = resolveFileRef(ex.output || '');
         testCases.push({
-          input: ex.input || '',
-          output: ex.output || '',
+          input: inputVal,
+          output: outputVal,
           isSample: true
         });
       }
@@ -207,7 +225,7 @@ export function AdminBatchImportPage() {
       tags.push(prob.source);
     }
 
-    let description = prob.description || prob.input || '';
+    let description = prob.description || '';
     if (prob.input) {
       description += `\n\n**输入格式**\n${prob.input}`;
     }
@@ -218,12 +236,22 @@ export function AdminBatchImportPage() {
       description += `\n\n**提示**\n${prob.hint}`;
     }
 
+    const choices: { key: string; text: string }[] = [];
+    if (prob.options && Array.isArray(prob.options)) {
+      for (let i = 0; i < prob.options.length; i++) {
+        choices.push({ key: String.fromCharCode(65 + i), text: prob.options[i] });
+      }
+    }
+
     return {
       title: prob.title || fileName.replace(/\.\w+$/, ''),
       type,
       difficulty,
       description,
       testCases: testCases.length > 0 ? testCases : undefined,
+      choices: choices.length > 0 ? choices : undefined,
+      correctAnswer: prob.correctAnswer || prob.answer || undefined,
+      fillBlanks: prob.fillBlanks ? (Array.isArray(prob.fillBlanks) ? prob.fillBlanks : undefined) : undefined,
       tags: tags.length > 0 ? tags : undefined,
       sourceFile: fileName,
       timeLimit: prob.timeLimit || undefined,
@@ -238,103 +266,139 @@ export function AdminBatchImportPage() {
 
     try {
       const allParsed: ParsedProblem[] = [];
-      const folderDataMap: Record<string, { inFiles: File[]; outFiles: File[]; jsonFile: File | null; otherFiles: File[] }> = {};
+      const fileContentMap: Record<string, string> = {};
+      const jsonFiles: { file: File; relPath: string }[] = [];
+      const dataFileMap: Record<string, { inFiles: File[]; outFiles: File[] }> = {};
 
       for (const file of files) {
         const name = file.name;
-        const relPath = file.webkitRelativePath || '';
-        const pathParts = relPath.split('/');
+        const relPath = file.webkitRelativePath || name;
 
         if (name.endsWith('.json')) {
-          const text = await file.text();
-          try {
-            const data = JSON.parse(text);
-            if (Array.isArray(data)) {
-              for (const item of data) {
-                allParsed.push(parseJsonProblem(item, name));
-              }
-            } else if (data.problem || data.title) {
-              const parsed = parseJsonProblem(data, name);
-              if (pathParts.length > 1) {
-                const folderName = pathParts[pathParts.length - 2];
-                const folderKey = pathParts.slice(0, -1).join('/');
-                if (!folderDataMap[folderKey]) {
-                  folderDataMap[folderKey] = { inFiles: [], outFiles: [], jsonFile: null, otherFiles: [] };
-                }
-                folderDataMap[folderKey].jsonFile = file;
-                folderDataMap[folderKey].otherFiles.push(file);
-              } else {
-                allParsed.push(parsed);
-              }
-            } else if (Array.isArray(data.problems)) {
-              for (const item of data.problems) {
-                allParsed.push(parseJsonProblem(item, name));
-              }
-            } else {
-              allParsed.push(parseJsonProblem(data, name));
-            }
-          } catch {
-            alert(`文件 ${name} JSON 解析失败，请检查格式`);
-          }
+          jsonFiles.push({ file, relPath });
         } else if (name.endsWith('.in')) {
-          const folderKey = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '__root__';
-          if (!folderDataMap[folderKey]) {
-            folderDataMap[folderKey] = { inFiles: [], outFiles: [], jsonFile: null, otherFiles: [] };
-          }
-          folderDataMap[folderKey].inFiles.push(file);
+          const dirKey = relPath.includes('/') ? relPath.substring(0, relPath.lastIndexOf('/')) : '__root__';
+          if (!dataFileMap[dirKey]) dataFileMap[dirKey] = { inFiles: [], outFiles: [] };
+          dataFileMap[dirKey].inFiles.push(file);
         } else if (name.endsWith('.out')) {
-          const folderKey = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '__root__';
-          if (!folderDataMap[folderKey]) {
-            folderDataMap[folderKey] = { inFiles: [], outFiles: [], jsonFile: null, otherFiles: [] };
-          }
-          folderDataMap[folderKey].outFiles.push(file);
+          const dirKey = relPath.includes('/') ? relPath.substring(0, relPath.lastIndexOf('/')) : '__root__';
+          if (!dataFileMap[dirKey]) dataFileMap[dirKey] = { inFiles: [], outFiles: [] };
+          dataFileMap[dirKey].outFiles.push(file);
         }
       }
 
-      for (const [folderKey, folderData] of Object.entries(folderDataMap)) {
-        if (folderData.inFiles.length === 0 && folderData.outFiles.length === 0) continue;
+      for (const [, dirData] of Object.entries(dataFileMap)) {
+        for (const f of dirData.inFiles) {
+          const key = f.webkitRelativePath || f.name;
+          fileContentMap[key] = await f.text();
+          fileContentMap[f.name] = fileContentMap[key];
+        }
+        for (const f of dirData.outFiles) {
+          const key = f.webkitRelativePath || f.name;
+          fileContentMap[key] = await f.text();
+          fileContentMap[f.name] = fileContentMap[key];
+        }
+      }
+
+      for (const { file, relPath } of jsonFiles) {
+        const text = await file.text();
+        try {
+          const data = JSON.parse(text);
+          const jsonDir = relPath.includes('/') ? relPath.substring(0, relPath.lastIndexOf('/')) : '';
+
+          if (jsonDir && dataFileMap[jsonDir]) {
+            const dirData = dataFileMap[jsonDir];
+            const extraTestCases: { input: string; output: string; isSample: boolean }[] = [];
+            const inFiles = dirData.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            const outFiles = dirData.outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            const maxLen = Math.max(inFiles.length, outFiles.length);
+            for (let i = 0; i < maxLen; i++) {
+              extraTestCases.push({
+                input: i < inFiles.length ? await inFiles[i].text() : '',
+                output: i < outFiles.length ? await outFiles[i].text() : '',
+                isSample: i === 0
+              });
+            }
+
+            const parsed = parseJsonProblem(data, file.name, fileContentMap);
+            if (extraTestCases.length > 0) {
+              parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
+            }
+            allParsed.push(parsed);
+            delete dataFileMap[jsonDir];
+          } else {
+            const jsonBaseName = file.name.replace(/\.\w+$/, '');
+            let matchedDir = '';
+            for (const dirKey of Object.keys(dataFileMap)) {
+              const dirName = dirKey.split('/').pop() || dirKey;
+              if (dirName === jsonBaseName || dirName.includes(jsonBaseName) || jsonBaseName.includes(dirName)) {
+                matchedDir = dirKey;
+                break;
+              }
+            }
+
+            if (matchedDir) {
+              const dirData = dataFileMap[matchedDir];
+              const extraTestCases: { input: string; output: string; isSample: boolean }[] = [];
+              const inFiles = dirData.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+              const outFiles = dirData.outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+              const maxLen = Math.max(inFiles.length, outFiles.length);
+              for (let i = 0; i < maxLen; i++) {
+                extraTestCases.push({
+                  input: i < inFiles.length ? await inFiles[i].text() : '',
+                  output: i < outFiles.length ? await outFiles[i].text() : '',
+                  isSample: i === 0
+                });
+              }
+              const parsed = parseJsonProblem(data, file.name, fileContentMap);
+              if (extraTestCases.length > 0) {
+                parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
+              }
+              allParsed.push(parsed);
+              delete dataFileMap[matchedDir];
+            } else {
+              if (Array.isArray(data)) {
+                for (const item of data) {
+                  allParsed.push(parseJsonProblem(item, file.name, fileContentMap));
+                }
+              } else if (data.problems && Array.isArray(data.problems)) {
+                for (const item of data.problems) {
+                  allParsed.push(parseJsonProblem(item, file.name, fileContentMap));
+                }
+              } else {
+                allParsed.push(parseJsonProblem(data, file.name, fileContentMap));
+              }
+            }
+          }
+        } catch {
+          alert(`文件 ${file.name} JSON 解析失败，请检查格式`);
+        }
+      }
+
+      for (const [dirKey, dirData] of Object.entries(dataFileMap)) {
+        if (dirData.inFiles.length === 0 && dirData.outFiles.length === 0) continue;
 
         const testCases: { input: string; output: string; isSample: boolean }[] = [];
-        const inFiles = folderData.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-        const outFiles = folderData.outFiles.sort((a, b) => b.name.localeCompare(b.name, undefined, { numeric: true })).reverse().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-
+        const inFiles = dirData.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        const outFiles = dirData.outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
         const maxLen = Math.max(inFiles.length, outFiles.length);
         for (let i = 0; i < maxLen; i++) {
-          const input = i < inFiles.length ? await inFiles[i].text() : '';
-          const output = i < outFiles.length ? await outFiles[i].text() : '';
-          testCases.push({ input, output, isSample: i === 0 });
-        }
-
-        const folderName = folderKey === '__root__' ? '未命名题目' : folderKey.split('/').pop() || folderKey;
-
-        if (folderData.jsonFile) {
-          try {
-            const text = await folderData.jsonFile.text();
-            const data = JSON.parse(text);
-            const parsed = parseJsonProblem(data, folderData.jsonFile.name);
-            parsed.testCases = [...(parsed.testCases || []), ...testCases];
-            if (!parsed.sourceFile) parsed.sourceFile = folderName;
-            allParsed.push(parsed);
-          } catch {
-            allParsed.push({
-              title: folderName,
-              type: 'PROGRAMMING',
-              difficulty: 'MEDIUM',
-              description: `题目来源: ${folderName}`,
-              testCases,
-              sourceFile: folderName,
-            });
-          }
-        } else {
-          allParsed.push({
-            title: folderName,
-            type: 'PROGRAMMING',
-            difficulty: 'MEDIUM',
-            description: `题目来源: ${folderName}`,
-            testCases,
-            sourceFile: folderName,
+          testCases.push({
+            input: i < inFiles.length ? await inFiles[i].text() : '',
+            output: i < outFiles.length ? await outFiles[i].text() : '',
+            isSample: i === 0
           });
         }
+
+        const folderName = dirKey === '__root__' ? '未命名题目' : dirKey.split('/').pop() || dirKey;
+        allParsed.push({
+          title: folderName,
+          type: 'PROGRAMMING',
+          difficulty: 'MEDIUM',
+          description: `题目来源: ${folderName}`,
+          testCases,
+          sourceFile: folderName,
+        });
       }
 
       if (allParsed.length === 0) {
@@ -563,7 +627,7 @@ export function AdminBatchImportPage() {
                 <p className="text-slate-400 mb-4">
                   {importMode === 'ai'
                     ? '支持 .txt 和 .json 格式，可同时上传多个文件'
-                    : '支持 .json 题目文件和包含 .in/.out 文件的文件夹'}
+                    : '支持 .json 题目文件 + .in/.out 测试数据文件，可同时选择文件和文件夹批量导入'}
                 </p>
                 <div className="flex gap-3">
                   <button
@@ -583,6 +647,11 @@ export function AdminBatchImportPage() {
                     </button>
                   )}
                 </div>
+                {importMode === 'file' && (
+                  <p className="text-slate-500 text-xs mt-3">
+                    提示：可先选择文件夹导入 .in/.out 数据文件，再选择 .json 题目文件，系统会自动按文件名/文件夹名匹配题目与测试数据
+                  </p>
+                )}
                 <input
                   ref={fileInputRef}
                   type="file"
