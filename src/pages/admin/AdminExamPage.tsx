@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { examAPI, problemsAPI, knowledgeTreeAPI } from '../../services/api';
-import { Plus, Trash2, Clock, FileText, Users, ArrowLeft, Save, Eye, ChevronDown, ChevronUp, Trophy, Code, CheckCircle, XCircle, User, FolderTree, Filter } from 'lucide-react';
+import { examAPI, problemsAPI, knowledgeTreeAPI, enhancedAiAPI } from '../../services/api';
+import { Plus, Trash2, Clock, FileText, Users, ArrowLeft, Save, Eye, ChevronDown, ChevronUp, Trophy, Code, CheckCircle, XCircle, User, FolderTree, Filter, Sparkles, Loader2 } from 'lucide-react';
 
 export function AdminExamPage() {
   const navigate = useNavigate();
@@ -28,6 +28,8 @@ export function AdminExamPage() {
   const [selectedKnowledgeNodeId, setSelectedKnowledgeNodeId] = useState<string>('');
   const [problemTypeFilter, setProblemTypeFilter] = useState<string>('');
   const [difficultyFilter, setDifficultyFilter] = useState<string>('');
+  const [tagFilter, setTagFilter] = useState<string>('');
+  const [aiGenerating, setAiGenerating] = useState(false);
 
   useEffect(() => {
     fetchExams();
@@ -86,6 +88,17 @@ export function AdminExamPage() {
     return result;
   };
 
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    for (const p of problems) {
+      const tags = Array.isArray(p.tags) ? p.tags : [];
+      for (const t of tags) {
+        if (t) tagSet.add(t);
+      }
+    }
+    return Array.from(tagSet).sort();
+  }, [problems]);
+
   const filteredProblems = problems.filter((p: any) => {
     if (problemTypeFilter && p.type !== problemTypeFilter) return false;
     if (difficultyFilter && p.difficulty !== difficultyFilter) return false;
@@ -93,8 +106,38 @@ export function AdminExamPage() {
       const nodeId = p.knowledgeTreeId || p.knowledgeTree?.id;
       if (nodeId !== selectedKnowledgeNodeId) return false;
     }
+    if (tagFilter) {
+      const tags = Array.isArray(p.tags) ? p.tags : [];
+      if (!tags.includes(tagFilter)) return false;
+    }
     return true;
   });
+
+  const handleAiGenerateExam = async () => {
+    setAiGenerating(true);
+    try {
+      const params: any = { problemCount: 5 };
+      if (difficultyFilter) params.difficulty = difficultyFilter;
+      if (problemTypeFilter) params.problemTypes = [problemTypeFilter];
+      if (tagFilter) params.tags = [tagFilter];
+      if (selectedKnowledgeNodeId) params.knowledgeNodeIds = [selectedKnowledgeNodeId];
+
+      const res = await enhancedAiAPI.generateExam(params);
+      if (res.success && res.data?.problemIds?.length > 0) {
+        setForm(prev => ({
+          ...prev,
+          problemIds: res.data.problemIds
+        }));
+        alert(`AI智能组卷成功！${res.data.reasoning || ''}`);
+      } else {
+        alert(res.data?.reasoning || 'AI组卷未找到合适的题目');
+      }
+    } catch (error: any) {
+      alert(error.error?.message || 'AI组卷失败');
+    } finally {
+      setAiGenerating(false);
+    }
+  };
 
   const handleViewAttempts = async (examId: string) => {
     setViewingAttempts(examId);
@@ -365,18 +408,43 @@ export function AdminExamPage() {
                       ))}
                     </select>
                   )}
-                  {(problemTypeFilter || difficultyFilter || selectedKnowledgeNodeId) && (
+                  {allTags.length > 0 && (
+                    <select
+                      value={tagFilter}
+                      onChange={(e) => setTagFilter(e.target.value)}
+                      className="px-3 py-1.5 bg-slate-600 border border-slate-500 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 max-w-[200px]"
+                    >
+                      <option value="">全部标签</option>
+                      {allTags.map((tag: string) => (
+                        <option key={tag} value={tag}>{tag}</option>
+                      ))}
+                    </select>
+                  )}
+                  {(problemTypeFilter || difficultyFilter || selectedKnowledgeNodeId || tagFilter) && (
                     <button
                       onClick={() => {
                         setProblemTypeFilter('');
                         setDifficultyFilter('');
                         setSelectedKnowledgeNodeId('');
+                        setTagFilter('');
                       }}
                       className="text-xs text-slate-400 hover:text-white transition-colors"
                     >
                       清除筛选
                     </button>
                   )}
+                  <button
+                    onClick={handleAiGenerateExam}
+                    disabled={aiGenerating}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors text-sm disabled:opacity-50"
+                  >
+                    {aiGenerating ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4" />
+                    )}
+                    AI智能组卷
+                  </button>
                 </div>
 
                 <div className="space-y-2 max-h-96 overflow-y-auto">

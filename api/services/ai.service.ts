@@ -1294,6 +1294,207 @@ DP 解题步骤：
       totalPages: Math.ceil(total / pageSize),
     };
   }
+
+  async generateExam(params: {
+    title?: string;
+    difficulty?: string;
+    tags?: string[];
+    knowledgeNodeIds?: string[];
+    problemCount?: number;
+    problemTypes?: string[];
+  }, userId?: string): Promise<{ problemIds: string[]; reasoning: string }> {
+    const problemCount = params.problemCount || 5;
+    const problems = await prisma.problem.findMany({
+      where: {
+        ...(params.difficulty ? { difficulty: params.difficulty } : {}),
+        ...(params.problemTypes?.length ? { type: { in: params.problemTypes } } : {}),
+        ...(params.knowledgeNodeIds?.length ? { knowledgeTreeId: { in: params.knowledgeNodeIds } } : {}),
+      },
+      select: {
+        id: true,
+        title: true,
+        type: true,
+        difficulty: true,
+        tags: true,
+        description: true,
+      }
+    });
+
+    const filtered = params.tags?.length
+      ? problems.filter(p => {
+          const tags: string[] = JSON.parse(p.tags || '[]');
+          return params.tags!.some(t => tags.includes(t));
+        })
+      : problems;
+
+    if (filtered.length === 0) {
+      return { problemIds: [], reasoning: '没有找到符合条件的题目' };
+    }
+
+    if (!(await this.isEnabled())) {
+      const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+      const selected = shuffled.slice(0, problemCount);
+      return {
+        problemIds: selected.map(p => p.id),
+        reasoning: `从未启用AI的随机选择中选取了 ${selected.length} 道题目`
+      };
+    }
+
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+      const selected = shuffled.slice(0, problemCount);
+      return {
+        problemIds: selected.map(p => p.id),
+        reasoning: `从降级随机选择中选取了 ${selected.length} 道题目`
+      };
+    }
+
+    const problemList = filtered.map(p => ({
+      id: p.id,
+      title: p.title,
+      type: p.type,
+      difficulty: p.difficulty,
+      tags: JSON.parse(p.tags || '[]'),
+    }));
+
+    const prompt = `你是一位专业的出卷专家。请从以下题目中选择 ${problemCount} 道题目组成一份试卷，要求：
+1. 难度分布合理（简单:中等:困难 ≈ 3:5:2）
+2. 题目类型多样化
+3. 知识点覆盖全面
+4. 避免重复考查同一知识点
+
+可选题目列表：
+${JSON.stringify(problemList, null, 2)}
+
+请以JSON格式返回，格式为：
+{"selectedIds": ["id1", "id2", ...], "reasoning": "选题理由"}`;
+
+    const result = await this.callAI(prompt, config, 'generate-exam', userId);
+    try {
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          problemIds: parsed.selectedIds || [],
+          reasoning: parsed.reasoning || 'AI智能组卷'
+        };
+      }
+    } catch (e) {
+      console.error('AI组卷结果解析失败:', e);
+    }
+
+    const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, problemCount);
+    return {
+      problemIds: selected.map(p => p.id),
+      reasoning: 'AI结果解析失败，已降级为随机选择'
+    };
+  }
+
+  async optimizeCode(code: string, language: string, userId?: string): Promise<string> {
+    if (!(await this.isEnabled())) {
+      return `## 代码优化建议\n\nAI功能未启用，无法提供优化建议。请在管理后台配置AI后使用此功能。\n\n### 通用优化建议\n1. 检查是否有重复计算\n2. 考虑使用更高效的数据结构\n3. 注意时间复杂度和空间复杂度`;
+    }
+
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      return `## 代码优化建议\n\nAI未配置，无法提供优化建议。`;
+    }
+
+    const prompt = `你是一位资深的代码优化专家。请分析以下${language}代码，给出优化建议：
+
+\`\`\`${language}
+${code}
+\`\`\`
+
+请从以下方面分析：
+1. **时间复杂度优化**：是否有更优的算法？
+2. **空间复杂度优化**：是否有不必要的内存使用？
+3. **代码质量优化**：可读性、可维护性、边界处理
+4. **性能优化**：是否有性能瓶颈？
+
+请使用Markdown格式，给出具体的优化建议和优化后的代码片段。`;
+
+    return await this.callAI(prompt, config, 'optimize-code', userId);
+  }
+
+  async recommendSimilarProblems(problemId: string, userId?: string): Promise<{ problemIds: string[]; reasoning: string }> {
+    const problem = await prisma.problem.findUnique({
+      where: { id: problemId },
+      select: { id: true, title: true, type: true, difficulty: true, tags: true, description: true }
+    });
+
+    if (!problem) {
+      return { problemIds: [], reasoning: '题目不存在' };
+    }
+
+    const tags: string[] = JSON.parse(problem.tags || '[]');
+
+    const candidates = await prisma.problem.findMany({
+      where: {
+        id: { not: problemId },
+        type: problem.type,
+      },
+      select: {
+        id: true,
+        title: true,
+        type: true,
+        difficulty: true,
+        tags: true,
+      },
+      take: 50,
+    });
+
+    const scored = candidates.map(p => {
+      const pTags: string[] = JSON.parse(p.tags || '[]');
+      const commonTags = pTags.filter(t => tags.includes(t));
+      let score = commonTags.length * 10;
+      if (p.difficulty === problem.difficulty) score += 5;
+      return { ...p, score };
+    }).sort((a, b) => b.score - a.score).slice(0, 5);
+
+    if (!(await this.isEnabled()) || !await this.getConfig().then(c => c?.apiKey)) {
+      return {
+        problemIds: scored.map(p => p.id),
+        reasoning: `基于标签相似度推荐了 ${scored.length} 道题目`
+      };
+    }
+
+    const config = await this.getConfig();
+    const prompt = `你是一位编程教育专家。用户刚完成了以下题目：
+
+题目：${problem.title}
+类型：${problem.type}
+难度：${problem.difficulty}
+标签：${tags.join(', ')}
+描述：${problem.description?.substring(0, 500)}
+
+以下是候选的相似题目：
+${JSON.stringify(scored.map(p => ({ id: p.id, title: p.title, tags: JSON.parse(p.tags || '[]'), difficulty: p.difficulty })), null, 2)}
+
+请从中选择3-5道最适合的相似/进阶题目，以JSON格式返回：
+{"selectedIds": ["id1", "id2", ...], "reasoning": "推荐理由"}`;
+
+    const result = await this.callAI(prompt, config, 'recommend-similar', userId);
+    try {
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          problemIds: parsed.selectedIds || [],
+          reasoning: parsed.reasoning || 'AI智能推荐'
+        };
+      }
+    } catch (e) {
+      console.error('AI推荐结果解析失败:', e);
+    }
+
+    return {
+      problemIds: scored.map(p => p.id),
+      reasoning: 'AI结果解析失败，已降级为标签相似度推荐'
+    };
+  }
 }
 
 export const aiService = new AIService();

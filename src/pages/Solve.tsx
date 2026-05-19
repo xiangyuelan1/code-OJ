@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { problemsAPI, submissionsAPI, aiAPI } from '../services/api';
-import { ArrowLeft, Send, Lightbulb, Loader2, Star, Settings, X } from 'lucide-react';
+import { problemsAPI, submissionsAPI, aiAPI, enhancedAiAPI } from '../services/api';
+import { ArrowLeft, Send, Lightbulb, Loader2, Star, Settings, X, Sparkles, Wand2 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { useAuthStore } from '../stores/auth.store';
 import { MarkdownRenderer } from '../components/MarkdownEditor';
@@ -170,6 +170,12 @@ export function SolvePage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiHint, setAiHint] = useState('');
   const [showHint, setShowHint] = useState(false);
+  const [optimizeLoading, setOptimizeLoading] = useState(false);
+  const [optimizeSuggestion, setOptimizeSuggestion] = useState('');
+  const [showOptimize, setShowOptimize] = useState(false);
+  const [similarLoading, setSimilarLoading] = useState(false);
+  const [similarProblems, setSimilarProblems] = useState<any[]>([]);
+  const [showSimilar, setShowSimilar] = useState(false);
   const [editorSettings, setEditorSettings] = useState<EditorSettings>(loadEditorSettings);
   const [showEditorSettings, setShowEditorSettings] = useState(false);
 
@@ -275,6 +281,48 @@ export function SolvePage() {
       setAiHint('AI功能未启用或配置错误');
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const getOptimizeSuggestion = async () => {
+    if (!code.trim()) {
+      alert('请先编写代码');
+      return;
+    }
+    setOptimizeLoading(true);
+    setShowOptimize(true);
+    try {
+      const res = await enhancedAiAPI.optimizeCode(code, language);
+      if (res.success) {
+        setOptimizeSuggestion(res.data.suggestion);
+      }
+    } catch {
+      setOptimizeSuggestion('AI功能未启用或配置错误');
+    } finally {
+      setOptimizeLoading(false);
+    }
+  };
+
+  const getSimilarProblems = async () => {
+    if (!id) return;
+    setSimilarLoading(true);
+    setShowSimilar(true);
+    try {
+      const res = await enhancedAiAPI.recommendSimilar(id);
+      if (res.success && res.data?.problemIds?.length > 0) {
+        const problemsRes = await problemsAPI.getAll();
+        if (problemsRes.success) {
+          const allProblems = problemsRes.data || [];
+          const similar = allProblems.filter((p: any) => res.data.problemIds.includes(p.id));
+          setSimilarProblems(similar);
+        }
+      } else {
+        setSimilarProblems([]);
+      }
+    } catch {
+      setSimilarProblems([]);
+    } finally {
+      setSimilarLoading(false);
     }
   };
 
@@ -458,18 +506,79 @@ export function SolvePage() {
 
           {/* AI 提示 */}
           <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
-            <button
-              onClick={getHint}
-              disabled={aiLoading}
-              className="flex items-center px-4 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
-            >
-              {aiLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Lightbulb className="h-4 w-4 mr-2" />}
-              AI提示
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={getHint}
+                disabled={aiLoading}
+                className="flex items-center px-4 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
+              >
+                {aiLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Lightbulb className="h-4 w-4 mr-2" />}
+                AI提示
+              </button>
+              {problem.type === 'PROGRAMMING' && (
+                <button
+                  onClick={getOptimizeSuggestion}
+                  disabled={optimizeLoading}
+                  className="flex items-center px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors disabled:opacity-50"
+                >
+                  {optimizeLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
+                  AI优化建议
+                </button>
+              )}
+              <button
+                onClick={getSimilarProblems}
+                disabled={similarLoading}
+                className="flex items-center px-4 py-2 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors disabled:opacity-50"
+              >
+                {similarLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                相似题目
+              </button>
+            </div>
 
             {showHint && aiHint && (
               <div className="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 {renderHintContent(aiHint)}
+              </div>
+            )}
+
+            {showOptimize && optimizeSuggestion && (
+              <div className="mt-4 p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-cyan-400 font-semibold text-sm">AI优化建议</h4>
+                  <button onClick={() => setShowOptimize(false)} className="text-slate-400 hover:text-white"><X className="h-4 w-4" /></button>
+                </div>
+                <div className="prose prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: optimizeSuggestion.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-slate-900 p-3 rounded-lg overflow-x-auto"><code>$2</code></pre>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>') }} />
+              </div>
+            )}
+
+            {showSimilar && (
+              <div className="mt-4 p-4 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-purple-400 font-semibold text-sm">相似题目推荐</h4>
+                  <button onClick={() => setShowSimilar(false)} className="text-slate-400 hover:text-white"><X className="h-4 w-4" /></button>
+                </div>
+                {similarLoading ? (
+                  <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 className="h-4 w-4 animate-spin" />正在推荐...</div>
+                ) : similarProblems.length > 0 ? (
+                  <div className="space-y-2">
+                    {similarProblems.map((p: any) => (
+                      <button
+                        key={p.id}
+                        onClick={() => navigate(`/solve/${p.id}`)}
+                        className="w-full text-left flex items-center justify-between p-3 bg-slate-700/50 rounded-lg hover:bg-slate-600/50 transition-colors"
+                      >
+                        <span className="text-white text-sm">{p.title}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          p.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400' :
+                          p.difficulty === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
+                          'bg-red-500/20 text-red-400'
+                        }`}>{p.difficulty === 'EASY' ? '简单' : p.difficulty === 'MEDIUM' ? '中等' : '困难'}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-400 text-sm">暂无相似题目推荐</p>
+                )}
               </div>
             )}
           </div>

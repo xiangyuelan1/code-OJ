@@ -226,4 +226,41 @@ router.get('/usage/logs', authMiddleware, roleMiddleware('ADMIN'), async (req: R
   }
 });
 
+router.post('/generate-exam', authMiddleware, roleMiddleware('ADMIN', 'TEACHER'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const result = await aiService.generateExam(req.body, (req as any).userId);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/optimize-code', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const { code, language } = req.body;
+    if (!code || !language) {
+      res.status(400).json({ success: false, error: { message: '请提供代码和语言' } });
+      return;
+    }
+    const result = await aiService.optimizeCode(code, language, (req as any).userId);
+    res.json({ success: true, data: { suggestion: result } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/recommend-similar', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const { problemId } = req.body;
+    if (!problemId) {
+      res.status(400).json({ success: false, error: { message: '请提供题目ID' } });
+      return;
+    }
+    const result = await aiService.recommendSimilarProblems(problemId, (req as any).userId);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
 export default router;

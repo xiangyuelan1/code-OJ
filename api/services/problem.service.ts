@@ -35,54 +35,49 @@ export interface ProblemInput {
   sourceFile?: string;
 }
 
+const PROBLEM_FIELDS = new Set(Object.keys(prisma.problem.fields));
+
+function buildCreateData(data: ProblemInput): any {
+  const result: any = {
+    title: data.title,
+    description: data.description,
+    type: data.type,
+    difficulty: data.difficulty,
+    tags: JSON.stringify(data.tags || []),
+    testCases: JSON.stringify(data.testCases || []),
+    timeLimit: data.timeLimit || 2000,
+    memoryLimit: data.memoryLimit || 256,
+  };
+
+  if (data.choices && data.choices.length > 0) {
+    result.choices = JSON.stringify(data.choices);
+  } else {
+    result.choices = null;
+  }
+
+  if (data.correctAnswer) {
+    result.correctAnswer = data.correctAnswer;
+  } else {
+    result.correctAnswer = null;
+  }
+
+  if (data.fillBlanks && data.fillBlanks.length > 0) {
+    result.fillBlanks = JSON.stringify(data.fillBlanks);
+  } else {
+    result.fillBlanks = null;
+  }
+
+  if (PROBLEM_FIELDS.has('sourceFile') && data.sourceFile) {
+    result.sourceFile = data.sourceFile;
+  }
+
+  return result;
+}
+
 export class ProblemService {
   async createProblem(data: ProblemInput) {
-    // 尝试完整创建，如果失败则尝试不带可选字段
-    const baseData: any = {
-      title: data.title,
-      description: data.description,
-      type: data.type,
-      difficulty: data.difficulty,
-      tags: JSON.stringify(data.tags || []),
-      testCases: JSON.stringify(data.testCases || []),
-      timeLimit: data.timeLimit || 2000,
-      memoryLimit: data.memoryLimit || 256,
-      choices: data.choices ? JSON.stringify(data.choices) : null,
-      correctAnswer: data.correctAnswer || null,
-      fillBlanks: data.fillBlanks ? JSON.stringify(data.fillBlanks) : null,
-    };
-
-    // 尝试添加 sourceFile，但如果报错就去掉
-    try {
-      return await prisma.problem.create({
-        data: {
-          ...baseData,
-          sourceFile: data.sourceFile || null
-        }
-      });
-    } catch (error) {
-      // 如果带 sourceFile 失败，尝试不带它
-      try {
-        return await prisma.problem.create({
-          data: baseData
-        });
-      } catch (error2) {
-        // 进一步简化，只保留最基本的字段
-        const minimalData = {
-          title: data.title,
-          description: data.description,
-          type: data.type,
-          difficulty: data.difficulty,
-          tags: JSON.stringify(data.tags || []),
-          testCases: JSON.stringify(data.testCases || []),
-          timeLimit: data.timeLimit || 2000,
-          memoryLimit: data.memoryLimit || 256,
-        };
-        return await prisma.problem.create({
-          data: minimalData
-        });
-      }
-    }
+    const createData = buildCreateData(data);
+    return await prisma.problem.create({ data: createData });
   }
 
   async getAllProblems(filters?: {
@@ -123,6 +118,7 @@ export class ProblemService {
         difficulty: true,
         tags: true,
         knowledgeTreeId: true,
+        knowledgeTree: { select: { id: true, name: true } },
         createdAt: true
       }
     });
@@ -158,49 +154,26 @@ export class ProblemService {
   async updateProblem(id: string, data: Partial<ProblemInput>) {
     const updateData: any = {};
 
-    if (data.title) updateData.title = data.title;
-    if (data.description) updateData.description = data.description;
-    if (data.type) updateData.type = data.type;
-    if (data.difficulty) updateData.difficulty = data.difficulty;
-    if (data.tags) updateData.tags = JSON.stringify(data.tags);
-    if (data.testCases) updateData.testCases = JSON.stringify(data.testCases);
-    if (data.timeLimit) updateData.timeLimit = data.timeLimit;
-    if (data.memoryLimit) updateData.memoryLimit = data.memoryLimit;
-    if (data.choices) updateData.choices = JSON.stringify(data.choices);
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.type !== undefined) updateData.type = data.type;
+    if (data.difficulty !== undefined) updateData.difficulty = data.difficulty;
+    if (data.tags !== undefined) updateData.tags = JSON.stringify(data.tags);
+    if (data.testCases !== undefined) updateData.testCases = JSON.stringify(data.testCases);
+    if (data.timeLimit !== undefined) updateData.timeLimit = data.timeLimit;
+    if (data.memoryLimit !== undefined) updateData.memoryLimit = data.memoryLimit;
+    if (data.choices !== undefined) updateData.choices = data.choices ? JSON.stringify(data.choices) : null;
     if (data.correctAnswer !== undefined) updateData.correctAnswer = data.correctAnswer;
-    if (data.fillBlanks) updateData.fillBlanks = JSON.stringify(data.fillBlanks);
+    if (data.fillBlanks !== undefined) updateData.fillBlanks = data.fillBlanks ? JSON.stringify(data.fillBlanks) : null;
 
-    // 尝试添加 sourceFile，但在错误时忽略
-    try {
-      if (data.sourceFile !== undefined) {
-        updateData.sourceFile = data.sourceFile;
-      }
-    } catch (error) {
-      // 忽略 sourceFile 相关错误
+    if (PROBLEM_FIELDS.has('sourceFile') && data.sourceFile !== undefined) {
+      updateData.sourceFile = data.sourceFile;
     }
 
-    try {
-      return await prisma.problem.update({
-        where: { id },
-        data: updateData
-      });
-    } catch (error) {
-      // 如果完整更新失败，尝试简化更新
-      const minimalUpdateData: any = {};
-      if (data.title) minimalUpdateData.title = data.title;
-      if (data.description) minimalUpdateData.description = data.description;
-      if (data.type) minimalUpdateData.type = data.type;
-      if (data.difficulty) minimalUpdateData.difficulty = data.difficulty;
-      if (data.tags) minimalUpdateData.tags = JSON.stringify(data.tags);
-      if (data.testCases) minimalUpdateData.testCases = JSON.stringify(data.testCases);
-      if (data.timeLimit) minimalUpdateData.timeLimit = data.timeLimit;
-      if (data.memoryLimit) minimalUpdateData.memoryLimit = data.memoryLimit;
-
-      return await prisma.problem.update({
-        where: { id },
-        data: minimalUpdateData
-      });
-    }
+    return await prisma.problem.update({
+      where: { id },
+      data: updateData
+    });
   }
 
   async deleteProblem(id: string) {
@@ -217,6 +190,7 @@ export class ProblemService {
         const created = await this.createProblem(problem);
         results.push({ success: true, data: created, title: problem.title });
       } catch (error: any) {
+        console.error(`批量导入题目"${problem.title}"失败:`, error.message);
         results.push({ success: false, error: error.message, title: problem.title });
       }
     }

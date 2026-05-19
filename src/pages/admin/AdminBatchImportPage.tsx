@@ -593,20 +593,15 @@ export function AdminBatchImportPage() {
 
     setImporting(true);
     try {
-      // 更宽松的导入：移除 sourceFile 字段避免问题，确保题目能成功导入
       const safeProblems = problems.map(p => {
         const safeP: any = { ...p };
-        // 暂时移除 sourceFile 字段，因为 Prisma Client 可能没有这个字段
-        delete safeP.sourceFile;
-        // 确保 testCases 中有实际内容而不是文件名引用
         if (safeP.testCases && Array.isArray(safeP.testCases)) {
           safeP.testCases = safeP.testCases.map((tc: any) => ({
-            ...tc,
             input: tc.input || '',
             output: tc.output || '',
+            isSample: tc.isSample !== undefined ? tc.isSample : true,
           }));
         }
-        // 如果没有 testCases，提供一个空的
         if (!safeP.testCases || safeP.testCases.length === 0) {
           safeP.testCases = [{
             input: '',

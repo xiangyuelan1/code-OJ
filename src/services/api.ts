@@ -153,6 +153,11 @@ export const enhancedAiAPI = {
   aiJudge: (data: any) => api.post('/api/ai/ai-judge', data),
   getUsageStats: (params?: any) => api.get('/api/ai/usage/stats', { params }),
   getUsageLogs: (params?: any) => api.get('/api/ai/usage/logs', { params }),
+  generateExam: (data: any) => api.post('/api/ai/generate-exam', data),
+  optimizeCode: (code: string, language: string) =>
+    api.post('/api/ai/optimize-code', { code, language }),
+  recommendSimilar: (problemId: string) =>
+    api.post('/api/ai/recommend-similar', { problemId }),
 };
 
 export const uploadAPI = {
