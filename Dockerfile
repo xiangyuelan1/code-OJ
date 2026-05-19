@@ -32,4 +32,4 @@ ENV HOST=0.0.0.0
 
 EXPOSE 5000
 
-CMD ["npx", "tsx", "api/server.ts"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss 2>/dev/null; npx tsx api/server.ts"]

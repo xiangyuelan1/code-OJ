@@ -37,7 +37,7 @@ interface ImportResult {
   total: number;
   succeeded: number;
   failed: number;
-  results?: { index: number; success: boolean; message?: string }[];
+  results?: { index: number; success: boolean; message?: string; title?: string }[];
 }
 
 const TYPE_MAP: Record<string, string> = {
@@ -238,16 +238,36 @@ export function AdminBatchImportPage() {
 
     try {
       const allParsed: ParsedProblem[] = [];
-      const folderDataMap: Record<string, { inFiles: File[]; outFiles: File[]; jsonFile: File | null }> = {};
+      const folderDataMap: Record<string, { inFiles: File[]; outFiles: File[]; jsonFile: File | null; otherFiles: File[] }> = {};
 
       for (const file of files) {
         const name = file.name;
+        const relPath = file.webkitRelativePath || '';
+        const pathParts = relPath.split('/');
+
         if (name.endsWith('.json')) {
           const text = await file.text();
           try {
             const data = JSON.parse(text);
             if (Array.isArray(data)) {
               for (const item of data) {
+                allParsed.push(parseJsonProblem(item, name));
+              }
+            } else if (data.problem || data.title) {
+              const parsed = parseJsonProblem(data, name);
+              if (pathParts.length > 1) {
+                const folderName = pathParts[pathParts.length - 2];
+                const folderKey = pathParts.slice(0, -1).join('/');
+                if (!folderDataMap[folderKey]) {
+                  folderDataMap[folderKey] = { inFiles: [], outFiles: [], jsonFile: null, otherFiles: [] };
+                }
+                folderDataMap[folderKey].jsonFile = file;
+                folderDataMap[folderKey].otherFiles.push(file);
+              } else {
+                allParsed.push(parsed);
+              }
+            } else if (Array.isArray(data.problems)) {
+              for (const item of data.problems) {
                 allParsed.push(parseJsonProblem(item, name));
               }
             } else {
@@ -257,28 +277,26 @@ export function AdminBatchImportPage() {
             alert(`文件 ${name} JSON 解析失败，请检查格式`);
           }
         } else if (name.endsWith('.in')) {
-          const folderName = file.webkitRelativePath ? file.webkitRelativePath.split('/')[0] : '';
-          if (folderName) {
-            if (!folderDataMap[folderName]) {
-              folderDataMap[folderName] = { inFiles: [], outFiles: [], jsonFile: null };
-            }
-            folderDataMap[folderName].inFiles.push(file);
+          const folderKey = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '__root__';
+          if (!folderDataMap[folderKey]) {
+            folderDataMap[folderKey] = { inFiles: [], outFiles: [], jsonFile: null, otherFiles: [] };
           }
+          folderDataMap[folderKey].inFiles.push(file);
         } else if (name.endsWith('.out')) {
-          const folderName = file.webkitRelativePath ? file.webkitRelativePath.split('/')[0] : '';
-          if (folderName) {
-            if (!folderDataMap[folderName]) {
-              folderDataMap[folderName] = { inFiles: [], outFiles: [], jsonFile: null };
-            }
-            folderDataMap[folderName].outFiles.push(file);
+          const folderKey = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '__root__';
+          if (!folderDataMap[folderKey]) {
+            folderDataMap[folderKey] = { inFiles: [], outFiles: [], jsonFile: null, otherFiles: [] };
           }
+          folderDataMap[folderKey].outFiles.push(file);
         }
       }
 
-      for (const [folderName, folderData] of Object.entries(folderDataMap)) {
+      for (const [folderKey, folderData] of Object.entries(folderDataMap)) {
+        if (folderData.inFiles.length === 0 && folderData.outFiles.length === 0) continue;
+
         const testCases: { input: string; output: string; isSample: boolean }[] = [];
         const inFiles = folderData.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-        const outFiles = folderData.outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        const outFiles = folderData.outFiles.sort((a, b) => b.name.localeCompare(b.name, undefined, { numeric: true })).reverse().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
         const maxLen = Math.max(inFiles.length, outFiles.length);
         for (let i = 0; i < maxLen; i++) {
@@ -287,14 +305,40 @@ export function AdminBatchImportPage() {
           testCases.push({ input, output, isSample: i === 0 });
         }
 
-        allParsed.push({
-          title: folderName,
-          type: 'PROGRAMMING',
-          difficulty: 'MEDIUM',
-          description: `题目来源: ${folderName}`,
-          testCases,
-          sourceFile: folderName,
-        });
+        const folderName = folderKey === '__root__' ? '未命名题目' : folderKey.split('/').pop() || folderKey;
+
+        if (folderData.jsonFile) {
+          try {
+            const text = await folderData.jsonFile.text();
+            const data = JSON.parse(text);
+            const parsed = parseJsonProblem(data, folderData.jsonFile.name);
+            parsed.testCases = [...(parsed.testCases || []), ...testCases];
+            if (!parsed.sourceFile) parsed.sourceFile = folderName;
+            allParsed.push(parsed);
+          } catch {
+            allParsed.push({
+              title: folderName,
+              type: 'PROGRAMMING',
+              difficulty: 'MEDIUM',
+              description: `题目来源: ${folderName}`,
+              testCases,
+              sourceFile: folderName,
+            });
+          }
+        } else {
+          allParsed.push({
+            title: folderName,
+            type: 'PROGRAMMING',
+            difficulty: 'MEDIUM',
+            description: `题目来源: ${folderName}`,
+            testCases,
+            sourceFile: folderName,
+          });
+        }
+      }
+
+      if (allParsed.length === 0) {
+        alert('未找到可导入的题目文件。请确保上传了 .json 题目文件或包含 .in/.out 文件的文件夹。');
       }
 
       setProblems(allParsed);
@@ -312,7 +356,19 @@ export function AdminBatchImportPage() {
     try {
       const res = await problemsAPI.batchImport(problems);
       if (res.success && res.data) {
-        setImportResult(res.data);
+        const data = res.data;
+        const mappedResults = (data.results || []).map((r: any, i: number) => ({
+          index: i,
+          success: r.success,
+          message: r.error || r.message || '',
+          title: r.title || '',
+        }));
+        setImportResult({
+          total: data.total,
+          succeeded: data.succeeded,
+          failed: data.failed,
+          results: mappedResults,
+        });
       }
     } catch (error: any) {
       alert(error.error?.message || '批量导入失败');
@@ -558,19 +614,29 @@ export function AdminBatchImportPage() {
 
             {files.length > 0 && (
               <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
-                <h3 className="text-lg font-semibold text-white mb-4">
-                  已选择的文件 ({files.length})
-                </h3>
-                <div className="space-y-2">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-white">
+                    已选择的文件 ({files.length})
+                  </h3>
+                  <button
+                    onClick={() => setFiles([])}
+                    className="text-sm text-slate-400 hover:text-red-400 transition-colors"
+                  >
+                    清空全部
+                  </button>
+                </div>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
                   {files.map((file, index) => (
                     <div
                       key={index}
                       className="flex items-center justify-between bg-slate-700 rounded-lg px-4 py-3"
                     >
-                      <div className="flex items-center">
-                        <FileText className="h-5 w-5 text-cyan-400 mr-3" />
-                        <span className="text-white">{file.name}</span>
-                        <span className="text-slate-400 ml-3 text-sm">
+                      <div className="flex items-center min-w-0">
+                        <FileText className="h-5 w-5 text-cyan-400 mr-3 shrink-0" />
+                        <span className="text-white truncate">
+                          {file.webkitRelativePath || file.name}
+                        </span>
+                        <span className="text-slate-400 ml-3 text-sm shrink-0">
                           ({(file.size / 1024).toFixed(1)} KB)
                         </span>
                       </div>
@@ -680,7 +746,7 @@ export function AdminBatchImportPage() {
                         .filter((r) => !r.success)
                         .map((r, i) => (
                           <div key={i} className="text-red-400 text-sm">
-                            第 {r.index + 1} 题导入失败: {r.message || '未知错误'}
+                            {r.title ? `"${r.title}"` : `第 ${r.index + 1} 题`}导入失败: {r.message || '未知错误'}
                           </div>
                         ))}
                     </div>
