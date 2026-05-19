@@ -39,14 +39,14 @@ const PROBLEM_FIELDS = new Set(Object.keys(prisma.problem.fields));
 
 function buildCreateData(data: ProblemInput): any {
   const result: any = {
-    title: data.title,
-    description: data.description,
-    type: data.type,
-    difficulty: data.difficulty,
+    title: String(data.title || ''),
+    description: String(data.description || ''),
+    type: String(data.type || 'PROGRAMMING'),
+    difficulty: String(data.difficulty || 'MEDIUM'),
     tags: JSON.stringify(data.tags || []),
     testCases: JSON.stringify(data.testCases || []),
-    timeLimit: data.timeLimit || 2000,
-    memoryLimit: data.memoryLimit || 256,
+    timeLimit: Number(data.timeLimit) || 2000,
+    memoryLimit: Number(data.memoryLimit) || 256,
   };
 
   if (data.choices && data.choices.length > 0) {
@@ -55,8 +55,8 @@ function buildCreateData(data: ProblemInput): any {
     result.choices = null;
   }
 
-  if (data.correctAnswer) {
-    result.correctAnswer = data.correctAnswer;
+  if (data.correctAnswer != null && data.correctAnswer !== '') {
+    result.correctAnswer = String(data.correctAnswer);
   } else {
     result.correctAnswer = null;
   }
@@ -68,7 +68,7 @@ function buildCreateData(data: ProblemInput): any {
   }
 
   if (PROBLEM_FIELDS.has('sourceFile') && data.sourceFile) {
-    result.sourceFile = data.sourceFile;
+    result.sourceFile = String(data.sourceFile);
   }
 
   return result;

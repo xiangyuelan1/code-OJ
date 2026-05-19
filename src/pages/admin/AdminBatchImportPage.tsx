@@ -183,36 +183,68 @@ export function AdminBatchImportPage() {
   const handleFolderParse = async () => {
     const allParsed: ParsedProblem[] = [];
     const fileContentMap: Record<string, string> = {};
-    
-    // 先读取所有文件内容到内存中
+
     const allFiles = [...problemFiles, ...testDataFiles];
     for (const file of allFiles) {
       const key = file.webkitRelativePath || file.name;
       fileContentMap[key] = await file.text();
-      fileContentMap[file.name] = fileContentMap[key]; // 也用文件名作为索引
+      fileContentMap[file.name] = fileContentMap[key];
     }
 
-    // 建立数据文件夹索引：数据文件夹名称 -> 数据文件
-    const dataFoldersByName = new Map<string, { inFiles: File[], outFiles: File[] }>();
-    
+    /**
+     * 建立测试数据索引，支持多种文件夹结构：
+     * 结构1: problem1/1.in, problem1/1.out （数据与题目同名文件夹）
+     * 结构2: problem1/data/1.in （数据在子文件夹中）
+     * 结构3: 1.in, 1.out （数据在根目录）
+     */
+    const dataFoldersByName = new Map<string, { inFiles: File[]; outFiles: File[] }>();
+    const dataByDirectory = new Map<string, { inFiles: File[]; outFiles: File[] }>();
+
     for (const file of testDataFiles) {
-      if (file.webkitRelativePath) {
-        const parts = file.webkitRelativePath.split('/');
-        if (parts.length >= 2) {
-          const folderName = parts[parts.length - 2]; // 数据所在文件夹名称
-          if (!dataFoldersByName.has(folderName)) {
-            dataFoldersByName.set(folderName, { inFiles: [], outFiles: [] });
-          }
-          if (file.name.endsWith('.in')) {
-            dataFoldersByName.get(folderName)!.inFiles.push(file);
-          } else if (file.name.endsWith('.out')) {
-            dataFoldersByName.get(folderName)!.outFiles.push(file);
-          }
+      const relPath = file.webkitRelativePath || file.name;
+      const parts = relPath.split('/');
+
+      if (parts.length >= 2) {
+        const immediateParent = parts[parts.length - 2];
+        if (!dataFoldersByName.has(immediateParent)) {
+          dataFoldersByName.set(immediateParent, { inFiles: [], outFiles: [] });
         }
+        if (file.name.endsWith('.in')) {
+          dataFoldersByName.get(immediateParent)!.inFiles.push(file);
+        } else if (file.name.endsWith('.out')) {
+          dataFoldersByName.get(immediateParent)!.outFiles.push(file);
+        }
+      }
+
+      const dirKey = relPath.includes('/') ? relPath.substring(0, relPath.lastIndexOf('/')) : '__root__';
+      if (!dataByDirectory.has(dirKey)) {
+        dataByDirectory.set(dirKey, { inFiles: [], outFiles: [] });
+      }
+      if (file.name.endsWith('.in')) {
+        dataByDirectory.get(dirKey)!.inFiles.push(file);
+      } else if (file.name.endsWith('.out')) {
+        dataByDirectory.get(dirKey)!.outFiles.push(file);
       }
     }
 
-    // 处理每个 JSON 文件
+    const readTestCasesFromFiles = (
+      inFiles: File[],
+      outFiles: File[]
+    ): { input: string; output: string; isSample: boolean }[] => {
+      const sortedIn = inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      const sortedOut = outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      const maxLen = Math.max(sortedIn.length, sortedOut.length);
+      const cases: { input: string; output: string; isSample: boolean }[] = [];
+      for (let i = 0; i < maxLen; i++) {
+        const input = sortedIn[i] ? fileContentMap[sortedIn[i].webkitRelativePath || sortedIn[i].name] || '' : '';
+        const output = sortedOut[i] ? fileContentMap[sortedOut[i].webkitRelativePath || sortedOut[i].name] || '' : '';
+        cases.push({ input, output, isSample: i === 0 });
+      }
+      return cases;
+    };
+
+    const usedDataDirs = new Set<string>();
+
     for (const jsonFile of problemFiles) {
       try {
         const jsonPath = jsonFile.webkitRelativePath || jsonFile.name;
@@ -220,48 +252,70 @@ export function AdminBatchImportPage() {
         if (!content) continue;
 
         const data = JSON.parse(content);
-        const parsed = parseJsonProblem(data, jsonFile.name, fileContentMap);
-        
-        const extraTestCases: { input: string; output: string; isSample: boolean }[] = [];
-
-        // 尝试匹配 JSON 文件名（去掉扩展名）与数据文件夹名
         const jsonNameWithoutExt = jsonFile.name.replace(/\.json$/i, '');
-        const matchedData = dataFoldersByName.get(jsonNameWithoutExt);
-        
-        if (matchedData && (matchedData.inFiles.length > 0 || matchedData.outFiles.length > 0)) {
-          // 模式1：JSON 与数据文件夹同名，JSON 在父目录，数据在子文件夹中
-          const inFiles = matchedData.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-          const outFiles = matchedData.outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-          const maxLen = Math.max(inFiles.length, outFiles.length);
-          
-          for (let i = 0; i < maxLen; i++) {
-            const input = inFiles[i] ? fileContentMap[inFiles[i].webkitRelativePath || inFiles[i].name] || '' : '';
-            const output = outFiles[i] ? fileContentMap[outFiles[i].webkitRelativePath || outFiles[i].name] || '' : '';
-            extraTestCases.push({ input, output, isSample: i === 0 });
+        const jsonDir = jsonPath.includes('/') ? jsonPath.substring(0, jsonPath.lastIndexOf('/')) : '';
+
+        let extraTestCases: { input: string; output: string; isSample: boolean }[] = [];
+
+        // 策略1：JSON文件名（去扩展名）与数据文件夹名精确匹配
+        const matchedByName = dataFoldersByName.get(jsonNameWithoutExt);
+        if (matchedByName && (matchedByName.inFiles.length > 0 || matchedByName.outFiles.length > 0)) {
+          extraTestCases = readTestCasesFromFiles(matchedByName.inFiles, matchedByName.outFiles);
+          const matchedDir = matchedByName.inFiles[0]?.webkitRelativePath || matchedByName.outFiles[0]?.webkitRelativePath || '';
+          if (matchedDir.includes('/')) {
+            usedDataDirs.add(matchedDir.substring(0, matchedDir.lastIndexOf('/')));
           }
-        } else {
-          // 模式2：尝试在同一目录下查找测试数据
-          if (jsonPath.includes('/')) {
-            const jsonDir = jsonPath.substring(0, jsonPath.lastIndexOf('/'));
-            const siblingInFiles = testDataFiles.filter(f => 
-              f.webkitRelativePath?.startsWith(jsonDir + '/') && f.name.endsWith('.in')
-            ).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-            
-            const siblingOutFiles = testDataFiles.filter(f => 
-              f.webkitRelativePath?.startsWith(jsonDir + '/') && f.name.endsWith('.out')
-            ).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-            
-            const maxLen = Math.max(siblingInFiles.length, siblingOutFiles.length);
-            for (let i = 0; i < maxLen; i++) {
-              const input = siblingInFiles[i] ? fileContentMap[siblingInFiles[i].webkitRelativePath || siblingInFiles[i].name] || '' : '';
-              const output = siblingOutFiles[i] ? fileContentMap[siblingOutFiles[i].webkitRelativePath || siblingOutFiles[i].name] || '' : '';
-              extraTestCases.push({ input, output, isSample: i === 0 });
+        }
+
+        // 策略2：JSON所在目录下有同目录的 .in/.out 文件
+        if (extraTestCases.length === 0 && jsonDir && dataByDirectory.has(jsonDir)) {
+          const dirData = dataByDirectory.get(jsonDir)!;
+          if (dirData.inFiles.length > 0 || dirData.outFiles.length > 0) {
+            extraTestCases = readTestCasesFromFiles(dirData.inFiles, dirData.outFiles);
+            usedDataDirs.add(jsonDir);
+          }
+        }
+
+        // 策略3：JSON所在目录的子文件夹中有数据（如 data/ 子文件夹）
+        if (extraTestCases.length === 0 && jsonDir) {
+          for (const [dirKey, dirData] of dataByDirectory) {
+            if (dirKey.startsWith(jsonDir + '/') && (dirData.inFiles.length > 0 || dirData.outFiles.length > 0)) {
+              extraTestCases = readTestCasesFromFiles(dirData.inFiles, dirData.outFiles);
+              usedDataDirs.add(dirKey);
+              break;
             }
           }
         }
-        
-        parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
-        allParsed.push(parsed);
+
+        // 策略4：JSON父目录名与数据文件夹名匹配
+        if (extraTestCases.length === 0 && jsonDir) {
+          const parentDirName = jsonDir.split('/').pop() || '';
+          const matchedByParent = dataFoldersByName.get(parentDirName);
+          if (matchedByParent && (matchedByParent.inFiles.length > 0 || matchedByParent.outFiles.length > 0)) {
+            extraTestCases = readTestCasesFromFiles(matchedByParent.inFiles, matchedByParent.outFiles);
+            const matchedDir = matchedByParent.inFiles[0]?.webkitRelativePath || matchedByParent.outFiles[0]?.webkitRelativePath || '';
+            if (matchedDir.includes('/')) {
+              usedDataDirs.add(matchedDir.substring(0, matchedDir.lastIndexOf('/')));
+            }
+          }
+        }
+
+        // 解析 JSON 内容，支持单题、数组、{ problems: [...] } 三种格式
+        const parseAndPush = (item: any) => {
+          const parsed = parseJsonProblem(item, jsonFile.name, fileContentMap);
+          if (extraTestCases.length > 0) {
+            parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
+          }
+          allParsed.push(parsed);
+        };
+
+        if (Array.isArray(data)) {
+          data.forEach(parseAndPush);
+        } else if (data.problems && Array.isArray(data.problems)) {
+          data.problems.forEach(parseAndPush);
+        } else {
+          parseAndPush(data);
+        }
       } catch (e) {
         console.error(`Error parsing file ${jsonFile.name}:`, e);
       }
@@ -272,29 +326,23 @@ export function AdminBatchImportPage() {
     for (const jsonFile of problemFiles) {
       usedFolderNames.add(jsonFile.name.replace(/\.json$/i, ''));
     }
-    
-    for (const [folderName, dataFiles] of dataFoldersByName) {
-      if (!usedFolderNames.has(folderName) && (dataFiles.inFiles.length > 0 || dataFiles.outFiles.length > 0)) {
-        const inFiles = dataFiles.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-        const outFiles = dataFiles.outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-        
-        const testCases: { input: string; output: string; isSample: boolean }[] = [];
-        const maxLen = Math.max(inFiles.length, outFiles.length);
-        
-        for (let i = 0; i < maxLen; i++) {
-          const input = inFiles[i] ? fileContentMap[inFiles[i].webkitRelativePath || inFiles[i].name] || '' : '';
-          const output = outFiles[i] ? fileContentMap[outFiles[i].webkitRelativePath || outFiles[i].name] || '' : '';
-          testCases.push({ input, output, isSample: i === 0 });
-        }
-        
-        allParsed.push({
-          title: folderName,
-          type: 'PROGRAMMING',
-          difficulty: 'MEDIUM',
-          description: `题目来源: ${folderName}`,
-          testCases,
-        });
-      }
+
+    for (const [dirKey, dirData] of dataByDirectory) {
+      if (usedDataDirs.has(dirKey)) continue;
+      if (dirData.inFiles.length === 0 && dirData.outFiles.length === 0) continue;
+
+      const dirName = dirKey === '__root__' ? '' : dirKey.split('/').pop() || dirKey;
+      if (usedFolderNames.has(dirName)) continue;
+
+      const testCases = readTestCasesFromFiles(dirData.inFiles, dirData.outFiles);
+      allParsed.push({
+        title: dirName || '未命名题目',
+        type: 'PROGRAMMING',
+        difficulty: 'MEDIUM',
+        description: `题目来源: ${dirName}`,
+        testCases,
+        sourceFile: dirName,
+      });
     }
 
     setProblems(allParsed);
@@ -594,21 +642,45 @@ export function AdminBatchImportPage() {
     setImporting(true);
     try {
       const safeProblems = problems.map(p => {
-        const safeP: any = { ...p };
-        if (safeP.testCases && Array.isArray(safeP.testCases)) {
-          safeP.testCases = safeP.testCases.map((tc: any) => ({
-            input: tc.input || '',
-            output: tc.output || '',
-            isSample: tc.isSample !== undefined ? tc.isSample : true,
+        const safeP: any = {
+          title: String(p.title || ''),
+          description: String(p.description || ''),
+          type: String(p.type || 'PROGRAMMING'),
+          difficulty: String(p.difficulty || 'MEDIUM'),
+          tags: Array.isArray(p.tags) ? p.tags : [],
+          timeLimit: Number(p.timeLimit) || 2000,
+          memoryLimit: Number(p.memoryLimit) || 256,
+        };
+
+        if (p.testCases && Array.isArray(p.testCases) && p.testCases.length > 0) {
+          safeP.testCases = p.testCases.map((tc: any) => ({
+            input: String(tc.input ?? ''),
+            output: String(tc.output ?? ''),
+            isSample: tc.isSample !== undefined ? Boolean(tc.isSample) : true,
+          }));
+        } else {
+          safeP.testCases = [{ input: '', output: '', isSample: true }];
+        }
+
+        if (p.choices && Array.isArray(p.choices) && p.choices.length > 0) {
+          safeP.choices = p.choices.map((c: any) => ({
+            key: String(c.key || ''),
+            text: String(c.text || ''),
           }));
         }
-        if (!safeP.testCases || safeP.testCases.length === 0) {
-          safeP.testCases = [{
-            input: '',
-            output: '',
-            isSample: true
-          }];
+
+        if (p.correctAnswer != null && p.correctAnswer !== '') {
+          safeP.correctAnswer = String(p.correctAnswer);
         }
+
+        if (p.fillBlanks && Array.isArray(p.fillBlanks) && p.fillBlanks.length > 0) {
+          safeP.fillBlanks = p.fillBlanks.map((fb: any) => String(fb));
+        }
+
+        if (p.sourceFile) {
+          safeP.sourceFile = String(p.sourceFile);
+        }
+
         return safeP;
       });
 
