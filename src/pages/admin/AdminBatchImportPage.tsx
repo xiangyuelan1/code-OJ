@@ -192,55 +192,46 @@ export function AdminBatchImportPage() {
       fileContentMap[file.name] = fileContentMap[key]; // 也用文件名作为索引
     }
 
-    // 按文件夹分组
-    const folderGroups = new Map<string, { jsonFiles: File[], inFiles: File[], outFiles: File[] }>();
-    
-    for (const file of problemFiles) {
-      if (file.webkitRelativePath) {
-        const parts = file.webkitRelativePath.split('/');
-        if (parts.length >= 2) {
-          const folderName = parts.slice(0, -1).join('/');
-          if (!folderGroups.has(folderName)) {
-            folderGroups.set(folderName, { jsonFiles: [], inFiles: [], outFiles: [] });
-          }
-          folderGroups.get(folderName)!.jsonFiles.push(file);
-        }
-      }
-    }
+    // 建立数据文件夹索引：数据文件夹名称 -> 数据文件
+    const dataFoldersByName = new Map<string, { inFiles: File[], outFiles: File[] }>();
     
     for (const file of testDataFiles) {
       if (file.webkitRelativePath) {
         const parts = file.webkitRelativePath.split('/');
         if (parts.length >= 2) {
-          const folderName = parts.slice(0, -1).join('/');
-          if (!folderGroups.has(folderName)) {
-            folderGroups.set(folderName, { jsonFiles: [], inFiles: [], outFiles: [] });
+          const folderName = parts[parts.length - 2]; // 数据所在文件夹名称
+          if (!dataFoldersByName.has(folderName)) {
+            dataFoldersByName.set(folderName, { inFiles: [], outFiles: [] });
           }
           if (file.name.endsWith('.in')) {
-            folderGroups.get(folderName)!.inFiles.push(file);
-          } else {
-            folderGroups.get(folderName)!.outFiles.push(file);
+            dataFoldersByName.get(folderName)!.inFiles.push(file);
+          } else if (file.name.endsWith('.out')) {
+            dataFoldersByName.get(folderName)!.outFiles.push(file);
           }
         }
       }
     }
 
-    // 解析每个文件夹
-    for (const [folderName, files] of folderGroups) {
-      // 首先解析 JSON 文件
-      for (const jsonFile of files.jsonFiles) {
-        try {
-          const content = fileContentMap[jsonFile.webkitRelativePath || jsonFile.name];
-          if (!content) continue;
-          
-          const data = JSON.parse(content);
-          const parsed = parseJsonProblem(data, jsonFile.name, fileContentMap);
-          
-          // 查找这个文件夹下的测试数据
-          const inFiles = files.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-          const outFiles = files.outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-          
-          const extraTestCases: { input: string; output: string; isSample: boolean }[] = [];
+    // 处理每个 JSON 文件
+    for (const jsonFile of problemFiles) {
+      try {
+        const jsonPath = jsonFile.webkitRelativePath || jsonFile.name;
+        const content = fileContentMap[jsonPath];
+        if (!content) continue;
+
+        const data = JSON.parse(content);
+        const parsed = parseJsonProblem(data, jsonFile.name, fileContentMap);
+        
+        const extraTestCases: { input: string; output: string; isSample: boolean }[] = [];
+
+        // 尝试匹配 JSON 文件名（去掉扩展名）与数据文件夹名
+        const jsonNameWithoutExt = jsonFile.name.replace(/\.json$/i, '');
+        const matchedData = dataFoldersByName.get(jsonNameWithoutExt);
+        
+        if (matchedData && (matchedData.inFiles.length > 0 || matchedData.outFiles.length > 0)) {
+          // 模式1：JSON 与数据文件夹同名，JSON 在父目录，数据在子文件夹中
+          const inFiles = matchedData.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+          const outFiles = matchedData.outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
           const maxLen = Math.max(inFiles.length, outFiles.length);
           
           for (let i = 0; i < maxLen; i++) {
@@ -248,19 +239,44 @@ export function AdminBatchImportPage() {
             const output = outFiles[i] ? fileContentMap[outFiles[i].webkitRelativePath || outFiles[i].name] || '' : '';
             extraTestCases.push({ input, output, isSample: i === 0 });
           }
-          
-          // 合并 JSON 中的测试数据和从文件读取的测试数据
-          parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
-          allParsed.push(parsed);
-        } catch (e) {
-          console.error(`Error parsing file ${jsonFile.name}:`, e);
+        } else {
+          // 模式2：尝试在同一目录下查找测试数据
+          if (jsonPath.includes('/')) {
+            const jsonDir = jsonPath.substring(0, jsonPath.lastIndexOf('/'));
+            const siblingInFiles = testDataFiles.filter(f => 
+              f.webkitRelativePath?.startsWith(jsonDir + '/') && f.name.endsWith('.in')
+            ).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            
+            const siblingOutFiles = testDataFiles.filter(f => 
+              f.webkitRelativePath?.startsWith(jsonDir + '/') && f.name.endsWith('.out')
+            ).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            
+            const maxLen = Math.max(siblingInFiles.length, siblingOutFiles.length);
+            for (let i = 0; i < maxLen; i++) {
+              const input = siblingInFiles[i] ? fileContentMap[siblingInFiles[i].webkitRelativePath || siblingInFiles[i].name] || '' : '';
+              const output = siblingOutFiles[i] ? fileContentMap[siblingOutFiles[i].webkitRelativePath || siblingOutFiles[i].name] || '' : '';
+              extraTestCases.push({ input, output, isSample: i === 0 });
+            }
+          }
         }
+        
+        parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
+        allParsed.push(parsed);
+      } catch (e) {
+        console.error(`Error parsing file ${jsonFile.name}:`, e);
       }
-      
-      // 如果没有 JSON 文件，但是有测试数据，创建一个基本题目
-      if (files.jsonFiles.length === 0 && (files.inFiles.length > 0 || files.outFiles.length > 0)) {
-        const inFiles = files.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-        const outFiles = files.outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    }
+
+    // 处理没有匹配到 JSON 的数据文件夹
+    const usedFolderNames = new Set<string>();
+    for (const jsonFile of problemFiles) {
+      usedFolderNames.add(jsonFile.name.replace(/\.json$/i, ''));
+    }
+    
+    for (const [folderName, dataFiles] of dataFoldersByName) {
+      if (!usedFolderNames.has(folderName) && (dataFiles.inFiles.length > 0 || dataFiles.outFiles.length > 0)) {
+        const inFiles = dataFiles.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        const outFiles = dataFiles.outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
         
         const testCases: { input: string; output: string; isSample: boolean }[] = [];
         const maxLen = Math.max(inFiles.length, outFiles.length);
@@ -271,13 +287,11 @@ export function AdminBatchImportPage() {
           testCases.push({ input, output, isSample: i === 0 });
         }
         
-        const displayFolderName = folderName.includes('/') ? folderName.split('/').pop()! : folderName;
-        
         allParsed.push({
-          title: displayFolderName,
+          title: folderName,
           type: 'PROGRAMMING',
           difficulty: 'MEDIUM',
-          description: `题目来源: ${displayFolderName}`,
+          description: `题目来源: ${folderName}`,
           testCases,
         });
       }
