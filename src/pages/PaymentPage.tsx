@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { paymentAPI, accessAPI } from '../services/api';
-import { CreditCard, Upload, CheckCircle2, Clock, XCircle, QrCode, ArrowLeft, Smartphone } from 'lucide-react';
+import { paymentAPI, accessAPI, promotionAPI } from '../services/api';
+import { CreditCard, Upload, CheckCircle2, Clock, XCircle, QrCode, ArrowLeft, Smartphone, Gift } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface PaymentMethod {
@@ -22,6 +22,9 @@ export function PaymentPage() {
   const [submitting, setSubmitting] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState<string | null>(null);
+  const [promoCode, setPromoCode] = useState('');
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoMessage, setPromoMessage] = useState('');
 
   useEffect(() => {
     Promise.all([fetchPaymentStatus(), fetchPaymentMethods(), fetchPaymentConfig()]).finally(() => setLoading(false));
@@ -155,6 +158,58 @@ export function PaymentPage() {
       </button>
 
       <h1 className="text-3xl font-bold text-white mb-8">付费使用</h1>
+
+      <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-6">
+        <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+          <Gift className="h-5 w-5 text-cyan-400" />
+          推广码
+        </h2>
+        <div className="flex gap-3">
+          <input
+            value={promoCode}
+            onChange={e => { setPromoCode(e.target.value.toUpperCase()); setPromoMessage(''); }}
+            placeholder="输入推广码获取优惠"
+            className="flex-1 px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500 font-mono"
+          />
+          <button
+            onClick={async () => {
+              if (!promoCode.trim()) return;
+              setPromoLoading(true);
+              setPromoMessage('');
+              try {
+                const res = await promotionAPI.useCode(promoCode.trim());
+                if (res.success) {
+                  const type = res.data?.type;
+                  const value = res.data?.value;
+                  if (type === 'TRIAL_EXTEND') {
+                    setPromoMessage(`✅ 试用已延长 ${value} 天！`);
+                  } else if (type === 'POINTS') {
+                    setPromoMessage(`✅ 已获得 ${value} 积分！`);
+                  } else if (type === 'DISCOUNT') {
+                    setPromoMessage(`✅ 已获得付费 ${value / 10} 折优惠！`);
+                  } else {
+                    setPromoMessage('✅ 推广码使用成功！');
+                  }
+                  fetchPaymentStatus();
+                }
+              } catch (error: any) {
+                setPromoMessage(error.response?.data?.error?.message || '推广码使用失败');
+              } finally {
+                setPromoLoading(false);
+              }
+            }}
+            disabled={promoLoading || !promoCode.trim()}
+            className="px-6 py-2.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
+          >
+            {promoLoading ? '使用中...' : '使用'}
+          </button>
+        </div>
+        {promoMessage && (
+          <p className={`mt-3 text-sm ${promoMessage.startsWith('✅') ? 'text-green-400' : 'text-red-400'}`}>
+            {promoMessage}
+          </p>
+        )}
+      </div>
 
       {paymentAmount > 0 && (
         <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-6">

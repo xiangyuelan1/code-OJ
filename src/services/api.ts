@@ -263,4 +263,13 @@ export const paymentAPI = {
     api.put(`/api/payments/channel/${method}`, data),
 };
 
+export const promotionAPI = {
+  create: (data: any) => api.post('/api/promotions', data),
+  getAll: () => api.get('/api/promotions'),
+  getStats: () => api.get('/api/promotions/stats'),
+  useCode: (code: string) => api.post('/api/promotions/use', { code }),
+  toggle: (id: string) => api.patch(`/api/promotions/${id}/toggle`),
+  delete: (id: string) => api.delete(`/api/promotions/${id}`),
+};
+
 export default api;

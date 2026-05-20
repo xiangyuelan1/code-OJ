@@ -34,6 +34,8 @@ import { PaymentPage } from "./pages/PaymentPage";
 import { AdminPaymentPage } from "./pages/admin/AdminPaymentPage";
 import { AdminAccessConfigPage } from "./pages/admin/AdminAccessConfigPage";
 import { AdminAIUsagePage } from "./pages/admin/AdminAIUsagePage";
+import { AppDownloadPage } from "./pages/AppDownload";
+import { AdminPromotionPage } from "./pages/admin/AdminPromotionPage";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -202,6 +204,7 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
+            <Route path="/app-download" element={<AppDownloadPage />} />
             <Route
               path="/teacher/classes"
               element={
@@ -235,6 +238,7 @@ export default function App() {
             <Route path="ai-config" element={<AdminAIConfigPage />} />
             <Route path="ai-usage" element={<AdminAIUsagePage />} />
             <Route path="payments" element={<AdminPaymentPage />} />
+            <Route path="promotions" element={<AdminPromotionPage />} />
             <Route path="access-config" element={<AdminAccessConfigPage />} />
           </Route>
         </Routes>

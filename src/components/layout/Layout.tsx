@@ -4,7 +4,7 @@ import { useAuthStore } from '../../stores/auth.store';
 import { useSocketStore } from '../../services/socket';
 import { classAPI } from '../../services/api';
 import { useEffect, useState } from 'react';
-import { ShieldX, Users, CreditCard, Clock, Send, X } from 'lucide-react';
+import { ShieldX, Users, CreditCard, Clock, Send, X, Smartphone } from 'lucide-react';
 
 export function Layout() {
   const { isAuthenticated, checkAccess, accessStatus, accessLoading, user } = useAuthStore();
@@ -114,6 +114,17 @@ export function Layout() {
                 <div>
                   <p className="text-green-400 font-medium">付费使用</p>
                   <p className="text-slate-400 text-sm">购买付费访问权限</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => navigate('/app-download')}
+                className="w-full flex items-center gap-3 p-4 bg-purple-500/10 border border-purple-500/30 rounded-lg hover:bg-purple-500/20 transition-colors text-left"
+              >
+                <Smartphone className="h-5 w-5 text-purple-400 shrink-0" />
+                <div>
+                  <p className="text-purple-400 font-medium">下载 App</p>
+                  <p className="text-slate-400 text-sm">安装到手机或桌面</p>
                 </div>
               </button>
             </div>

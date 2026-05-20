@@ -233,8 +233,8 @@ export function AdminBatchImportPage() {
       inFiles: File[],
       outFiles: File[]
     ): { input: string; output: string; isSample: boolean }[] => {
-      const sortedIn = inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-      const sortedOut = outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      const sortedIn = [...inFiles].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      const sortedOut = [...outFiles].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
       const maxLen = Math.max(sortedIn.length, sortedOut.length);
       const cases: { input: string; output: string; isSample: boolean }[] = [];
       for (let i = 0; i < maxLen; i++) {
@@ -314,7 +314,7 @@ export function AdminBatchImportPage() {
 
         // 解析 JSON 内容，支持单题、数组、{ problems: [...] } 三种格式
         const parseAndPush = (item: any) => {
-          const parsed = parseJsonProblem(item, jsonFile.name, fileContentMap);
+          const parsed = parseJsonProblem(item, jsonFile.name, fileContentMap, jsonDir || undefined);
           if (extraTestCases.length > 0) {
             parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
           }
@@ -395,7 +395,7 @@ export function AdminBatchImportPage() {
     setProblems(allParsed);
   };
 
-  const parseJsonProblem = (data: any, fileName: string, fileContentMap: Record<string, string>): ParsedProblem => {
+  const parseJsonProblem = (data: any, fileName: string, fileContentMap: Record<string, string>, jsonDir?: string): ParsedProblem => {
     const prob = data.problem || data;
     const type = prob.type === 1 || prob.type === 'PROGRAMMING' ? 'PROGRAMMING'
       : prob.type === 2 || prob.type === 'CHOICE' ? 'CHOICE'
@@ -407,15 +407,18 @@ export function AdminBatchImportPage() {
 
     const testCases: { input: string; output: string; isSample: boolean }[] = [];
 
+    /**
+     * 解析 JSON 中引用的文件路径，仅匹配与当前 JSON 同目录下的数据文件，
+     * 避免跨目录匹配导致数据串题。
+     */
     const resolveFileRef = (ref: string): string => {
       if (!ref) return '';
       if (ref.endsWith('.in') || ref.endsWith('.out') || ref.endsWith('.txt')) {
-        const content = fileContentMap[ref];
-        if (content !== undefined) return content;
-        const baseName = ref.replace(/\.\w+$/, '');
-        for (const [key, val] of Object.entries(fileContentMap)) {
-          if (key.startsWith(baseName + '.')) return val;
+        if (jsonDir) {
+          const fullPath = jsonDir + '/' + ref;
+          if (fileContentMap[fullPath] !== undefined) return fileContentMap[fullPath];
         }
+        if (fileContentMap[ref] !== undefined) return fileContentMap[ref];
       }
       return ref;
     };
@@ -555,7 +558,7 @@ export function AdminBatchImportPage() {
               });
             }
 
-            const parsed = parseJsonProblem(data, file.name, fileContentMap);
+            const parsed = parseJsonProblem(data, file.name, fileContentMap, jsonDir || undefined);
             if (extraTestCases.length > 0) {
               parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
             }
@@ -575,8 +578,8 @@ export function AdminBatchImportPage() {
             if (matchedDir) {
               const dirData = dataFileMap[matchedDir];
               const extraTestCases: { input: string; output: string; isSample: boolean }[] = [];
-              const inFiles = dirData.inFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-              const outFiles = dirData.outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+              const inFiles = [...dirData.inFiles].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+              const outFiles = [...dirData.outFiles].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
               const maxLen = Math.max(inFiles.length, outFiles.length);
               for (let i = 0; i < maxLen; i++) {
                 extraTestCases.push({
@@ -585,7 +588,7 @@ export function AdminBatchImportPage() {
                   isSample: i === 0
                 });
               }
-              const parsed = parseJsonProblem(data, file.name, fileContentMap);
+              const parsed = parseJsonProblem(data, file.name, fileContentMap, matchedDir || undefined);
               if (extraTestCases.length > 0) {
                 parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
               }
@@ -594,14 +597,14 @@ export function AdminBatchImportPage() {
             } else {
               if (Array.isArray(data)) {
                 for (const item of data) {
-                  allParsed.push(parseJsonProblem(item, file.name, fileContentMap));
+                  allParsed.push(parseJsonProblem(item, file.name, fileContentMap, jsonDir || undefined));
                 }
               } else if (data.problems && Array.isArray(data.problems)) {
                 for (const item of data.problems) {
-                  allParsed.push(parseJsonProblem(item, file.name, fileContentMap));
+                  allParsed.push(parseJsonProblem(item, file.name, fileContentMap, jsonDir || undefined));
                 }
               } else {
-                allParsed.push(parseJsonProblem(data, file.name, fileContentMap));
+                allParsed.push(parseJsonProblem(data, file.name, fileContentMap, jsonDir || undefined));
               }
             }
           }
@@ -649,6 +652,7 @@ export function AdminBatchImportPage() {
   };
 
   const MAX_BATCH_BYTES = 4 * 1024 * 1024;
+  const MAX_SINGLE_PROBLEM_BYTES = 8 * 1024 * 1024;
 
   const handleBatchImport = async () => {
     if (problems.length === 0) return;
@@ -695,6 +699,26 @@ export function AdminBatchImportPage() {
 
       if (p.sourceFile) {
         safeP.sourceFile = String(p.sourceFile);
+      }
+
+      /**
+       * 单题体积超限时，从后向前裁剪测试数据，
+       * 保留样例测试点，截断非样例的大数据点。
+       */
+      let serializedSize = new Blob([JSON.stringify(safeP)]).size;
+      if (serializedSize > MAX_SINGLE_PROBLEM_BYTES && safeP.testCases.length > 1) {
+        const sampleCases = safeP.testCases.filter((tc: any) => tc.isSample);
+        const nonSampleCases = safeP.testCases.filter((tc: any) => !tc.isSample);
+
+        while (nonSampleCases.length > 0 && serializedSize > MAX_SINGLE_PROBLEM_BYTES) {
+          const largest = nonSampleCases.reduce((max: any, tc: any) =>
+            (tc.input.length + tc.output.length) > (max.input.length + max.output.length) ? tc : max
+          , nonSampleCases[0]);
+          const idx = nonSampleCases.indexOf(largest);
+          nonSampleCases.splice(idx, 1);
+          safeP.testCases = [...sampleCases, ...nonSampleCases];
+          serializedSize = new Blob([JSON.stringify(safeP)]).size;
+        }
       }
 
       return safeP;

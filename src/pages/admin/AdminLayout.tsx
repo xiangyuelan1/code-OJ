@@ -1,7 +1,7 @@
 import { Link, useNavigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.store';
 import { useSocketStore } from '../../services/socket';
-import { BookOpen, List, Users, Cpu, Settings, LogOut, BarChart3, FileText, Swords, ClipboardList, FolderTree, Upload, GraduationCap, CreditCard, Shield } from 'lucide-react';
+import { BookOpen, List, Users, Cpu, Settings, LogOut, BarChart3, FileText, Swords, ClipboardList, FolderTree, Upload, GraduationCap, CreditCard, Shield, Tag } from 'lucide-react';
 import { useEffect } from 'react';
 
 export function AdminLayout() {
@@ -38,6 +38,7 @@ export function AdminLayout() {
     { path: '/admin/ai-config', label: 'AI配置', icon: Cpu },
     { path: '/admin/ai-usage', label: 'AI用量统计', icon: BarChart3 },
     { path: '/admin/payments', label: '付费管理', icon: CreditCard },
+    { path: '/admin/promotions', label: '销售推广', icon: Tag },
     { path: '/admin/access-config', label: '访问控制', icon: Shield },
   ];
 

@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.store';
 import { usePointsStore } from '../../stores/points.store';
 import { useSocketStore } from '../../services/socket';
-import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users } from 'lucide-react';
+import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 export function Navbar() {
@@ -52,6 +52,10 @@ export function Navbar() {
                 考试
               </Link>
             )}
+            <Link to="/app-download" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
+              <Smartphone className="h-4 w-4" />
+              <span>下载App</span>
+            </Link>
             {isAuthenticated && (user?.role === 'STUDENT' || user?.role === 'TEACHER') && (
               <Link to="/submissions" className="hover:text-cyan-400 transition-colors">
                 我的提交

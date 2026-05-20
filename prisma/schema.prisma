@@ -396,3 +396,30 @@ model AIUsageLog {
   cost              Float    @default(0)
   createdAt         DateTime @default(now())
 }
+
+model Promotion {
+  id            String    @id @default(uuid())
+  code          String    @unique
+  name          String
+  description   String?
+  type          String    @default("TRIAL_EXTEND")
+  value         Int       @default(0)
+  maxUses       Int       @default(0)
+  currentUses   Int       @default(0)
+  expiresAt     DateTime?
+  isActive      Boolean   @default(true)
+  createdBy     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  usages        PromotionUsage[]
+}
+
+model PromotionUsage {
+  id           String    @id @default(uuid())
+  promotionId  String
+  promotion    Promotion @relation(fields: [promotionId], references: [id])
+  userId       String
+  createdAt    DateTime  @default(now())
+
+  @@unique([promotionId, userId])
+}

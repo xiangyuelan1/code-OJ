@@ -21,14 +21,15 @@ import uploadRoutes from './routes/upload.js';
 import classRoutes from './routes/class.js';
 import accessRoutes from './routes/access.js';
 import paymentRoutes from './routes/payment.js';
+import promotionRoutes from './routes/promotion.js';
 
 dotenv.config();
 
 const app: express.Application = express();
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
 app.use('/api/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
 
@@ -56,6 +57,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/access', accessRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/promotions', promotionRoutes);
 
 app.use(
   '/api/health',
