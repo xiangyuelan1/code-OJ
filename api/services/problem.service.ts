@@ -187,8 +187,23 @@ export class ProblemService {
 
     for (const problem of problems) {
       try {
-        const created = await this.createProblem(problem);
-        results.push({ success: true, data: created, title: problem.title });
+        const existing = await prisma.problem.findFirst({
+          where: { title: problem.title },
+          select: { id: true }
+        });
+
+        let saved;
+        if (existing) {
+          const updateData = this.buildUpdateData(problem);
+          saved = await prisma.problem.update({
+            where: { id: existing.id },
+            data: updateData,
+          });
+        } else {
+          saved = await this.createProblem(problem);
+        }
+
+        results.push({ success: true, data: saved, title: problem.title });
       } catch (error: any) {
         console.error(`批量导入题目"${problem.title}"失败:`, error.message);
         results.push({ success: false, error: error.message, title: problem.title });
@@ -196,6 +211,27 @@ export class ProblemService {
     }
 
     return results;
+  }
+
+  private buildUpdateData(data: Partial<ProblemInput>): any {
+    const updateData: any = {};
+
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.type !== undefined) updateData.type = data.type;
+    if (data.difficulty !== undefined) updateData.difficulty = data.difficulty;
+    if (data.tags !== undefined) updateData.tags = JSON.stringify(data.tags);
+    if (data.testCases !== undefined) updateData.testCases = JSON.stringify(data.testCases);
+    if (data.timeLimit !== undefined) updateData.timeLimit = Number(data.timeLimit) || 2000;
+    if (data.memoryLimit !== undefined) updateData.memoryLimit = Number(data.memoryLimit) || 256;
+    if (data.choices !== undefined) updateData.choices = data.choices ? JSON.stringify(data.choices) : null;
+    if (data.correctAnswer !== undefined) updateData.correctAnswer = String(data.correctAnswer || '');
+    if (data.fillBlanks !== undefined) updateData.fillBlanks = data.fillBlanks ? JSON.stringify(data.fillBlanks) : null;
+
+    if (PROBLEM_FIELDS.has('sourceFile') && data.sourceFile !== undefined) {
+      updateData.sourceFile = data.sourceFile ? String(data.sourceFile) : null;
+    }
+
+    return updateData;
   }
 
   async getProblemStats() {

@@ -246,6 +246,7 @@ export function AdminBatchImportPage() {
     };
 
     const usedDataDirs = new Set<string>();
+    const consumedDataDirs = new Set<string>();
 
     for (const jsonFile of problemFiles) {
       try {
@@ -258,6 +259,7 @@ export function AdminBatchImportPage() {
         const jsonDir = jsonPath.includes('/') ? jsonPath.substring(0, jsonPath.lastIndexOf('/')) : '';
 
         let extraTestCases: { input: string; output: string; isSample: boolean }[] = [];
+        let matchedDirKey = '';
 
         // 策略1：JSON文件名（去扩展名）与数据文件夹名精确匹配
         const matchedByName = dataFoldersByName.get(jsonNameWithoutExt);
@@ -265,25 +267,27 @@ export function AdminBatchImportPage() {
           extraTestCases = readTestCasesFromFiles(matchedByName.inFiles, matchedByName.outFiles);
           const matchedDir = matchedByName.inFiles[0]?.webkitRelativePath || matchedByName.outFiles[0]?.webkitRelativePath || '';
           if (matchedDir.includes('/')) {
-            usedDataDirs.add(matchedDir.substring(0, matchedDir.lastIndexOf('/')));
+            matchedDirKey = matchedDir.substring(0, matchedDir.lastIndexOf('/'));
           }
+          dataFoldersByName.delete(jsonNameWithoutExt);
         }
 
         // 策略2：JSON所在目录下有同目录的 .in/.out 文件
-        if (extraTestCases.length === 0 && jsonDir && dataByDirectory.has(jsonDir)) {
+        if (extraTestCases.length === 0 && jsonDir && dataByDirectory.has(jsonDir) && !consumedDataDirs.has(jsonDir)) {
           const dirData = dataByDirectory.get(jsonDir)!;
           if (dirData.inFiles.length > 0 || dirData.outFiles.length > 0) {
             extraTestCases = readTestCasesFromFiles(dirData.inFiles, dirData.outFiles);
-            usedDataDirs.add(jsonDir);
+            matchedDirKey = jsonDir;
           }
         }
 
         // 策略3：JSON所在目录的子文件夹中有数据（如 data/ 子文件夹）
         if (extraTestCases.length === 0 && jsonDir) {
           for (const [dirKey, dirData] of dataByDirectory) {
+            if (consumedDataDirs.has(dirKey)) continue;
             if (dirKey.startsWith(jsonDir + '/') && (dirData.inFiles.length > 0 || dirData.outFiles.length > 0)) {
               extraTestCases = readTestCasesFromFiles(dirData.inFiles, dirData.outFiles);
-              usedDataDirs.add(dirKey);
+              matchedDirKey = dirKey;
               break;
             }
           }
@@ -297,9 +301,15 @@ export function AdminBatchImportPage() {
             extraTestCases = readTestCasesFromFiles(matchedByParent.inFiles, matchedByParent.outFiles);
             const matchedDir = matchedByParent.inFiles[0]?.webkitRelativePath || matchedByParent.outFiles[0]?.webkitRelativePath || '';
             if (matchedDir.includes('/')) {
-              usedDataDirs.add(matchedDir.substring(0, matchedDir.lastIndexOf('/')));
+              matchedDirKey = matchedDir.substring(0, matchedDir.lastIndexOf('/'));
             }
+            dataFoldersByName.delete(parentDirName);
           }
+        }
+
+        if (matchedDirKey) {
+          consumedDataDirs.add(matchedDirKey);
+          usedDataDirs.add(matchedDirKey);
         }
 
         // 解析 JSON 内容，支持单题、数组、{ problems: [...] } 三种格式
@@ -638,7 +648,7 @@ export function AdminBatchImportPage() {
     }
   };
 
-  const BATCH_SIZE = 10;
+  const MAX_BATCH_BYTES = 4 * 1024 * 1024;
 
   const handleBatchImport = async () => {
     if (problems.length === 0) return;
@@ -690,9 +700,30 @@ export function AdminBatchImportPage() {
       return safeP;
     });
 
+    /**
+     * 按体积智能分批：估算每道题的 JSON 序列化大小，
+     * 当累计体积超过 MAX_BATCH_BYTES 时开启新批次，
+     * 确保单批请求不会超过服务端 body 限制。
+     */
     const batches: any[][] = [];
-    for (let i = 0; i < safeProblems.length; i += BATCH_SIZE) {
-      batches.push(safeProblems.slice(i, i + BATCH_SIZE));
+    let currentBatch: any[] = [];
+    let currentSize = 0;
+
+    for (const problem of safeProblems) {
+      const problemSize = new Blob([JSON.stringify(problem)]).size;
+
+      if (currentBatch.length > 0 && currentSize + problemSize > MAX_BATCH_BYTES) {
+        batches.push(currentBatch);
+        currentBatch = [];
+        currentSize = 0;
+      }
+
+      currentBatch.push(problem);
+      currentSize += problemSize;
+    }
+
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch);
     }
 
     setBatchTotal(batches.length);
@@ -723,14 +754,40 @@ export function AdminBatchImportPage() {
         }
       } catch (error: any) {
         const batchProblems = batches[batchIdx];
-        for (const bp of batchProblems) {
+        if (batchProblems.length === 1) {
           allResults.push({
             index: globalIndex++,
             success: false,
-            message: error.error?.message || '请求失败（可能数据过大）',
-            title: bp.title || '',
+            message: error.error?.message || '请求失败（数据可能过大）',
+            title: batchProblems[0].title || '',
           });
           totalFailed++;
+        } else {
+          for (const bp of batchProblems) {
+            try {
+              const singleRes = await problemsAPI.batchImport([bp]);
+              if (singleRes.success && singleRes.data) {
+                totalSucceeded += singleRes.data.succeeded || 0;
+                totalFailed += singleRes.data.failed || 0;
+                for (const r of singleRes.data.results || []) {
+                  allResults.push({
+                    index: globalIndex++,
+                    success: r.success,
+                    message: r.error || r.message || '',
+                    title: r.title || '',
+                  });
+                }
+              }
+            } catch {
+              allResults.push({
+                index: globalIndex++,
+                success: false,
+                message: '请求失败（数据可能过大）',
+                title: bp.title || '',
+              });
+              totalFailed++;
+            }
+          }
         }
       }
     }
@@ -1767,7 +1824,7 @@ export function AdminBatchImportPage() {
                 ) : (
                   <>
                     <Download className="h-5 w-5 mr-2" />
-                    批量导入 ({problems.length} 题{problems.length > BATCH_SIZE ? `，分 ${Math.ceil(problems.length / BATCH_SIZE)} 批` : ''})
+                    批量导入 ({problems.length} 题)
                   </>
                 )}
               </button>
