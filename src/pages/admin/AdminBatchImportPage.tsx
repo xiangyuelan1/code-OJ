@@ -77,6 +77,8 @@ export function AdminBatchImportPage() {
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [batchProgress, setBatchProgress] = useState(0);
+  const [batchTotal, setBatchTotal] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<ParsedProblem | null>(null);
@@ -636,75 +638,110 @@ export function AdminBatchImportPage() {
     }
   };
 
+  const BATCH_SIZE = 10;
+
   const handleBatchImport = async () => {
     if (problems.length === 0) return;
 
     setImporting(true);
-    try {
-      const safeProblems = problems.map(p => {
-        const safeP: any = {
-          title: String(p.title || ''),
-          description: String(p.description || ''),
-          type: String(p.type || 'PROGRAMMING'),
-          difficulty: String(p.difficulty || 'MEDIUM'),
-          tags: Array.isArray(p.tags) ? p.tags : [],
-          timeLimit: Number(p.timeLimit) || 2000,
-          memoryLimit: Number(p.memoryLimit) || 256,
-        };
+    setImportResult(null);
+    setBatchProgress(0);
 
-        if (p.testCases && Array.isArray(p.testCases) && p.testCases.length > 0) {
-          safeP.testCases = p.testCases.map((tc: any) => ({
-            input: String(tc.input ?? ''),
-            output: String(tc.output ?? ''),
-            isSample: tc.isSample !== undefined ? Boolean(tc.isSample) : true,
-          }));
-        } else {
-          safeP.testCases = [{ input: '', output: '', isSample: true }];
-        }
+    const safeProblems = problems.map(p => {
+      const safeP: any = {
+        title: String(p.title || ''),
+        description: String(p.description || ''),
+        type: String(p.type || 'PROGRAMMING'),
+        difficulty: String(p.difficulty || 'MEDIUM'),
+        tags: Array.isArray(p.tags) ? p.tags : [],
+        timeLimit: Number(p.timeLimit) || 2000,
+        memoryLimit: Number(p.memoryLimit) || 256,
+      };
 
-        if (p.choices && Array.isArray(p.choices) && p.choices.length > 0) {
-          safeP.choices = p.choices.map((c: any) => ({
-            key: String(c.key || ''),
-            text: String(c.text || ''),
-          }));
-        }
-
-        if (p.correctAnswer != null && p.correctAnswer !== '') {
-          safeP.correctAnswer = String(p.correctAnswer);
-        }
-
-        if (p.fillBlanks && Array.isArray(p.fillBlanks) && p.fillBlanks.length > 0) {
-          safeP.fillBlanks = p.fillBlanks.map((fb: any) => String(fb));
-        }
-
-        if (p.sourceFile) {
-          safeP.sourceFile = String(p.sourceFile);
-        }
-
-        return safeP;
-      });
-
-      const res = await problemsAPI.batchImport(safeProblems);
-      if (res.success && res.data) {
-        const data = res.data;
-        const mappedResults = (data.results || []).map((r: any, i: number) => ({
-          index: i,
-          success: r.success,
-          message: r.error || r.message || '',
-          title: r.title || '',
+      if (p.testCases && Array.isArray(p.testCases) && p.testCases.length > 0) {
+        safeP.testCases = p.testCases.map((tc: any) => ({
+          input: String(tc.input ?? ''),
+          output: String(tc.output ?? ''),
+          isSample: tc.isSample !== undefined ? Boolean(tc.isSample) : true,
         }));
-        setImportResult({
-          total: data.total,
-          succeeded: data.succeeded,
-          failed: data.failed,
-          results: mappedResults,
-        });
+      } else {
+        safeP.testCases = [{ input: '', output: '', isSample: true }];
       }
-    } catch (error: any) {
-      alert(error.error?.message || '批量导入失败');
-    } finally {
-      setImporting(false);
+
+      if (p.choices && Array.isArray(p.choices) && p.choices.length > 0) {
+        safeP.choices = p.choices.map((c: any) => ({
+          key: String(c.key || ''),
+          text: String(c.text || ''),
+        }));
+      }
+
+      if (p.correctAnswer != null && p.correctAnswer !== '') {
+        safeP.correctAnswer = String(p.correctAnswer);
+      }
+
+      if (p.fillBlanks && Array.isArray(p.fillBlanks) && p.fillBlanks.length > 0) {
+        safeP.fillBlanks = p.fillBlanks.map((fb: any) => String(fb));
+      }
+
+      if (p.sourceFile) {
+        safeP.sourceFile = String(p.sourceFile);
+      }
+
+      return safeP;
+    });
+
+    const batches: any[][] = [];
+    for (let i = 0; i < safeProblems.length; i += BATCH_SIZE) {
+      batches.push(safeProblems.slice(i, i + BATCH_SIZE));
     }
+
+    setBatchTotal(batches.length);
+
+    let totalSucceeded = 0;
+    let totalFailed = 0;
+    const allResults: { index: number; success: boolean; message: string; title: string }[] = [];
+    let globalIndex = 0;
+
+    for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+      setBatchProgress(batchIdx + 1);
+
+      try {
+        const res = await problemsAPI.batchImport(batches[batchIdx]);
+        if (res.success && res.data) {
+          const data = res.data;
+          totalSucceeded += data.succeeded || 0;
+          totalFailed += data.failed || 0;
+
+          for (const r of data.results || []) {
+            allResults.push({
+              index: globalIndex++,
+              success: r.success,
+              message: r.error || r.message || '',
+              title: r.title || '',
+            });
+          }
+        }
+      } catch (error: any) {
+        const batchProblems = batches[batchIdx];
+        for (const bp of batchProblems) {
+          allResults.push({
+            index: globalIndex++,
+            success: false,
+            message: error.error?.message || '请求失败（可能数据过大）',
+            title: bp.title || '',
+          });
+          totalFailed++;
+        }
+      }
+    }
+
+    setImportResult({
+      total: safeProblems.length,
+      succeeded: totalSucceeded,
+      failed: totalFailed,
+      results: allResults,
+    });
+    setImporting(false);
   };
 
   const removeProblem = (index: number) => {
@@ -1245,7 +1282,7 @@ export function AdminBatchImportPage() {
                     {importing ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        导入中...
+                        {batchTotal > 1 ? `导入中 ${batchProgress}/${batchTotal} 批...` : '导入中...'}
                       </>
                     ) : (
                       <>
@@ -1256,6 +1293,24 @@ export function AdminBatchImportPage() {
                   </button>
                 </div>
               </div>
+
+              {importing && batchTotal > 1 && (
+                <div className="mb-6 p-4 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-cyan-400 text-sm font-medium">
+                      <Loader2 className="h-4 w-4 inline mr-2 animate-spin" />
+                      分批导入中...
+                    </span>
+                    <span className="text-cyan-300 text-sm">{batchProgress}/{batchTotal} 批</span>
+                  </div>
+                  <div className="w-full bg-slate-600 rounded-full h-2">
+                    <div
+                      className="bg-cyan-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${(batchProgress / batchTotal) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
 
               {importResult && (
                 <div className="mb-6 p-4 rounded-lg bg-slate-700 border border-slate-600">
@@ -1707,12 +1762,12 @@ export function AdminBatchImportPage() {
                 {importing ? (
                   <>
                     <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                    导入中...
+                    {batchTotal > 1 ? `导入中 ${batchProgress}/${batchTotal} 批...` : '导入中...'}
                   </>
                 ) : (
                   <>
                     <Download className="h-5 w-5 mr-2" />
-                    批量导入 ({problems.length} 题)
+                    批量导入 ({problems.length} 题{problems.length > BATCH_SIZE ? `，分 ${Math.ceil(problems.length / BATCH_SIZE)} 批` : ''})
                   </>
                 )}
               </button>
