@@ -28,7 +28,9 @@ axiosInstance.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error.response?.data || error);
   }
@@ -270,6 +272,15 @@ export const promotionAPI = {
   useCode: (code: string) => api.post('/api/promotions/use', { code }),
   toggle: (id: string) => api.patch(`/api/promotions/${id}/toggle`),
   delete: (id: string) => api.delete(`/api/promotions/${id}`),
+  createPlan: (data: any) => api.post('/api/promotions/plans', data),
+  getPlans: () => api.get('/api/promotions/plans'),
+  getActivePlans: () => api.get('/api/promotions/plans/active'),
+  updatePlan: (id: string, data: any) => api.put(`/api/promotions/plans/${id}`, data),
+  togglePlan: (id: string) => api.patch(`/api/promotions/plans/${id}/toggle`),
+  deletePlan: (id: string) => api.delete(`/api/promotions/plans/${id}`),
+  createOrder: (data: any) => api.post('/api/promotions/orders', data),
+  getOrders: () => api.get('/api/promotions/orders'),
+  getFinancial: () => api.get('/api/promotions/financial'),
 };
 
 export default api;

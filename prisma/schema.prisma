@@ -306,18 +306,35 @@ model SystemConfig {
 }
 
 model Payment {
-  id          String    @id @default(uuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
-  amount      Float
-  method      String
-  status      String    @default("PENDING")
-  proof       String?
-  qrCodeUrl   String?
-  reviewedBy  String?
-  reviewedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  amount       Float
+  method       String
+  status       String    @default("PENDING")
+  proof        String?
+  qrCodeUrl    String?
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  planId       String?
+  promotionId  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Order {
+  id           String     @id @default(uuid())
+  userId       String
+  planId       String
+  plan         PricingPlan @relation(fields: [planId], references: [id])
+  amount       Float
+  originalAmount Float?
+  promotionId  String?
+  status       String     @default("PENDING")
+  paymentMethod String?
+  paidAt       DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 }
 
 model ClassJoinRequest {
@@ -422,4 +439,19 @@ model PromotionUsage {
   createdAt    DateTime  @default(now())
 
   @@unique([promotionId, userId])
+}
+
+model PricingPlan {
+  id          String    @id @default(uuid())
+  name        String
+  price       Float
+  duration    Int       @default(30)
+  unit        String    @default("DAY")
+  features    String    @default("[]")
+  isPopular   Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  orders      Order[]
 }

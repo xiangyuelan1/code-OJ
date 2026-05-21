@@ -75,7 +75,7 @@ export function Layout() {
 
       {needsAccessCheck && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl p-8 max-w-md w-full shadow-2xl border border-slate-700">
+          <div className="bg-slate-800 rounded-2xl p-5 sm:p-8 max-w-md w-full shadow-2xl border border-slate-700">
             <div className="text-center mb-6">
               <ShieldX className="h-16 w-16 text-red-400 mx-auto mb-4" />
               <h2 className="text-2xl font-bold text-white">访问受限</h2>
@@ -132,7 +132,7 @@ export function Layout() {
 
           {showJoinClass && (
             <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
-              <div className="bg-slate-800 rounded-xl p-6 max-w-sm w-full border border-slate-700">
+              <div className="bg-slate-800 rounded-xl p-4 sm:p-6 max-w-sm w-full border border-slate-700">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-white">加入班级</h3>
                   <button onClick={() => setShowJoinClass(false)} className="text-slate-400 hover:text-white">

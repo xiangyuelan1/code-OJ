@@ -150,6 +150,39 @@ export function Navbar() {
             >
               题目列表
             </Link>
+            <Link
+              to="/categories"
+              className="block hover:text-cyan-400"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              题单
+            </Link>
+            {isAuthenticated && (
+              <Link
+                to="/match"
+                className="block hover:text-cyan-400"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                对战
+              </Link>
+            )}
+            {isAuthenticated && (
+              <Link
+                to="/exams"
+                className="block hover:text-cyan-400"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                考试
+              </Link>
+            )}
+            <Link
+              to="/app-download"
+              className="block hover:text-cyan-400 flex items-center space-x-1"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <Smartphone className="h-4 w-4" />
+              <span>下载App</span>
+            </Link>
             {isAuthenticated ? (
               <>
                 {(user?.role === 'STUDENT' || user?.role === 'TEACHER') && (

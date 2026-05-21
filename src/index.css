@@ -15,6 +15,14 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+input, select, textarea {
+  font-size: 16px !important;
+}
+
+button, a, label {
+  touch-action: manipulation;
+}
+
 .prose-invert {
   --tw-prose-body: theme('colors.slate.300');
   --tw-prose-headings: theme('colors.white');

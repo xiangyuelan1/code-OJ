@@ -164,7 +164,7 @@ export function PaymentPage() {
           <Gift className="h-5 w-5 text-cyan-400" />
           推广码
         </h2>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <input
             value={promoCode}
             onChange={e => { setPromoCode(e.target.value.toUpperCase()); setPromoMessage(''); }}

@@ -45,7 +45,7 @@ export function LoginPage() {
           <p className="mt-2 text-slate-400">登录您的账户继续学习</p>
         </div>
 
-        <div className="bg-slate-800 rounded-2xl p-8 shadow-xl">
+        <div className="bg-slate-800 rounded-2xl p-5 sm:p-8 shadow-xl">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
               <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 text-red-400 text-sm">

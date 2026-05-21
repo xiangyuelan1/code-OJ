@@ -1,36 +1,14 @@
 import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Download, Smartphone, Monitor, Apple, Chrome, QrCode, X } from 'lucide-react';
+import { Smartphone, Monitor, Apple, QrCode, X, Download, Chrome, Cpu } from 'lucide-react';
 
 export function AppDownloadPage() {
   const [showQR, setShowQR] = useState(false);
   const currentUrl = window.location.origin;
 
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const isAndroid = /Android/.test(navigator.userAgent);
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-
-  const installSteps = isIOS
-    ? [
-        '1. 点击 Safari 浏览器底部的"分享"按钮',
-        '2. 在弹出的菜单中选择"添加到主屏幕"',
-        '3. 点击"添加"即可完成安装',
-      ]
-    : [
-        '1. 点击浏览器菜单（右上角三个点）',
-        '2. 选择"安装应用"或"添加到主屏幕"',
-        '3. 确认安装即可完成',
-      ];
-
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       <div className="max-w-4xl mx-auto px-4 py-12">
-        {isStandalone && (
-          <div className="mb-8 p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-center">
-            ✅ 您已在 App 模式中运行，享受原生般的体验！
-          </div>
-        )}
-
         <div className="text-center mb-12">
           <div className="inline-flex items-center justify-center w-20 h-20 bg-cyan-500/20 rounded-2xl mb-6">
             <Smartphone className="w-10 h-10 text-cyan-400" />
@@ -41,32 +19,81 @@ export function AppDownloadPage() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-6 mb-12">
+        <div className="bg-gradient-to-br from-cyan-500/10 to-purple-500/10 rounded-2xl p-8 border border-cyan-500/30 mb-8">
+          <div className="flex flex-col md:flex-row items-center gap-8">
+            <div className="flex-1">
+              <h2 className="text-2xl font-bold mb-3 flex items-center gap-2">
+                <Download className="h-6 w-6 text-cyan-400" />
+                下载安卓 APK
+              </h2>
+              <p className="text-slate-300 mb-4">
+                直接下载 APK 安装包到手机，或扫码下载。APK 大小约 4.3MB。
+              </p>
+              <div className="space-y-3">
+                <a
+                  href="/code-oj.apk"
+                  download="code-oj.apk"
+                  className="flex items-center justify-center gap-3 px-5 py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors font-medium"
+                >
+                  <Download className="h-5 w-5" />
+                  直接下载 APK
+                </a>
+                <button
+                  onClick={() => setShowQR(true)}
+                  className="flex items-center justify-center gap-3 px-5 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors w-full md:w-auto"
+                >
+                  <QrCode className="h-5 w-5" />
+                  扫码下载
+                </button>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl p-3 shrink-0">
+              <QRCodeSVG value={`${currentUrl}/code-oj.apk`} size={160} level="H" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-8">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <Cpu className="h-5 w-5 text-cyan-400" />
+            APK 安装步骤
+          </h2>
+          <ol className="space-y-3 text-slate-300">
+            <li className="flex items-start gap-3">
+              <span className="w-7 h-7 bg-cyan-500/20 rounded-full flex items-center justify-center text-cyan-400 font-bold text-sm shrink-0">1</span>
+              <span>点击上方"直接下载 APK"按钮，或扫码下载</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="w-7 h-7 bg-cyan-500/20 rounded-full flex items-center justify-center text-cyan-400 font-bold text-sm shrink-0">2</span>
+              <span>下载完成后，在手机上找到 APK 文件</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="w-7 h-7 bg-cyan-500/20 rounded-full flex items-center justify-center text-cyan-400 font-bold text-sm shrink-0">3</span>
+              <span>如果提示"未知来源"，请在设置中允许安装未知来源应用</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="w-7 h-7 bg-cyan-500/20 rounded-full flex items-center justify-center text-cyan-400 font-bold text-sm shrink-0">4</span>
+              <span>点击 APK 文件安装即可</span>
+            </li>
+          </ol>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6 mb-8">
           <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
             <div className="flex items-center mb-4">
               <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center mr-3">
                 <AndroidIcon className="w-5 h-5 text-green-400" />
               </div>
               <div>
-                <h3 className="font-semibold">Android 安卓</h3>
-                <p className="text-sm text-slate-400">Chrome 浏览器安装</p>
+                <h3 className="font-semibold">Android 快捷安装</h3>
+                <p className="text-sm text-slate-400">Chrome 浏览器</p>
               </div>
             </div>
             <ol className="space-y-2 text-sm text-slate-300">
-              {installSteps.map((step, i) => (
-                <li key={i} className="flex items-start">
-                  <span className="text-cyan-400 mr-2 shrink-0">•</span>
-                  <span>{step}</span>
-                </li>
-              ))}
+              <li className="flex items-start"><span className="text-cyan-400 mr-2 shrink-0">•</span>用 Chrome 打开本站</li>
+              <li className="flex items-start"><span className="text-cyan-400 mr-2 shrink-0">•</span>点击菜单 → "安装应用"</li>
+              <li className="flex items-start"><span className="text-cyan-400 mr-2 shrink-0">•</span>确认安装即可添加到桌面</li>
             </ol>
-            <button
-              onClick={() => setShowQR(true)}
-              className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition-colors text-sm font-medium"
-            >
-              <QrCode className="w-4 h-4" />
-              扫码安装
-            </button>
           </div>
 
           <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
@@ -75,79 +102,42 @@ export function AppDownloadPage() {
                 <Apple className="w-5 h-5 text-blue-400" />
               </div>
               <div>
-                <h3 className="font-semibold">iOS 苹果</h3>
-                <p className="text-sm text-slate-400">Safari 浏览器安装</p>
+                <h3 className="font-semibold">iOS 安装</h3>
+                <p className="text-sm text-slate-400">Safari 浏览器</p>
               </div>
             </div>
             <ol className="space-y-2 text-sm text-slate-300">
-              <li className="flex items-start">
-                <span className="text-cyan-400 mr-2 shrink-0">•</span>
-                <span>1. 使用 Safari 浏览器打开本页面</span>
-              </li>
-              <li className="flex items-start">
-                <span className="text-cyan-400 mr-2 shrink-0">•</span>
-                <span>2. 点击底部分享按钮，选择"添加到主屏幕"</span>
-              </li>
-              <li className="flex items-start">
-                <span className="text-cyan-400 mr-2 shrink-0">•</span>
-                <span>3. 点击"添加"即可在桌面看到 App 图标</span>
-              </li>
+              <li className="flex items-start"><span className="text-cyan-400 mr-2 shrink-0">•</span>用 Safari 打开本站</li>
+              <li className="flex items-start"><span className="text-cyan-400 mr-2 shrink-0">•</span>点击分享按钮 → "添加到主屏幕"</li>
+              <li className="flex items-start"><span className="text-cyan-400 mr-2 shrink-0">•</span>点击"添加"即可</li>
             </ol>
-            <button
-              onClick={() => setShowQR(true)}
-              className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-colors text-sm font-medium"
-            >
-              <QrCode className="w-4 h-4" />
-              扫码安装
-            </button>
           </div>
         </div>
 
         <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-8">
           <div className="flex items-center mb-4">
             <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center mr-3">
-              <Monitor className="w-5 h-5 text-purple-400" />
+              <Monitor className="w-5 w-5 text-purple-400" />
             </div>
             <div>
               <h3 className="font-semibold">桌面端安装</h3>
-              <p className="text-sm text-slate-400">Chrome / Edge 浏览器</p>
+              <p className="text-sm text-slate-400">Chrome / Edge</p>
             </div>
           </div>
           <ol className="space-y-2 text-sm text-slate-300">
-            <li className="flex items-start">
-              <span className="text-cyan-400 mr-2 shrink-0">•</span>
-              <span>1. 使用 Chrome 或 Edge 浏览器访问本站</span>
-            </li>
-            <li className="flex items-start">
-              <span className="text-cyan-400 mr-2 shrink-0">•</span>
-              <span>2. 地址栏右侧出现安装图标时点击，或在菜单中选择"安装 OJ系统"</span>
-            </li>
-            <li className="flex items-start">
-              <span className="text-cyan-400 mr-2 shrink-0">•</span>
-              <span>3. 确认安装后即可像桌面应用一样使用</span>
-            </li>
+            <li className="flex items-start"><span className="text-cyan-400 mr-2 shrink-0">•</span>用 Chrome/Edge 打开本站</li>
+            <li className="flex items-start"><span className="text-cyan-400 mr-2 shrink-0">•</span>地址栏右侧出现安装图标时点击</li>
+            <li className="flex items-start"><span className="text-cyan-400 mr-2 shrink-0">•</span>确认安装后即可像桌面应用一样使用</li>
           </ol>
         </div>
 
         <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700/50">
           <h3 className="font-semibold mb-3 text-center">App 特性</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center text-sm">
-            <div className="p-3">
-              <Download className="w-6 h-6 text-cyan-400 mx-auto mb-2" />
-              <p className="text-slate-300">离线缓存</p>
-            </div>
-            <div className="p-3">
-              <Smartphone className="w-6 h-6 text-cyan-400 mx-auto mb-2" />
-              <p className="text-slate-300">全屏体验</p>
-            </div>
-            <div className="p-3">
-              <Chrome className="w-6 h-6 text-cyan-400 mx-auto mb-2" />
-              <p className="text-slate-300">消息推送</p>
-            </div>
-            <div className="p-3">
-              <Monitor className="w-6 h-6 text-cyan-400 mx-auto mb-2" />
-              <p className="text-slate-300">桌面快捷</p>
-            </div>
+            <div className="p-3"><Download className="w-6 h-6 text-cyan-400 mx-auto mb-2" /><p className="text-slate-300">离线缓存</p></div>
+            <div className="p-3"><Smartphone className="w-6 h-6 text-cyan-400 mx-auto mb-2" /><p className="text-slate-300">全屏体验</p></div>
+            <div className="p-3"><Chrome className="w-6 h-6 text-cyan-400 mx-auto mb-2" /><p className="text-slate-300">消息推送</p></div>
+            <div className="p-3"><Monitor className="w-6 h-6 text-cyan-400 mx-auto mb-2" /><p className="text-slate-300">桌面快捷</p></div>
           </div>
         </div>
       </div>
@@ -156,21 +146,14 @@ export function AppDownloadPage() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setShowQR(false)}>
           <div className="bg-slate-800 rounded-2xl p-8 max-w-sm w-full" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold">扫码安装 App</h3>
-              <button onClick={() => setShowQR(false)} className="text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
+              <h3 className="text-lg font-semibold">扫码下载 App</h3>
+              <button onClick={() => setShowQR(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <div className="bg-white rounded-xl p-4 flex items-center justify-center mb-4">
-              <QRCodeSVG
-                value={currentUrl}
-                size={200}
-                level="H"
-                includeMargin={false}
-              />
+              <QRCodeSVG value={`${currentUrl}/code-oj.apk`} size={200} level="H" />
             </div>
             <p className="text-center text-slate-400 text-sm">
-              使用手机浏览器扫描二维码，打开后按提示添加到主屏幕
+              用手机浏览器扫码下载 APK 安装包
             </p>
           </div>
         </div>

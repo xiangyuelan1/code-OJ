@@ -619,7 +619,7 @@ export function SolvePage() {
                       <X className="h-4 w-4" />
                     </button>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs text-slate-400 mb-1">字体大小</label>
                       <select
@@ -670,7 +670,7 @@ export function SolvePage() {
                 </div>
               )}
 
-              <div style={{ height: '500px' }}>
+              <div className="sm:!h-[400px] lg:!h-[500px]" style={{ height: '300px' }}>
                 <Editor
                   height="100%"
                   language={language === 'python' ? 'python' : language === 'cpp' || language === 'c' ? 'cpp' : 'javascript'}

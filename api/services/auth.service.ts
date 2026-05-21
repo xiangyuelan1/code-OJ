@@ -28,7 +28,7 @@ export class AuthService {
       }
     });
 
-    const token = this.generateToken(user.id, user.role);
+    const token = this.generateToken(user.id, user.role, user.username);
     return {
       user: {
         id: user.id,
@@ -64,7 +64,7 @@ export class AuthService {
       throw new Error('密码错误');
     }
 
-    const token = this.generateToken(user.id, user.role);
+    const token = this.generateToken(user.id, user.role, user.username);
     return {
       user: {
         id: user.id,
@@ -124,8 +124,10 @@ export class AuthService {
     });
   }
 
-  generateToken(userId: string, role: string): string {
-    return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  generateToken(userId: string, role: string, username?: string): string {
+    const payload: any = { userId, role };
+    if (username) payload.username = username;
+    return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
   }
 
   verifyToken(token: string) {
