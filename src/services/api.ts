@@ -193,7 +193,7 @@ export const matchAPI = {
   join: (id: string) => api.post(`/api/matches/${id}/join`),
   submitAnswer: (id: string, data: { problemIndex: number; answer: string; time: number }) =>
     api.post(`/api/matches/${id}/answer`, data),
-  endMatch: (id: string) => api.get(`/api/matches/${id}/end`),
+  endMatch: (id: string) => api.post(`/api/matches/${id}/end`),
   getHistory: (limit?: number) => api.get('/api/matches/history/me', { params: { limit } }),
   getLeaderboard: (type: string, limit?: number) =>
     api.get(`/api/matches/leaderboard/${type}`, { params: { limit } }),

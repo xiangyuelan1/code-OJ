@@ -154,6 +154,12 @@ export class ClassService {
   }
 
   async joinClass(classId: string, userId: string) {
+    const existing = await prisma.classMember.findUnique({
+      where: { classId_userId: { classId, userId } },
+    });
+    if (existing) {
+      throw new Error('您已是该班级成员');
+    }
     return await prisma.classMember.create({
       data: {
         classId,
@@ -264,17 +270,15 @@ export class ClassService {
       throw new Error('该申请已被处理');
     }
 
-    const newStatus = approved ? 'APPROVED' : 'REJECTED';
-
-    const updated = await prisma.classJoinRequest.update({
-      where: { id: requestId },
-      data: {
-        status: newStatus,
-        reviewedBy: reviewerId,
-      },
-    });
-
     if (approved) {
+      const user = await prisma.user.findUnique({
+        where: { id: request.userId },
+        select: { accessType: true },
+      });
+      const updateData: any = {};
+      if (user && user.accessType === 'TRIAL') {
+        updateData.accessType = 'CLASS';
+      }
       await prisma.$transaction([
         prisma.classMember.create({
           data: {
@@ -283,14 +287,31 @@ export class ClassService {
             role: 'STUDENT',
           },
         }),
-        prisma.user.update({
-          where: { id: request.userId },
-          data: { accessType: 'CLASS' },
+        prisma.classJoinRequest.update({
+          where: { id: requestId },
+          data: {
+            status: 'APPROVED',
+            reviewedBy: reviewerId,
+          },
         }),
+        ...(Object.keys(updateData).length > 0
+          ? [prisma.user.update({
+              where: { id: request.userId },
+              data: updateData,
+            })]
+          : []),
       ]);
+    } else {
+      await prisma.classJoinRequest.update({
+        where: { id: requestId },
+        data: {
+          status: 'REJECTED',
+          reviewedBy: reviewerId,
+        },
+      });
     }
 
-    return updated;
+    return await prisma.classJoinRequest.findUnique({ where: { id: requestId } });
   }
 
   // ========================

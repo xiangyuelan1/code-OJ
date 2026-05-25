@@ -197,8 +197,9 @@ router.post('/:id/join', authMiddleware, async (req: Request, res: any): Promise
   try {
     const userId = (req as any).user.userId;
     const classId = req.params.id;
-    const member = await classService.joinClass(classId, userId);
-    res.json({ success: true, data: member });
+    const message = req.body.message;
+    const result = await classService.requestJoinClass(classId, userId, message);
+    res.json({ success: true, data: result });
   } catch (error: any) {
     res.status(400).json({ success: false, error: { message: error.message } });
   }

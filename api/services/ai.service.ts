@@ -51,27 +51,26 @@ export class AIService {
 
   async updateConfig(data: any) {
     const existing = await prisma.aIConfig.findFirst();
-    const pick = (field: string, fallback: any) => (field in data ? data[field] : fallback);
 
     if (existing) {
       return await prisma.aIConfig.update({
         where: { id: existing.id },
         data: {
-          enabled: pick('enabled', existing.enabled),
-          provider: pick('provider', existing.provider),
-          apiKey: pick('apiKey', existing.apiKey),
-          baseUrl: pick('baseUrl', existing.baseUrl),
-          model: pick('model', existing.model)
+          enabled: data.enabled !== undefined ? data.enabled : existing.enabled,
+          provider: data.provider || existing.provider,
+          apiKey: data.apiKey !== undefined ? data.apiKey : existing.apiKey,
+          baseUrl: data.baseUrl !== undefined ? data.baseUrl : existing.baseUrl,
+          model: data.model || existing.model,
         }
       });
     } else {
       return await prisma.aIConfig.create({
         data: {
           enabled: data.enabled ?? false,
-          provider: data.provider ?? 'openai',
-          apiKey: data.apiKey ?? null,
-          baseUrl: data.baseUrl ?? null,
-          model: data.model ?? 'gpt-3.5-turbo'
+          provider: data.provider || 'openai',
+          apiKey: data.apiKey,
+          baseUrl: data.baseUrl,
+          model: data.model || 'gpt-3.5-turbo',
         }
       });
     }

@@ -191,13 +191,22 @@ export class MatchService {
         isCorrect = answer === problem.correctAnswer;
         break;
       case 'FILL_BLANK':
+        let parsedAnswer: string[];
+        try {
+          const decoded = JSON.parse(answer);
+          parsedAnswer = Array.isArray(decoded) ? decoded : [answer];
+        } catch {
+          parsedAnswer = [answer];
+        }
         const correctAnswers: string[] = JSON.parse(problem.fillBlanks || '[]');
-        const userAnswers: string[] = Array.isArray(answer) ? answer : [answer];
-        isCorrect = userAnswers.every((ans, idx) =>
+        isCorrect = parsedAnswer.length === correctAnswers.length && parsedAnswer.every((ans, idx) =>
           ans.trim().toLowerCase() === correctAnswers[idx]?.trim().toLowerCase()
         );
         break;
       case 'PROGRAMMING':
+        // 安全风险：此处信任客户端传递的判题状态，理论上可被伪造。
+        // 前端通过 submissionsAPI.submit 先调用后端判题再传回状态，
+        // 完整修复需在此处独立执行后端判题，当前暂保留此逻辑。
         isCorrect = answer === 'ACCEPTED';
         break;
     }
@@ -372,7 +381,7 @@ export class MatchService {
   }
 
   async getMatch(matchId: string): Promise<any> {
-    return await prisma.match.findUnique({
+    const match = await prisma.match.findUnique({
       where: { id: matchId },
       include: {
         problems: {
@@ -408,6 +417,21 @@ export class MatchService {
         }
       }
     });
+
+    if (match) {
+      for (const mp of match.problems) {
+        if (mp.problem && mp.problem.testCases) {
+          try {
+            const allCases = JSON.parse(mp.problem.testCases);
+            mp.problem.testCases = JSON.stringify(allCases.filter((tc: any) => tc.isSample));
+          } catch {
+            mp.problem.testCases = '[]';
+          }
+        }
+      }
+    }
+
+    return match;
   }
 
   async getMatchHistory(userId: string, limit: number = 20): Promise<any[]> {

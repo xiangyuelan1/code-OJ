@@ -160,8 +160,8 @@ export class ProblemService {
     if (data.difficulty !== undefined) updateData.difficulty = data.difficulty;
     if (data.tags !== undefined) updateData.tags = JSON.stringify(data.tags);
     if (data.testCases !== undefined) updateData.testCases = JSON.stringify(data.testCases);
-    if (data.timeLimit !== undefined) updateData.timeLimit = data.timeLimit;
-    if (data.memoryLimit !== undefined) updateData.memoryLimit = data.memoryLimit;
+    if (data.timeLimit !== undefined) updateData.timeLimit = Number(data.timeLimit) || 2000;
+    if (data.memoryLimit !== undefined) updateData.memoryLimit = Number(data.memoryLimit) || 256;
     if (data.choices !== undefined) updateData.choices = data.choices ? JSON.stringify(data.choices) : null;
     if (data.correctAnswer !== undefined) updateData.correctAnswer = data.correctAnswer;
     if (data.fillBlanks !== undefined) updateData.fillBlanks = data.fillBlanks ? JSON.stringify(data.fillBlanks) : null;

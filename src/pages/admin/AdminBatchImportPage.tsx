@@ -142,10 +142,6 @@ export function AdminBatchImportPage() {
     setTestDataFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const removeFile = (index: number) => {
-    // 兼容旧代码，暂时保留
-  };
-
   const handleFolderModeSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files || []);
     if (selected.length > 0) {
@@ -478,7 +474,6 @@ export function AdminBatchImportPage() {
 
   const handleFileParse = async () => {
     if (problemFiles.length === 0 && testDataFiles.length === 0) return;
-    setParsing(true);
     setImportResult(null);
 
     try {
@@ -486,6 +481,7 @@ export function AdminBatchImportPage() {
       const fileContentMap: Record<string, string> = {};
       const jsonFiles: { file: File; relPath: string }[] = [];
       const dataFileMap: Record<string, { inFiles: File[]; outFiles: File[] }> = {};
+      const consumedDirs = new Set<string>();
 
       // 收集题目JSON文件
       for (const file of problemFiles) {
@@ -514,12 +510,10 @@ export function AdminBatchImportPage() {
         for (const f of dirData.inFiles) {
           const key = f.webkitRelativePath || f.name;
           fileContentMap[key] = await f.text();
-          fileContentMap[f.name] = fileContentMap[key];
         }
         for (const f of dirData.outFiles) {
           const key = f.webkitRelativePath || f.name;
           fileContentMap[key] = await f.text();
-          fileContentMap[f.name] = fileContentMap[key];
         }
       }
 
@@ -529,7 +523,7 @@ export function AdminBatchImportPage() {
           const data = JSON.parse(text);
           const jsonDir = relPath.includes('/') ? relPath.substring(0, relPath.lastIndexOf('/')) : '';
 
-          if (jsonDir && dataFileMap[jsonDir]) {
+          if (jsonDir && dataFileMap[jsonDir] && !consumedDirs.has(jsonDir)) {
             const dirData = dataFileMap[jsonDir];
             const extraTestCases: { input: string; output: string; isSample: boolean }[] = [];
             const inFiles = [...dirData.inFiles].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
@@ -548,13 +542,14 @@ export function AdminBatchImportPage() {
               parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
             }
             allParsed.push(parsed);
-            delete dataFileMap[jsonDir];
+            consumedDirs.add(jsonDir);
           } else {
             const jsonBaseName = file.name.replace(/\.\w+$/, '');
             let matchedDir = '';
             for (const dirKey of Object.keys(dataFileMap)) {
+              if (consumedDirs.has(dirKey)) continue;
               const dirName = dirKey.split('/').pop() || dirKey;
-              if (dirName === jsonBaseName || dirName.includes(jsonBaseName) || jsonBaseName.includes(dirName)) {
+              if (dirName === jsonBaseName) {
                 matchedDir = dirKey;
                 break;
               }
@@ -578,7 +573,7 @@ export function AdminBatchImportPage() {
                 parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
               }
               allParsed.push(parsed);
-              delete dataFileMap[matchedDir];
+              consumedDirs.add(matchedDir);
             } else {
               if (Array.isArray(data)) {
                 for (const item of data) {
@@ -599,6 +594,7 @@ export function AdminBatchImportPage() {
       }
 
       for (const [dirKey, dirData] of Object.entries(dataFileMap)) {
+        if (consumedDirs.has(dirKey)) continue;
         if (dirData.inFiles.length === 0 && dirData.outFiles.length === 0) continue;
 
         const testCases: { input: string; output: string; isSample: boolean }[] = [];
@@ -631,8 +627,6 @@ export function AdminBatchImportPage() {
       setProblems(allParsed);
     } catch (error: any) {
       alert('文件解析失败: ' + (error.message || '未知错误'));
-    } finally {
-      setParsing(false);
     }
   };
 

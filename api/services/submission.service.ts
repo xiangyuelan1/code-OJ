@@ -117,7 +117,7 @@ export class CodeExecutor {
         const runArgs = config.compileCmd ? [] : [...config.args, filePath];
 
         const proc = spawn(runCmd, runArgs, {
-          timeout: config.compileCmd ? undefined : timeoutMs,
+          timeout: timeoutMs,
           stdio: ['pipe', 'pipe', 'pipe']
         });
 
@@ -204,7 +204,7 @@ export class SubmissionService {
 
     let result: JudgeResult;
     try {
-      result = await this.judgeProgramming(code, language, testCases, problem.timeLimit);
+      result = await this.judgeProgramming(code, language, testCases, problem.timeLimit, problem.memoryLimit);
     } catch (error: any) {
       result = {
         status: 'RUNTIME_ERROR',
@@ -345,7 +345,8 @@ export class SubmissionService {
     code: string,
     language: string,
     testCases: TestCase[],
-    timeLimit: number
+    timeLimit: number,
+    memoryLimit?: number
   ): Promise<JudgeResult> {
     if (judge0Service.isEnabled()) {
       try {
@@ -354,7 +355,7 @@ export class SubmissionService {
           language,
           testCases,
           timeLimit,
-          256
+          memoryLimit || 256
         );
       } catch (error: any) {
         console.warn(`Judge0 判题失败，回退到本地执行: ${error.message}`);

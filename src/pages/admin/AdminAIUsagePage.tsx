@@ -110,11 +110,32 @@ export function AdminAIUsagePage() {
 
   const totalTokens = stats?.totalTokens ?? 0;
   const totalCost = stats?.totalCost ?? 0;
-  const totalCallsToday = stats?.totalCallsToday ?? stats?.callsToday ?? 0;
-  const activeUsers = stats?.activeUsers ?? 0;
-  const featureBreakdown: Record<string, number> = stats?.featureBreakdown ?? stats?.byFeature ?? {};
-  const userBreakdown: any[] = stats?.userBreakdown ?? stats?.byUser ?? [];
-  const dailyTrend: any[] = stats?.dailyTrend ?? stats?.daily ?? [];
+
+  const rawByFeature: Record<string, any> = stats?.byFeature ?? {};
+  const rawByUser: Record<string, any> = stats?.byUser ?? {};
+  const rawDaily: Record<string, any> = stats?.dailyUsage ?? stats?.daily ?? {};
+
+  const today = new Date().toISOString().slice(0, 10);
+  const totalCallsToday = rawDaily[today]?.count ?? stats?.totalCallsToday ?? stats?.callsToday ?? 0;
+  const activeUsers = Object.keys(rawByUser).length || (stats?.activeUsers ?? 0);
+
+  const featureBreakdown: Record<string, number> = Object.fromEntries(
+    Object.entries(rawByFeature).map(([k, v]) => [k, v.totalTokens ?? 0])
+  );
+
+  const userBreakdown: any[] = Object.entries(rawByUser).map(([userId, v]) => ({
+    userId,
+    tokens: v.totalTokens ?? 0,
+    calls: v.count ?? 0,
+    cost: v.totalCost ?? 0,
+  })).sort((a, b) => b.tokens - a.tokens);
+
+  const dailyTrend: any[] = Object.entries(rawDaily).map(([date, v]) => ({
+    date,
+    tokens: v.totalTokens ?? 0,
+    calls: v.count ?? 0,
+    cost: v.totalCost ?? 0,
+  })).sort((a, b) => a.date.localeCompare(b.date));
 
   const maxFeatureValue = Math.max(...Object.values(featureBreakdown), 1);
 

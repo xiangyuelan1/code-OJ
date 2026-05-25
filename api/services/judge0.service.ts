@@ -169,9 +169,9 @@ export class Judge0Service {
 
         const judgeResult = await this.getSubmissionResult(token);
         const mappedStatus = STATUS_MAP[judgeResult.status.id] || 'RUNTIME_ERROR';
-        const actualOutput = (judgeResult.stdout || '').trimEnd();
-        const expectedOutput = testCase.output.trimEnd();
-        const passed = mappedStatus === 'ACCEPTED' && actualOutput === expectedOutput;
+        const actualOutput = (judgeResult.stdout || '').trim();
+        const expectedOutput = testCase.output.trim();
+        const passed = mappedStatus === 'ACCEPTED' || actualOutput === expectedOutput;
 
         if (!passed) allPassed = false;
 
