@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { problemsAPI, enhancedAiAPI } from '../../services/api';
-import { Plus, Edit, Trash2, Code, CheckCircle, PenTool, Search, Upload, Loader2, X } from 'lucide-react';
+import { Plus, Edit, Trash2, Code, CheckCircle, PenTool, Search, Upload, Loader2, X, Tags } from 'lucide-react';
 
 export function AdminProblemsPage() {
   const [problems, setProblems] = useState<any[]>([]);
@@ -11,6 +11,9 @@ export function AdminProblemsPage() {
   const [importContent, setImportContent] = useState('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [classifyLoading, setClassifyLoading] = useState(false);
 
   useEffect(() => {
     loadProblems();
@@ -93,6 +96,54 @@ export function AdminProblemsPage() {
     reader.readAsText(file);
   };
 
+  const handleBatchClassify = async () => {
+    if (selectedIds.size === 0) return;
+    setClassifyLoading(true);
+    try {
+      const res = await enhancedAiAPI.batchClassify({ problemIds: Array.from(selectedIds) });
+      if (res.success) {
+        alert(`AI分类完成！成功 ${res.data.classified}/${res.data.total} 题`);
+        setSelectedIds(new Set());
+        setBatchMode(false);
+        loadProblems();
+      }
+    } catch (error: any) {
+      alert(error.error?.message || 'AI分类失败');
+    } finally {
+      setClassifyLoading(false);
+    }
+  };
+
+  const handleClassifyUntagged = async () => {
+    setClassifyLoading(true);
+    try {
+      const res = await enhancedAiAPI.batchClassify({ untaggedOnly: true });
+      if (res.success) {
+        alert(`AI分类完成！成功 ${res.data.classified}/${res.data.total} 题`);
+        loadProblems();
+      }
+    } catch (error: any) {
+      alert(error.error?.message || 'AI分类失败');
+    } finally {
+      setClassifyLoading(false);
+    }
+  };
+
+  const handleClassifyRandom = async () => {
+    setClassifyLoading(true);
+    try {
+      const res = await enhancedAiAPI.batchClassify({ randomCount: 10 });
+      if (res.success) {
+        alert(`AI分类完成！成功 ${res.data.classified}/${res.data.total} 题`);
+        loadProblems();
+      }
+    } catch (error: any) {
+      alert(error.error?.message || 'AI分类失败');
+    } finally {
+      setClassifyLoading(false);
+    }
+  };
+
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'PROGRAMMING':
@@ -167,6 +218,56 @@ export function AdminProblemsPage() {
         </div>
       </div>
 
+      <div className="flex items-center gap-3 mb-6">
+        <button
+          onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}
+          className={`flex items-center px-4 py-2 rounded-lg transition-colors ${batchMode ? 'bg-cyan-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+        >
+          <Tags className="h-4 w-4 mr-2" />
+          {batchMode ? '取消选择' : '批量选择'}
+        </button>
+        {batchMode && (
+          <>
+            <button
+              onClick={() => {
+                const allIds = problems.map((p: any) => p.id);
+                setSelectedIds(new Set(selectedIds.size === allIds.length ? [] : allIds));
+              }}
+              className="px-3 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600"
+            >
+              {selectedIds.size === problems.length ? '取消全选' : '全选'}
+            </button>
+            <button
+              onClick={handleBatchClassify}
+              disabled={classifyLoading || selectedIds.size === 0}
+              className="flex items-center px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {classifyLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Tags className="h-4 w-4 mr-2" />}
+              {classifyLoading ? 'AI分类中...' : `AI打标签 (${selectedIds.size})`}
+            </button>
+          </>
+        )}
+        {!batchMode && (
+          <>
+            <button
+              onClick={handleClassifyUntagged}
+              disabled={classifyLoading}
+              className="flex items-center px-4 py-2 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 disabled:opacity-50"
+            >
+              {classifyLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Tags className="h-4 w-4 mr-2" />}
+              {classifyLoading ? '处理中...' : 'AI分类未标签题目'}
+            </button>
+            <button
+              onClick={handleClassifyRandom}
+              disabled={classifyLoading}
+              className="flex items-center px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 disabled:opacity-50"
+            >
+              随机10题AI分类
+            </button>
+          </>
+        )}
+      </div>
+
       <div className="bg-slate-800 rounded-xl p-6 shadow-lg mb-6">
         <div className="flex gap-4">
           <div className="relative flex-1">
@@ -198,6 +299,19 @@ export function AdminProblemsPage() {
           <table className="w-full">
             <thead>
               <tr className="bg-slate-700">
+                {batchMode && (
+                  <th className="px-4 py-4 text-left">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === problems.length && problems.length > 0}
+                      onChange={() => {
+                        const allIds = problems.map((p: any) => p.id);
+                        setSelectedIds(new Set(selectedIds.size === allIds.length ? [] : allIds));
+                      }}
+                      className="rounded border-slate-500 bg-slate-600 text-cyan-500 focus:ring-cyan-500"
+                    />
+                  </th>
+                )}
                 <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">题目</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">类型</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">难度</th>
@@ -208,6 +322,21 @@ export function AdminProblemsPage() {
             <tbody className="divide-y divide-slate-700">
               {problems.map((problem) => (
                 <tr key={problem.id} className="hover:bg-slate-750 transition-colors">
+                  {batchMode && (
+                    <td className="px-4 py-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(problem.id)}
+                        onChange={() => {
+                          const next = new Set(selectedIds);
+                          if (next.has(problem.id)) next.delete(problem.id);
+                          else next.add(problem.id);
+                          setSelectedIds(next);
+                        }}
+                        className="rounded border-slate-500 bg-slate-600 text-cyan-500 focus:ring-cyan-500"
+                      />
+                    </td>
+                  )}
                   <td className="px-6 py-4">
                     <Link
                       to={`/problem/${problem.id}`}

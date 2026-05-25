@@ -19,13 +19,11 @@ export function ExamListPage() {
     try {
       const response = await examAPI.getAll();
       if (response.success) {
-        if (Array.isArray(response.data) && response.data.length > 0 && response.data[0].examId) {
-          setMyAttempts(response.data);
-          setExams([]);
-        } else {
-          setExams(response.data || []);
-          setMyAttempts([]);
-        }
+        setExams(response.data || []);
+      }
+      const attemptsRes = await examAPI.getMyAttempts();
+      if (attemptsRes.success) {
+        setMyAttempts(attemptsRes.data || []);
       }
     } catch (error) {
       console.error('获取考试列表失败:', error);

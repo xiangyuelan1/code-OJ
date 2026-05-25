@@ -1327,7 +1327,36 @@ DP 解题步骤：
       : problems;
 
     if (filtered.length === 0) {
-      return { problemIds: [], reasoning: '没有找到符合条件的题目' };
+      // 放宽条件：不按标签和知识节点筛选，只按难度和类型筛选
+      const relaxedProblems = await prisma.problem.findMany({
+        where: {
+          ...(params.difficulty ? { difficulty: params.difficulty } : {}),
+          ...(params.problemTypes?.length ? { type: { in: params.problemTypes } } : {}),
+        },
+        select: { id: true, title: true, difficulty: true, type: true, tags: true },
+      });
+      if (relaxedProblems.length === 0) {
+        // 再放宽：获取所有题目
+        const allProblems = await prisma.problem.findMany({
+          select: { id: true, title: true, difficulty: true, type: true, tags: true },
+          take: problemCount * 3,
+        });
+        if (allProblems.length === 0) {
+          return { problemIds: [], reasoning: '系统中暂无题目，请先创建题目后再组卷' };
+        }
+        const shuffled = allProblems.sort(() => Math.random() - 0.5);
+        const selected = shuffled.slice(0, Math.min(problemCount, shuffled.length));
+        return {
+          problemIds: selected.map(p => p.id),
+          reasoning: `由于没有完全符合条件的题目，已从全部 ${allProblems.length} 道题目中随机选择了 ${selected.length} 道`,
+        };
+      }
+      const shuffled = relaxedProblems.sort(() => Math.random() - 0.5);
+      const selected = shuffled.slice(0, Math.min(problemCount, shuffled.length));
+      return {
+        problemIds: selected.map(p => p.id),
+        reasoning: `已从 ${relaxedProblems.length} 道符合条件的题目中随机选择了 ${selected.length} 道`,
+      };
     }
 
     if (!(await this.isEnabled())) {
@@ -1493,6 +1522,139 @@ ${JSON.stringify(scored.map(p => ({ id: p.id, title: p.title, tags: JSON.parse(p
       problemIds: scored.map(p => p.id),
       reasoning: 'AI结果解析失败，已降级为标签相似度推荐'
     };
+  }
+
+  /**
+   * 批量为题目打标签，支持按ID、未标签、随机三种筛选模式。
+   * AI启用时调用大模型分类，未启用时使用规则引擎兜底。
+   */
+  async batchClassifyProblems(
+    options: { problemIds?: string[]; untaggedOnly?: boolean; randomCount?: number; tags?: string[] },
+    userId?: string,
+  ) {
+    let problems;
+
+    if (options.problemIds && options.problemIds.length > 0) {
+      problems = await prisma.problem.findMany({
+        where: { id: { in: options.problemIds } },
+        select: { id: true, title: true, description: true, tags: true, difficulty: true, type: true },
+      });
+    } else if (options.untaggedOnly) {
+      problems = await prisma.problem.findMany({
+        where: { tags: { in: ['[]', '""', '', 'null'] } },
+        select: { id: true, title: true, description: true, tags: true, difficulty: true, type: true },
+      });
+    } else {
+      const count = options.randomCount || 10;
+      problems = await prisma.problem.findMany({
+        select: { id: true, title: true, description: true, tags: true, difficulty: true, type: true },
+        take: count * 2,
+      });
+      problems = problems.sort(() => Math.random() - 0.5).slice(0, count);
+    }
+
+    if (problems.length === 0) {
+      return { total: 0, classified: 0, results: [] };
+    }
+
+    const config = await this.getConfig();
+    const results = [];
+
+    for (const problem of problems) {
+      try {
+        const currentTags: string[] = JSON.parse(problem.tags || '[]');
+
+        if (config?.enabled && config.apiKey) {
+          const prompt = `请为以下编程题目分类并打标签。
+
+题目标题：${problem.title}
+题目类型：${problem.type}
+难度：${problem.difficulty}
+题目描述：${(problem.description || '').substring(0, 500)}
+
+请直接返回一个JSON数组，包含3-5个标签字符串。例如：["贪心","排序","数组","模拟"]
+只返回JSON数组，不要其他内容。`;
+
+          const response = await this.callAI(prompt, config, 'batch-classify', userId);
+          let newTags: string[];
+          try {
+            const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            const parsed = JSON.parse(cleaned);
+            newTags = Array.isArray(parsed) ? parsed : [String(parsed)];
+          } catch {
+            newTags = response.split(/[,，、\s]+/).filter((t: string) => t.length > 0).slice(0, 5);
+          }
+
+          const mergedTags = [...new Set([...currentTags, ...newTags.map((t: string) => String(t).trim())])].filter((t: string) => t.length > 0);
+          await prisma.problem.update({
+            where: { id: problem.id },
+            data: { tags: JSON.stringify(mergedTags) },
+          });
+          results.push({ id: problem.id, title: problem.title, tags: mergedTags, success: true });
+        } else {
+          const autoTags = this.autoClassifyProblem(problem);
+          const mergedTags = [...new Set([...currentTags, ...autoTags])].filter((t: string) => t.length > 0);
+          await prisma.problem.update({
+            where: { id: problem.id },
+            data: { tags: JSON.stringify(mergedTags) },
+          });
+          results.push({ id: problem.id, title: problem.title, tags: mergedTags, success: true });
+        }
+      } catch (error: any) {
+        results.push({
+          id: problem.id,
+          title: problem.title,
+          tags: JSON.parse(problem.tags || '[]'),
+          success: false,
+          error: error.message,
+        });
+      }
+    }
+
+    return {
+      total: problems.length,
+      classified: results.filter(r => r.success).length,
+      results,
+    };
+  }
+
+  /**
+   * 基于关键词规则的自动分类，作为 AI 不可用时的兜底方案。
+   * 根据题目标题和描述中的关键词匹配算法标签。
+   */
+  private autoClassifyProblem(problem: { title?: string; description?: string; difficulty?: string; type?: string }): string[] {
+    const tags: string[] = [];
+    const title = (problem.title || '').toLowerCase();
+    const desc = (problem.description || '').toLowerCase();
+    const text = title + ' ' + desc;
+
+    const rules: Record<string, string[]> = {
+      '排序': ['排序', 'sort', '冒泡', '快排', '归并', '堆排'],
+      '搜索': ['搜索', '查找', 'find', 'search', '二分'],
+      '动态规划': ['动态规划', 'dp', '递推', '记忆化', '最长', '最大', '最小子'],
+      '贪心': ['贪心', 'greedy', '最优', '最少', '最多'],
+      '图论': ['图', '最短路', 'bfs', 'dfs', '遍历', '连通', '拓扑'],
+      '数学': ['数学', '素数', '质数', 'gcd', 'lcm', '组合', '排列', '概率', '模'],
+      '字符串': ['字符串', 'string', '回文', '匹配', 'kmp'],
+      '树': ['树', '二叉树', '节点', '叶子'],
+      '模拟': ['模拟', '仿真', '游戏', '棋'],
+      '递归': ['递归', 'recursion', '分治'],
+      '栈': ['栈', 'stack', '括号'],
+      '队列': ['队列', 'queue'],
+      '哈希': ['哈希', 'hash', 'map', '字典'],
+    };
+
+    for (const [tag, keywords] of Object.entries(rules)) {
+      if (keywords.some(kw => text.includes(kw))) {
+        tags.push(tag);
+      }
+    }
+
+    if (problem.difficulty) tags.push(problem.difficulty);
+    if (problem.type === 'CHOICE') tags.push('选择题');
+    else if (problem.type === 'FILL_BLANK') tags.push('填空题');
+
+    return tags.slice(0, 5);
   }
 }
 

@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { Component, type ReactNode, lazy, Suspense } from "react";
+import { Component, type ReactNode, lazy } from "react";
 import { useAuthStore } from "./stores/auth.store";
 import { Layout } from "./components/layout/Layout";
 import { AdminLayout } from "./pages/admin/AdminLayout";
@@ -86,17 +86,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
-function PageLoader() {
-  return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-        <span className="text-slate-400 text-sm">加载中...</span>
-      </div>
-    </div>
-  );
-}
-
 function ProtectedRoute({ children, allowedRole }: { children: React.ReactNode; allowedRole?: string }) {
   const { isAuthenticated, user } = useAuthStore();
 
@@ -115,8 +104,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <Router>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
+        <Routes>
             <Route element={<Layout />}>
               <Route path="/" element={<HomePage />} />
               <Route path="/categories" element={<ProblemCategoriesPage />} />
@@ -257,7 +245,6 @@ export default function App() {
               <Route path="access-config" element={<AdminAccessConfigPage />} />
             </Route>
           </Routes>
-        </Suspense>
       </Router>
     </ErrorBoundary>
   );

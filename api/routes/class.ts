@@ -26,6 +26,32 @@ router.post('/join-by-code', authMiddleware, async (req: Request, res: any): Pro
 });
 
 /**
+ * 获取当前用户提交的待审核加入申请（必须在 /:id 路由之前注册）
+ */
+router.get('/my-join-requests', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const requests = await classService.getMyJoinRequests(userId);
+    res.json({ success: true, data: requests });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/**
+ * 获取待审核申请数量（管理员/教师，必须在 /:id 路由之前注册）
+ */
+router.get('/pending-count', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const count = await classService.getPendingRequestCount(userId);
+    res.json({ success: true, data: { count } });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/**
  * 重新生成班级码（仅创建者或管理员）
  */
 router.post('/:id/generate-code', authMiddleware, async (req: Request, res: any): Promise<void> => {

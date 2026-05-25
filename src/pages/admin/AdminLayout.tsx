@@ -2,7 +2,7 @@ import { Link, useNavigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.store';
 import { useSocketStore } from '../../services/socket';
 import { BookOpen, List, Users, Cpu, Settings, LogOut, BarChart3, FileText, Swords, ClipboardList, FolderTree, Upload, GraduationCap, CreditCard, Shield, Tag } from 'lucide-react';
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 
 export function AdminLayout() {
   const navigate = useNavigate();
@@ -82,7 +82,16 @@ export function AdminLayout() {
       </aside>
 
       <main className="flex-1 p-8">
-        <Outlet />
+        <Suspense fallback={
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+              <span className="text-slate-400 text-sm">加载中...</span>
+            </div>
+          </div>
+        }>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );

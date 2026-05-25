@@ -452,9 +452,12 @@ export class SubmissionService {
     };
   }
 
-  async getUserSubmissions(userId: string) {
+  async getUserSubmissions(userId: string, status?: string) {
+    const where: any = { userId };
+    if (status) where.status = status;
+
     const submissions = await prisma.submission.findMany({
-      where: { userId },
+      where,
       include: {
         problem: {
           select: { title: true, type: true }

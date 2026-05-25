@@ -66,7 +66,7 @@ export function AdminPromotionPage() {
       setPlanForm({ name: '', price: 0, duration: 30, unit: 'DAY', features: [''], isPopular: false, sortOrder: 0 });
       fetchData();
     } catch (error: any) {
-      alert(error.response?.data?.error?.message || '操作失败');
+      alert(error.error?.message || '操作失败');
     }
   };
 
@@ -87,7 +87,7 @@ export function AdminPromotionPage() {
       setPromoForm({ name: '', description: '', type: 'TRIAL_EXTEND', value: 7, maxUses: 100, expiresAt: '', code: '' });
       fetchData();
     } catch (error: any) {
-      alert(error.response?.data?.error?.message || '创建失败');
+      alert(error.error?.message || '创建失败');
     }
   };
 

@@ -97,7 +97,8 @@ router.post('/', authMiddleware, async (req: Request, res: any): Promise<void> =
 router.get('/user/me', authMiddleware, async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
-    const submissions = await submissionService.getUserSubmissions(userId);
+    const status = req.query.status as string | undefined;
+    const submissions = await submissionService.getUserSubmissions(userId, status);
     res.json({ success: true, data: submissions });
   } catch (error: any) {
     res.status(500).json({ success: false, error: { message: error.message } });

@@ -3,7 +3,7 @@ import { Navbar } from './Navbar';
 import { useAuthStore } from '../../stores/auth.store';
 import { useSocketStore } from '../../services/socket';
 import { classAPI } from '../../services/api';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { ShieldX, Users, CreditCard, Clock, Send, X, Smartphone, LogOut } from 'lucide-react';
 
 export function Layout() {
@@ -65,7 +65,16 @@ export function Layout() {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       <Navbar />
       <main className="container mx-auto px-4 py-8">
-        <Outlet />
+        <Suspense fallback={
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+              <span className="text-slate-400 text-sm">加载中...</span>
+            </div>
+          </div>
+        }>
+          <Outlet />
+        </Suspense>
       </main>
       <footer className="bg-slate-900 text-slate-400 py-6 mt-12">
         <div className="container mx-auto px-4 text-center">

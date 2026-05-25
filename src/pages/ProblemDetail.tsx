@@ -162,25 +162,60 @@ export function ProblemDetailPage() {
           </div>
         </div>
 
-        {problem.type === 'PROGRAMMING' && Array.isArray(problem.testCases) && problem.testCases.length > 0 && (
-          <div className="mt-6">
-            <h2 className="text-xl font-semibold text-white mb-4">示例</h2>
-            <div className="space-y-4">
-              {problem.testCases.filter((tc: any) => tc.isSample).map((tc: any, index: number) => (
-                <div key={index} className="bg-slate-700 rounded-lg p-4">
-                  <div className="mb-2">
-                    <span className="text-slate-400 text-sm">输入：</span>
-                    <pre className="text-white mt-1 font-mono">{tc.input}</pre>
+        {problem.type === 'PROGRAMMING' && (() => {
+          const testCases = (() => {
+            try {
+              const raw = problem.testCases;
+              return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : [];
+            } catch { return []; }
+          })();
+          const samples = testCases.filter((tc: any) => tc.isSample).slice(0, 2);
+          return samples.length > 0 && (
+            <div className="mt-6">
+              <h2 className="text-xl font-semibold text-white mb-4">示例</h2>
+              <div className="space-y-4">
+                {samples.map((tc: any, index: number) => (
+                  <div key={index} className="bg-slate-700 rounded-lg p-4">
+                    <div className="mb-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 text-sm">输入：</span>
+                        <button
+                          onClick={() => navigator.clipboard?.writeText(tc.input || '')}
+                          className="text-slate-500 hover:text-cyan-400 text-xs transition-colors"
+                        >
+                          复制
+                        </button>
+                      </div>
+                      <pre className="text-white mt-1 font-mono text-sm whitespace-pre-wrap break-all max-h-32 overflow-hidden relative">
+                        {(tc.input || '').length > 500 ? (tc.input || '').substring(0, 500) + '...' : (tc.input || '')}
+                      </pre>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 text-sm">输出：</span>
+                        <button
+                          onClick={() => navigator.clipboard?.writeText(tc.output || '')}
+                          className="text-slate-500 hover:text-cyan-400 text-xs transition-colors"
+                        >
+                          复制
+                        </button>
+                      </div>
+                      <pre className="text-white mt-1 font-mono text-sm whitespace-pre-wrap break-all max-h-32 overflow-hidden relative">
+                        {(tc.output || '').length > 500 ? (tc.output || '').substring(0, 500) + '...' : (tc.output || '')}
+                      </pre>
+                    </div>
+                    {tc.explanation && (
+                      <div className="mt-2 pt-2 border-t border-slate-600">
+                        <span className="text-slate-400 text-sm">提示：</span>
+                        <p className="text-slate-300 mt-1 text-sm">{tc.explanation}</p>
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <span className="text-slate-400 text-sm">输出：</span>
-                    <pre className="text-white mt-1 font-mono">{tc.output}</pre>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {problem.type === 'CHOICE' && Array.isArray(problem.choices) && problem.choices.length > 0 && (
           <div className="mt-6">

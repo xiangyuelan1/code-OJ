@@ -8,15 +8,18 @@ export function SubmissionsPage() {
   const { user } = useAuthStore();
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('');
 
   useEffect(() => {
     loadSubmissions();
-  }, []);
+  }, [statusFilter]);
 
   const loadSubmissions = async () => {
     try {
       setLoading(true);
-      const res = await submissionsAPI.getMySubmissions();
+      const params: { status?: string } = {};
+      if (statusFilter) params.status = statusFilter;
+      const res = await submissionsAPI.getMySubmissions(params);
       if (res.success) {
         setSubmissions(res.data);
       }
@@ -108,6 +111,23 @@ export function SubmissionsPage() {
   return (
     <div className="max-w-6xl mx-auto">
       <h1 className="text-3xl font-bold text-white mb-8">我的提交</h1>
+
+      <div className="flex items-center gap-4 mb-4">
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="bg-slate-700 text-white rounded-lg px-3 py-2 border border-slate-600"
+        >
+          <option value="">全部状态</option>
+          <option value="ACCEPTED">通过</option>
+          <option value="WRONG_ANSWER">答案错误</option>
+          <option value="RUNTIME_ERROR">运行错误</option>
+          <option value="TIME_LIMIT_EXCEEDED">超时</option>
+          <option value="COMPILE_ERROR">编译错误</option>
+          <option value="JUDGING">判题中</option>
+          <option value="PENDING">等待中</option>
+        </select>
+      </div>
 
       {submissions.length === 0 ? (
         <div className="bg-slate-800 rounded-xl p-12 text-center">

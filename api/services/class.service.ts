@@ -255,6 +255,37 @@ export class ClassService {
   }
 
   /**
+   * 获取待审核申请数量：管理员获取全部，教师获取自己创建的班级的
+   */
+  async getPendingRequestCount(userId: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (user?.role === 'ADMIN') {
+      return await prisma.classJoinRequest.count({ where: { status: 'PENDING' } });
+    }
+    const myClasses = await prisma.class.findMany({
+      where: { createdBy: userId },
+      select: { id: true },
+    });
+    const classIds = myClasses.map(c => c.id);
+    return await prisma.classJoinRequest.count({
+      where: { classId: { in: classIds }, status: 'PENDING' },
+    });
+  }
+
+  /**
+   * 获取当前用户提交的待审核加入申请
+   */
+  async getMyJoinRequests(userId: string) {
+    return await prisma.classJoinRequest.findMany({
+      where: { userId, status: 'PENDING' },
+      include: {
+        class: { select: { id: true, name: true, grade: true, creator: { select: { username: true } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
    * 审批加入申请：通过时将用户加入班级并更新 accessType 为 CLASS
    */
   async reviewJoinRequest(requestId: string, reviewerId: string, approved: boolean) {

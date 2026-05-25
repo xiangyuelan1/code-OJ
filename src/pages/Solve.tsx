@@ -433,16 +433,42 @@ export function SolvePage() {
             {problem.type === 'PROGRAMMING' && parsedTestCases.length > 0 && (
               <div className="mb-6">
                 <h3 className="text-lg font-semibold text-white mb-3">示例</h3>
-                {parsedTestCases.filter((tc: any) => tc.isSample).map((tc: any, index: number) => (
+                {parsedTestCases.filter((tc: any) => tc.isSample).slice(0, 2).map((tc: any, index: number) => (
                   <div key={index} className="bg-slate-700 rounded-lg p-4 mb-2">
                     <div className="mb-1">
-                      <span className="text-slate-400 text-sm">输入：</span>
-                      <pre className="text-white mt-1 font-mono text-sm">{tc.input}</pre>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 text-sm">输入：</span>
+                        <button
+                          onClick={() => navigator.clipboard?.writeText(tc.input || '')}
+                          className="text-slate-500 hover:text-cyan-400 text-xs transition-colors"
+                        >
+                          复制
+                        </button>
+                      </div>
+                      <pre className="text-white mt-1 font-mono text-sm whitespace-pre-wrap break-all max-h-32 overflow-hidden">
+                        {(tc.input || '').length > 500 ? (tc.input || '').substring(0, 500) + '...' : (tc.input || '')}
+                      </pre>
                     </div>
                     <div>
-                      <span className="text-slate-400 text-sm">输出：</span>
-                      <pre className="text-white mt-1 font-mono text-sm">{tc.output}</pre>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 text-sm">输出：</span>
+                        <button
+                          onClick={() => navigator.clipboard?.writeText(tc.output || '')}
+                          className="text-slate-500 hover:text-cyan-400 text-xs transition-colors"
+                        >
+                          复制
+                        </button>
+                      </div>
+                      <pre className="text-white mt-1 font-mono text-sm whitespace-pre-wrap break-all max-h-32 overflow-hidden">
+                        {(tc.output || '').length > 500 ? (tc.output || '').substring(0, 500) + '...' : (tc.output || '')}
+                      </pre>
                     </div>
+                    {tc.explanation && (
+                      <div className="mt-2 pt-2 border-t border-slate-600">
+                        <span className="text-slate-400 text-sm">提示：</span>
+                        <p className="text-slate-300 mt-1 text-sm">{tc.explanation}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

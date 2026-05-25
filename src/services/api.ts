@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useAuthStore } from '../stores/auth.store';
 
 interface ApiSuccessResponse<T = any> {
   success: boolean;
@@ -26,8 +27,8 @@ axiosInstance.interceptors.response.use(
   (response) => response.data,
   (error: any) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      const { logout } = useAuthStore.getState();
+      logout();
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
@@ -73,7 +74,8 @@ export const problemsAPI = {
 export const submissionsAPI = {
   submit: (data: any) => api.post('/api/submissions', data),
   getById: (id: string) => api.get(`/api/submissions/${id}`),
-  getMySubmissions: () => api.get('/api/submissions/user/me'),
+  getMySubmissions: (params?: { status?: string }) =>
+    api.get('/api/submissions/user/me', { params }),
   getProblemSubmissions: (problemId: string) =>
     api.get(`/api/submissions/problem/${problemId}`),
   checkAC: (problemId: string) => api.get(`/api/submissions/check-ac/${problemId}`),
@@ -160,6 +162,7 @@ export const enhancedAiAPI = {
     api.post('/api/ai/optimize-code', { code, language }),
   recommendSimilar: (problemId: string) =>
     api.post('/api/ai/recommend-similar', { problemId }),
+  batchClassify: (data: any) => api.post('/api/ai/batch-classify', data),
 };
 
 export const uploadAPI = {
@@ -182,6 +185,7 @@ export const examAPI = {
   getResult: (id: string) => api.get(`/api/exams/${id}/result`),
   getAnalytics: (id: string) => api.get(`/api/exams/${id}/analytics`),
   getAttempts: (id: string) => api.get(`/api/exams/${id}/attempts`),
+  getMyAttempts: () => api.get('/api/exams/my-attempts'),
   logProctoring: (id: string, event: string, details?: string) =>
     api.post(`/api/exams/${id}/proctoring`, { event, details }),
 };
@@ -235,6 +239,8 @@ export const classAPI = {
   submitHomework: (homeworkId: string, data: any) => api.post(`/api/classes/homework/${homeworkId}/submit`, data),
   getMemberDetail: (classId: string, userId: string) => api.get(`/api/classes/${classId}/members/${userId}/detail`),
   joinByCode: (classCode: string, message?: string) => api.post('/api/classes/join-by-code', { classCode, message }),
+  getMyJoinRequests: () => api.get('/api/classes/my-join-requests'),
+  getPendingCount: () => api.get('/api/classes/pending-count'),
   generateClassCode: (id: string) => api.post(`/api/classes/${id}/generate-code`),
   createClassExam: (id: string, data: any) => api.post(`/api/classes/${id}/exams`, data),
   getClassExams: (id: string) => api.get(`/api/classes/${id}/exams`),

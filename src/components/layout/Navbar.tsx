@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.store';
 import { usePointsStore } from '../../stores/points.store';
 import { useSocketStore } from '../../services/socket';
+import { classAPI } from '../../services/api';
 import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -11,12 +12,31 @@ export function Navbar() {
   const { onlineCount, disconnect } = useSocketStore();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     if (isAuthenticated) {
       fetchMyPoints();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated && (user?.role === 'ADMIN' || user?.role === 'TEACHER')) {
+      const fetchPending = async () => {
+        try {
+          const res = await classAPI.getPendingCount();
+          if (res.success) {
+            setPendingCount(res.data?.count || 0);
+          }
+        } catch {
+          // 非关键功能，忽略错误
+        }
+      };
+      fetchPending();
+      const interval = setInterval(fetchPending, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated, user?.role]);
 
   const handleLogout = () => {
     disconnect();
@@ -62,13 +82,23 @@ export function Navbar() {
               </Link>
             )}
             {user?.role === 'ADMIN' && (
-              <Link to="/admin" className="hover:text-cyan-400 transition-colors">
+              <Link to="/admin" className="hover:text-cyan-400 transition-colors relative">
                 管理后台
+                {pendingCount > 0 && (
+                  <span className="absolute -top-2 -right-4 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
               </Link>
             )}
             {isAuthenticated && user?.role === 'TEACHER' && (
-              <Link to="/teacher/classes" className="hover:text-cyan-400 transition-colors">
+              <Link to="/teacher/classes" className="hover:text-cyan-400 transition-colors relative">
                 班级管理
+                {pendingCount > 0 && (
+                  <span className="absolute -top-2 -right-4 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
               </Link>
             )}
 
@@ -197,19 +227,29 @@ export function Navbar() {
                 {user?.role === 'ADMIN' && (
                   <Link
                     to="/admin"
-                    className="block hover:text-cyan-400"
+                    className="block hover:text-cyan-400 relative"
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     管理后台
+                    {pendingCount > 0 && (
+                      <span className="inline-block ml-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 text-center leading-4">
+                        {pendingCount > 9 ? '9+' : pendingCount}
+                      </span>
+                    )}
                   </Link>
                 )}
                 {user?.role === 'TEACHER' && (
                   <Link
                     to="/teacher/classes"
-                    className="block hover:text-cyan-400"
+                    className="block hover:text-cyan-400 relative"
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     班级管理
+                    {pendingCount > 0 && (
+                      <span className="inline-block ml-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 text-center leading-4">
+                        {pendingCount > 9 ? '9+' : pendingCount}
+                      </span>
+                    )}
                   </Link>
                 )}
                 <div className="flex items-center space-x-4 px-3 py-2 bg-slate-800 rounded-lg">

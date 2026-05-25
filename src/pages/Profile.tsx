@@ -57,14 +57,18 @@ export function ProfilePage() {
   const [joinMessage, setJoinMessage] = useState('');
   const [joinLoading, setJoinLoading] = useState(false);
 
+  // 待审核申请状态
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+
   useEffect(() => {
     loadData();
   }, []);
 
   // 切换到班级 tab 时加载数据
   useEffect(() => {
-    if (activeTab === 'classes' && classes.length === 0) {
-      loadClasses();
+    if (activeTab === 'classes') {
+      if (classes.length === 0) loadClasses();
+      loadPendingRequests();
     }
   }, [activeTab]);
 
@@ -97,21 +101,25 @@ export function ProfilePage() {
     try {
       const res = await classAPI.getAll();
       if (res.success) {
-        const allClasses: ClassItem[] = res.data || [];
-        // 学生只看自己所属的班级
-        const myClasses = allClasses.filter(
-          (cls: any) =>
-            cls.members?.some((m: any) => m.userId === user?.id || m.user?.id === user?.id) ||
-            cls.isMember === true
-        );
-        setClasses(myClasses);
+        setClasses(res.data || []);
       }
     } catch (error) {
-      console.error('加载班级失败', error);
+      console.error('加载班级失败:', error);
     } finally {
       setClassesLoading(false);
     }
-  }, [user?.id]);
+  }, []);
+
+  const loadPendingRequests = useCallback(async () => {
+    try {
+      const res = await classAPI.getMyJoinRequests();
+      if (res.success) {
+        setPendingRequests(res.data || []);
+      }
+    } catch {
+      // 忽略错误，待审核申请为非关键功能
+    }
+  }, []);
 
   const loadClassDetail = useCallback(async (cls: ClassItem) => {
     setSelectedClass(cls);
@@ -277,6 +285,30 @@ export function ProfilePage() {
             <span className="text-yellow-400 text-sm">
               当前为试用模式，剩余 {getTrialDaysLeft()} 天，加入班级可获得正式访问权限
             </span>
+          </div>
+        )}
+
+        {/* 待审核申请 */}
+        {pendingRequests.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center gap-2 text-amber-400 mb-3">
+              <Clock className="h-4 w-4" />
+              <span className="text-sm font-medium">待审核申请 ({pendingRequests.length})</span>
+            </div>
+            <div className="space-y-2">
+              {pendingRequests.map((req) => (
+                <div key={req.id} className="flex items-center justify-between p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="h-4 w-4 text-amber-400" />
+                    <span className="text-white text-sm">{req.class?.name || '班级'}</span>
+                    {req.class?.grade && (
+                      <span className="text-slate-400 text-xs">({req.class.grade})</span>
+                    )}
+                  </div>
+                  <span className="text-amber-400 text-xs">等待审核中</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
