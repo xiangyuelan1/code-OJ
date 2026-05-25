@@ -163,7 +163,7 @@ export function SolvePage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [code, setCode] = useState('');
-  const [language, setLanguage] = useState('javascript');
+  const [language, setLanguage] = useState('cpp');
   const [answer, setAnswer] = useState('');
   const [fillAnswers, setFillAnswers] = useState<string[]>([]);
   const [result, setResult] = useState<any>(null);
@@ -677,6 +677,7 @@ export function SolvePage() {
                   value={code}
                   onChange={(value) => setCode(value || '')}
                   theme={editorSettings.theme}
+                  loading={<div className="flex items-center justify-center h-full bg-slate-900"><div className="text-slate-400 text-sm">编辑器加载中...</div></div>}
                   options={{
                     minimap: { enabled: editorSettings.minimap },
                     fontSize: editorSettings.fontSize,

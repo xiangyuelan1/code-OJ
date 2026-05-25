@@ -41,7 +41,9 @@ export function AdminPromotionPage() {
         const res = await promotionAPI.getFinancial();
         if (res.success) setFinancial(res.data);
       }
-    } catch { /* ignore */ } finally { setLoading(false); }
+    } catch (error) {
+      console.error('加载数据失败:', error);
+    } finally { setLoading(false); }
   };
 
   useEffect(() => { fetchData(); }, [tab]);
@@ -241,7 +243,7 @@ export function AdminPromotionPage() {
                   <div key={m.month} className="flex items-center gap-3">
                     <span className="text-slate-400 text-sm w-10">{m.month}</span>
                     <div className="flex-1 bg-slate-700 rounded-full h-6 overflow-hidden">
-                      <div className="bg-cyan-500 h-full rounded-full flex items-center justify-end pr-2 transition-all" style={{ width: `${Math.max(Math.min(m.revenue / Math.max(...financial.monthlyRevenue.map((r: any) => r.revenue || 1)) * 100, 5), 100)}%` }}>
+                      <div className="bg-cyan-500 h-full rounded-full flex items-center justify-end pr-2 transition-all" style={{ width: `${Math.max(Math.min(m.revenue / Math.max(...financial.monthlyRevenue.map((r: any) => r.revenue || 1)) * 100, 100), 5)}%` }}>
                         <span className="text-xs text-white font-medium">¥{m.revenue}</span>
                       </div>
                     </div>

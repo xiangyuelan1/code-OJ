@@ -84,6 +84,7 @@ export function AdminClassesPage() {
   const [problemDifficultyFilter, setProblemDifficultyFilter] = useState('ALL');
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
   const [joinRequestsLoading, setJoinRequestsLoading] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   useEffect(() => {
     fetchClasses();
@@ -308,12 +309,34 @@ export function AdminClassesPage() {
     }
   };
 
-  const handleCopyCode = (code: string) => {
-    navigator.clipboard.writeText(code).then(() => {
-      alert('班级码已复制到剪贴板');
-    }).catch(() => {
-      prompt('请手动复制班级码:', code);
-    });
+  const handleCopyCode = async (code: string) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = code;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = code;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    }
   };
 
   const handleAddMember = async () => {
@@ -1851,6 +1874,9 @@ export function AdminClassesPage() {
                       >
                         <Copy className="h-3.5 w-3.5" />
                       </button>
+                      {copySuccess && (
+                        <span className="text-green-400 text-xs ml-1">已复制</span>
+                      )}
                     </div>
                   )}
                   {cls.description && (

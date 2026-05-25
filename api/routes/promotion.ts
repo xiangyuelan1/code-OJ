@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { promotionService } from '../services/promotion.service';
+import { authMiddleware } from '../middleware/auth.middleware';
+import { roleMiddleware } from '../middleware/role.middleware';
 
 const router = Router();
 
 // ===== 推广码 =====
 
-router.post('/', async (req, res) => {
+router.post('/', authMiddleware, roleMiddleware('ADMIN'), async (req, res) => {
   try {
     const userId = (req as any).user?.userId;
     const promotion = await promotionService.createPromotion(req.body, userId);
@@ -15,7 +17,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.get('/', async (_req, res) => {
+router.get('/', authMiddleware, roleMiddleware('ADMIN'), async (_req, res) => {
   try {
     const promotions = await promotionService.getAllPromotions();
     res.json({ success: true, data: promotions });
@@ -24,7 +26,7 @@ router.get('/', async (_req, res) => {
   }
 });
 
-router.get('/stats', async (_req, res) => {
+router.get('/stats', authMiddleware, roleMiddleware('ADMIN'), async (_req, res) => {
   try {
     const stats = await promotionService.getPromotionStats();
     res.json({ success: true, data: stats });
@@ -33,7 +35,7 @@ router.get('/stats', async (_req, res) => {
   }
 });
 
-router.post('/use', async (req, res) => {
+router.post('/use', authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).user?.userId;
     if (!userId) return res.status(401).json({ success: false, error: { message: '请先登录' } });
@@ -46,7 +48,7 @@ router.post('/use', async (req, res) => {
   }
 });
 
-router.patch('/:id/toggle', async (req, res) => {
+router.patch('/:id/toggle', authMiddleware, roleMiddleware('ADMIN'), async (req, res) => {
   try {
     const promotion = await promotionService.togglePromotion(req.params.id);
     res.json({ success: true, data: promotion });
@@ -55,7 +57,7 @@ router.patch('/:id/toggle', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authMiddleware, roleMiddleware('ADMIN'), async (req, res) => {
   try {
     await promotionService.deletePromotion(req.params.id);
     res.json({ success: true });
@@ -66,7 +68,7 @@ router.delete('/:id', async (req, res) => {
 
 // ===== 定价计划 =====
 
-router.post('/plans', async (req, res) => {
+router.post('/plans', authMiddleware, roleMiddleware('ADMIN'), async (req, res) => {
   try {
     const plan = await promotionService.createPlan(req.body);
     res.json({ success: true, data: plan });
@@ -75,7 +77,7 @@ router.post('/plans', async (req, res) => {
   }
 });
 
-router.get('/plans', async (_req, res) => {
+router.get('/plans', authMiddleware, roleMiddleware('ADMIN'), async (_req, res) => {
   try {
     const plans = await promotionService.getAllPlans();
     res.json({ success: true, data: plans });
@@ -84,6 +86,7 @@ router.get('/plans', async (_req, res) => {
   }
 });
 
+// 公开路由：获取活跃定价计划，无需认证
 router.get('/plans/active', async (_req, res) => {
   try {
     const plans = await promotionService.getActivePlans();
@@ -93,7 +96,7 @@ router.get('/plans/active', async (_req, res) => {
   }
 });
 
-router.put('/plans/:id', async (req, res) => {
+router.put('/plans/:id', authMiddleware, roleMiddleware('ADMIN'), async (req, res) => {
   try {
     const plan = await promotionService.updatePlan(req.params.id, req.body);
     res.json({ success: true, data: plan });
@@ -102,7 +105,7 @@ router.put('/plans/:id', async (req, res) => {
   }
 });
 
-router.patch('/plans/:id/toggle', async (req, res) => {
+router.patch('/plans/:id/toggle', authMiddleware, roleMiddleware('ADMIN'), async (req, res) => {
   try {
     const plan = await promotionService.togglePlan(req.params.id);
     res.json({ success: true, data: plan });
@@ -111,7 +114,7 @@ router.patch('/plans/:id/toggle', async (req, res) => {
   }
 });
 
-router.delete('/plans/:id', async (req, res) => {
+router.delete('/plans/:id', authMiddleware, roleMiddleware('ADMIN'), async (req, res) => {
   try {
     await promotionService.deletePlan(req.params.id);
     res.json({ success: true });
@@ -122,7 +125,7 @@ router.delete('/plans/:id', async (req, res) => {
 
 // ===== 订单 =====
 
-router.post('/orders', async (req, res) => {
+router.post('/orders', authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).user?.userId;
     if (!userId) return res.status(401).json({ success: false, error: { message: '请先登录' } });
@@ -133,7 +136,7 @@ router.post('/orders', async (req, res) => {
   }
 });
 
-router.get('/orders', async (_req, res) => {
+router.get('/orders', authMiddleware, roleMiddleware('ADMIN'), async (_req, res) => {
   try {
     const orders = await promotionService.getOrders();
     res.json({ success: true, data: orders });
@@ -144,7 +147,7 @@ router.get('/orders', async (_req, res) => {
 
 // ===== 财务统计 =====
 
-router.get('/financial', async (_req, res) => {
+router.get('/financial', authMiddleware, roleMiddleware('ADMIN'), async (_req, res) => {
   try {
     const stats = await promotionService.getFinancialStats();
     res.json({ success: true, data: stats });

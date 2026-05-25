@@ -5,13 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   plugins: [
-    react({
-      babel: {
-        plugins: [
-          'react-dev-locator',
-        ],
-      },
-    }),
+    react(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
@@ -59,8 +53,21 @@ export default defineConfig({
     }),
     tsconfigPaths(),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-monaco': ['@monaco-editor/react'],
+          'vendor-markdown': ['react-markdown', 'rehype-highlight', 'remark-gfm', 'marked'],
+          'vendor-ui': ['lucide-react', 'zustand', 'axios'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
+  },
   server: {
-    host: '0.0.0.0', // 允许内网访问
+    host: '0.0.0.0',
     port: 5175,
     allowedHosts: [
       'freight-defendant-tranquil.ngrok-free.dev',

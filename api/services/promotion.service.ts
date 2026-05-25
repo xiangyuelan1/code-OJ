@@ -14,18 +14,37 @@ export class PromotionService {
   }, userId?: string) {
     const code = data.code || this.generateCode();
 
-    return prisma.promotion.create({
-      data: {
-        code,
-        name: data.name,
-        description: data.description || null,
-        type: data.type || 'TRIAL_EXTEND',
-        value: data.value || 0,
-        maxUses: data.maxUses || 0,
-        expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
-        createdBy: userId || null,
-      },
-    });
+    // 如果是自动生成的 code，遇到唯一约束冲突时重试
+    const maxRetries = 5;
+    let lastError: any;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await prisma.promotion.create({
+          data: {
+            code: attempt === 0 ? code : this.generateCode(),
+            name: data.name,
+            description: data.description || null,
+            type: data.type || 'TRIAL_EXTEND',
+            value: data.value || 0,
+            maxUses: data.maxUses || 0,
+            expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
+            createdBy: userId || null,
+          },
+        });
+      } catch (error: any) {
+        // 非唯一约束错误或用户手动指定了 code，直接抛出
+        if (data.code || !this.isUniqueConstraintError(error)) {
+          throw error;
+        }
+        lastError = error;
+      }
+    }
+    throw lastError;
+  }
+
+  /** 判断是否为 Prisma 唯一约束错误 */
+  private isUniqueConstraintError(error: any): boolean {
+    return error?.code === 'P2002';
   }
 
   async getAllPromotions() {
@@ -167,6 +186,10 @@ export class PromotionService {
   }
 
   async deletePlan(id: string) {
+    const orderCount = await prisma.order.count({ where: { planId: id } });
+    if (orderCount > 0) {
+      throw new Error('该定价计划下存在订单，无法删除。请改为下架处理。');
+    }
     return prisma.pricingPlan.delete({ where: { id } });
   }
 

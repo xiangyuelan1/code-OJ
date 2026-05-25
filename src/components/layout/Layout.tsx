@@ -4,10 +4,10 @@ import { useAuthStore } from '../../stores/auth.store';
 import { useSocketStore } from '../../services/socket';
 import { classAPI } from '../../services/api';
 import { useEffect, useState } from 'react';
-import { ShieldX, Users, CreditCard, Clock, Send, X, Smartphone } from 'lucide-react';
+import { ShieldX, Users, CreditCard, Clock, Send, X, Smartphone, LogOut } from 'lucide-react';
 
 export function Layout() {
-  const { isAuthenticated, checkAccess, accessStatus, accessLoading, user } = useAuthStore();
+  const { isAuthenticated, checkAccess, accessStatus, accessLoading, user, logout } = useAuthStore();
   const { connect, disconnect, isConnected } = useSocketStore();
   const navigate = useNavigate();
   const [showJoinClass, setShowJoinClass] = useState(false);
@@ -125,6 +125,17 @@ export function Layout() {
                 <div>
                   <p className="text-purple-400 font-medium">下载 App</p>
                   <p className="text-slate-400 text-sm">安装到手机或桌面</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => { logout(); }}
+                className="w-full flex items-center gap-3 p-4 bg-slate-500/10 border border-slate-500/30 rounded-lg hover:bg-slate-500/20 transition-colors text-left"
+              >
+                <LogOut className="h-5 w-5 text-slate-400 shrink-0" />
+                <div>
+                  <p className="text-slate-300 font-medium">退出登录</p>
+                  <p className="text-slate-500 text-sm">切换账号或重新登录</p>
                 </div>
               </button>
             </div>

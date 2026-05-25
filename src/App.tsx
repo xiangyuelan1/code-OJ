@@ -1,41 +1,44 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { Component, type ReactNode } from "react";
+import { Component, type ReactNode, lazy, Suspense } from "react";
 import { useAuthStore } from "./stores/auth.store";
 import { Layout } from "./components/layout/Layout";
 import { AdminLayout } from "./pages/admin/AdminLayout";
-import { HomePage } from "./pages/Home";
-import { LoginPage } from "./pages/Login";
-import { RegisterPage } from "./pages/Register";
-import { ProblemDetailPage } from "./pages/ProblemDetail";
-import { SolvePage } from "./pages/Solve";
-import { SubmissionsPage } from "./pages/Submissions";
-import { AdminDashboard } from "./pages/admin/AdminDashboard";
-import { AdminProblemsPage } from "./pages/admin/AdminProblemsPage";
-import { AdminProblemFormPage } from "./pages/admin/AdminProblemFormPage";
-import { AdminBatchImportPage } from "./pages/admin/AdminBatchImportPage";
-import { AdminUsersPage } from "./pages/admin/AdminUsersPage";
-import { AdminAIConfigPage } from "./pages/admin/AdminAIConfigPage";
-import { AdminExamPage } from "./pages/admin/AdminExamPage";
-import { AdminSubmissionsPage } from "./pages/admin/AdminSubmissionsPage";
-import { AdminMatchesPage } from "./pages/admin/AdminMatchesPage";
-import { AdminKnowledgeTreePage } from "./pages/admin/AdminKnowledgeTreePage";
-import { AdminClassesPage } from './pages/admin/AdminClassesPage';
-import { TeacherClassesPage } from './pages/teacher/TeacherClassesPage';
-import { ProfilePage } from "./pages/Profile";
-import { SolutionDetailPage } from "./pages/SolutionDetail";
-import { KnowledgeTreePage } from "./pages/KnowledgeTreePage";
-import { ExamListPage, ExamPage } from "./pages/ExamListPage";
-import { ExamResultPage } from "./pages/ExamResultPage";
-import { MatchPage } from "./pages/MatchPage";
-import { MatchBattlePage } from "./pages/MatchBattlePage";
-import { ProblemCategoriesPage } from "./pages/ProblemCategoriesPage";
-import { AchievementPage } from "./pages/AchievementPage";
-import { PaymentPage } from "./pages/PaymentPage";
-import { AdminPaymentPage } from "./pages/admin/AdminPaymentPage";
-import { AdminAccessConfigPage } from "./pages/admin/AdminAccessConfigPage";
-import { AdminAIUsagePage } from "./pages/admin/AdminAIUsagePage";
-import { AppDownloadPage } from "./pages/AppDownload";
-import { AdminPromotionPage } from "./pages/admin/AdminPromotionPage";
+
+const HomePage = lazy(() => import("./pages/Home").then(m => ({ default: m.HomePage })));
+const LoginPage = lazy(() => import("./pages/Login").then(m => ({ default: m.LoginPage })));
+const RegisterPage = lazy(() => import("./pages/Register").then(m => ({ default: m.RegisterPage })));
+const ProblemDetailPage = lazy(() => import("./pages/ProblemDetail").then(m => ({ default: m.ProblemDetailPage })));
+const SolvePage = lazy(() => import("./pages/Solve").then(m => ({ default: m.SolvePage })));
+const SubmissionsPage = lazy(() => import("./pages/Submissions").then(m => ({ default: m.SubmissionsPage })));
+const ProfilePage = lazy(() => import("./pages/Profile").then(m => ({ default: m.ProfilePage })));
+const SolutionDetailPage = lazy(() => import("./pages/SolutionDetail").then(m => ({ default: m.SolutionDetailPage })));
+const KnowledgeTreePage = lazy(() => import("./pages/KnowledgeTreePage").then(m => ({ default: m.KnowledgeTreePage })));
+const ExamListPage = lazy(() => import("./pages/ExamListPage").then(m => ({ default: m.ExamListPage })));
+const ExamPage = lazy(() => import("./pages/ExamListPage").then(m => ({ default: m.ExamPage })));
+const ExamResultPage = lazy(() => import("./pages/ExamResultPage").then(m => ({ default: m.ExamResultPage })));
+const MatchPage = lazy(() => import("./pages/MatchPage").then(m => ({ default: m.MatchPage })));
+const MatchBattlePage = lazy(() => import("./pages/MatchBattlePage").then(m => ({ default: m.MatchBattlePage })));
+const ProblemCategoriesPage = lazy(() => import("./pages/ProblemCategoriesPage").then(m => ({ default: m.ProblemCategoriesPage })));
+const AchievementPage = lazy(() => import("./pages/AchievementPage").then(m => ({ default: m.AchievementPage })));
+const PaymentPage = lazy(() => import("./pages/PaymentPage").then(m => ({ default: m.PaymentPage })));
+const AppDownloadPage = lazy(() => import("./pages/AppDownload").then(m => ({ default: m.AppDownloadPage })));
+const TeacherClassesPage = lazy(() => import("./pages/teacher/TeacherClassesPage").then(m => ({ default: m.TeacherClassesPage })));
+
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard").then(m => ({ default: m.AdminDashboard })));
+const AdminProblemsPage = lazy(() => import("./pages/admin/AdminProblemsPage").then(m => ({ default: m.AdminProblemsPage })));
+const AdminProblemFormPage = lazy(() => import("./pages/admin/AdminProblemFormPage").then(m => ({ default: m.AdminProblemFormPage })));
+const AdminBatchImportPage = lazy(() => import("./pages/admin/AdminBatchImportPage").then(m => ({ default: m.AdminBatchImportPage })));
+const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage").then(m => ({ default: m.AdminUsersPage })));
+const AdminAIConfigPage = lazy(() => import("./pages/admin/AdminAIConfigPage").then(m => ({ default: m.AdminAIConfigPage })));
+const AdminExamPage = lazy(() => import("./pages/admin/AdminExamPage").then(m => ({ default: m.AdminExamPage })));
+const AdminSubmissionsPage = lazy(() => import("./pages/admin/AdminSubmissionsPage").then(m => ({ default: m.AdminSubmissionsPage })));
+const AdminMatchesPage = lazy(() => import("./pages/admin/AdminMatchesPage").then(m => ({ default: m.AdminMatchesPage })));
+const AdminKnowledgeTreePage = lazy(() => import("./pages/admin/AdminKnowledgeTreePage").then(m => ({ default: m.AdminKnowledgeTreePage })));
+const AdminClassesPage = lazy(() => import("./pages/admin/AdminClassesPage").then(m => ({ default: m.AdminClassesPage })));
+const AdminPaymentPage = lazy(() => import("./pages/admin/AdminPaymentPage").then(m => ({ default: m.AdminPaymentPage })));
+const AdminAccessConfigPage = lazy(() => import("./pages/admin/AdminAccessConfigPage").then(m => ({ default: m.AdminAccessConfigPage })));
+const AdminAIUsagePage = lazy(() => import("./pages/admin/AdminAIUsagePage").then(m => ({ default: m.AdminAIUsagePage })));
+const AdminPromotionPage = lazy(() => import("./pages/admin/AdminPromotionPage").then(m => ({ default: m.AdminPromotionPage })));
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -83,6 +86,17 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
+function PageLoader() {
+  return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-slate-400 text-sm">加载中...</span>
+      </div>
+    </div>
+  );
+}
+
 function ProtectedRoute({ children, allowedRole }: { children: React.ReactNode; allowedRole?: string }) {
   const { isAuthenticated, user } = useAuthStore();
 
@@ -101,147 +115,149 @@ export default function App() {
   return (
     <ErrorBoundary>
       <Router>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/categories" element={<ProblemCategoriesPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/problem/:id" element={<ProblemDetailPage />} />
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/categories" element={<ProblemCategoriesPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/problem/:id" element={<ProblemDetailPage />} />
+              <Route
+                path="/problem/:id/solve"
+                element={
+                  <ProtectedRoute>
+                    <SolvePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/submissions"
+                element={
+                  <ProtectedRoute>
+                    <SubmissionsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <ProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/solutions/:id"
+                element={
+                  <ProtectedRoute>
+                    <SolutionDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge-tree"
+                element={
+                  <ProtectedRoute allowedRole="ADMIN">
+                    <KnowledgeTreePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/exams"
+                element={
+                  <ProtectedRoute>
+                    <ExamListPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/exam/:id"
+                element={
+                  <ProtectedRoute>
+                    <ExamPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/exam/:id/result"
+                element={
+                  <ProtectedRoute>
+                    <ExamResultPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/match"
+                element={
+                  <ProtectedRoute>
+                    <MatchPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/match/:id"
+                element={
+                  <ProtectedRoute>
+                    <MatchBattlePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/achievements"
+                element={
+                  <ProtectedRoute>
+                    <AchievementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/payment"
+                element={
+                  <ProtectedRoute>
+                    <PaymentPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/app-download" element={<AppDownloadPage />} />
+              <Route
+                path="/teacher/classes"
+                element={
+                  <ProtectedRoute allowedRole="TEACHER">
+                    <TeacherClassesPage />
+                  </ProtectedRoute>
+                }
+              />
+            </Route>
+
             <Route
-              path="/problem/:id/solve"
-              element={
-                <ProtectedRoute>
-                  <SolvePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/submissions"
-              element={
-                <ProtectedRoute>
-                  <SubmissionsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <ProtectedRoute>
-                  <ProfilePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/solutions/:id"
-              element={
-                <ProtectedRoute>
-                  <SolutionDetailPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/knowledge-tree"
+              path="/admin"
               element={
                 <ProtectedRoute allowedRole="ADMIN">
-                  <KnowledgeTreePage />
+                  <AdminLayout />
                 </ProtectedRoute>
               }
-            />
-            <Route
-              path="/exams"
-              element={
-                <ProtectedRoute>
-                  <ExamListPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/exam/:id"
-              element={
-                <ProtectedRoute>
-                  <ExamPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/exam/:id/result"
-              element={
-                <ProtectedRoute>
-                  <ExamResultPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/match"
-              element={
-                <ProtectedRoute>
-                  <MatchPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/match/:id"
-              element={
-                <ProtectedRoute>
-                  <MatchBattlePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/achievements"
-              element={
-                <ProtectedRoute>
-                  <AchievementPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/payment"
-              element={
-                <ProtectedRoute>
-                  <PaymentPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="/app-download" element={<AppDownloadPage />} />
-            <Route
-              path="/teacher/classes"
-              element={
-                <ProtectedRoute allowedRole="TEACHER">
-                  <TeacherClassesPage />
-                </ProtectedRoute>
-              }
-            />
-          </Route>
-
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute allowedRole="ADMIN">
-                <AdminLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<AdminDashboard />} />
-            <Route path="problems" element={<AdminProblemsPage />} />
-            <Route path="problems/create" element={<AdminProblemFormPage />} />
-            <Route path="problems/:id/edit" element={<AdminProblemFormPage />} />
-            <Route path="problems/batch-import" element={<AdminBatchImportPage />} />
-            <Route path="knowledge-tree" element={<AdminKnowledgeTreePage />} />
-            <Route path="exams" element={<AdminExamPage />} />
-            <Route path="exams/:id/attempts" element={<AdminExamPage />} />
-            <Route path="submissions" element={<AdminSubmissionsPage />} />
-            <Route path="matches" element={<AdminMatchesPage />} />
-            <Route path="users" element={<AdminUsersPage />} />
-            <Route path="classes" element={<AdminClassesPage />} />
-            <Route path="ai-config" element={<AdminAIConfigPage />} />
-            <Route path="ai-usage" element={<AdminAIUsagePage />} />
-            <Route path="payments" element={<AdminPaymentPage />} />
-            <Route path="promotions" element={<AdminPromotionPage />} />
-            <Route path="access-config" element={<AdminAccessConfigPage />} />
-          </Route>
-        </Routes>
+            >
+              <Route index element={<AdminDashboard />} />
+              <Route path="problems" element={<AdminProblemsPage />} />
+              <Route path="problems/create" element={<AdminProblemFormPage />} />
+              <Route path="problems/:id/edit" element={<AdminProblemFormPage />} />
+              <Route path="problems/batch-import" element={<AdminBatchImportPage />} />
+              <Route path="knowledge-tree" element={<AdminKnowledgeTreePage />} />
+              <Route path="exams" element={<AdminExamPage />} />
+              <Route path="exams/:id/attempts" element={<AdminExamPage />} />
+              <Route path="submissions" element={<AdminSubmissionsPage />} />
+              <Route path="matches" element={<AdminMatchesPage />} />
+              <Route path="users" element={<AdminUsersPage />} />
+              <Route path="classes" element={<AdminClassesPage />} />
+              <Route path="ai-config" element={<AdminAIConfigPage />} />
+              <Route path="ai-usage" element={<AdminAIUsagePage />} />
+              <Route path="payments" element={<AdminPaymentPage />} />
+              <Route path="promotions" element={<AdminPromotionPage />} />
+              <Route path="access-config" element={<AdminAccessConfigPage />} />
+            </Route>
+          </Routes>
+        </Suspense>
       </Router>
     </ErrorBoundary>
   );

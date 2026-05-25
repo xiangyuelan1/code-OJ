@@ -5,11 +5,11 @@ import { submissionsAPI, pointsAPI, classAPI } from '../services/api';
 import {
   User, Mail, Clock, CheckCircle, XCircle, Award, Shield, GraduationCap,
   Crown, TrendingUp, Users, BookOpen, ClipboardList, Plus, LogOut, X,
-  ChevronRight, ArrowLeft, Calendar, Loader2,
+  ChevronRight, ArrowLeft, Loader2, Trophy, Activity,
 } from 'lucide-react';
 
 type ProfileTab = 'submissions' | 'points' | 'classes';
-type ClassDetailTab = 'homework' | 'exams' | 'members';
+type ClassDetailTab = 'members' | 'ranking' | 'activity';
 
 interface ClassItem {
   id: string;
@@ -21,25 +21,6 @@ interface ClassItem {
   teacherName?: string;
   creator?: { id: string; username: string };
   createdAt?: string;
-}
-
-interface HomeworkItem {
-  id: string;
-  title: string;
-  description?: string;
-  dueDate?: string;
-  problemCount?: number;
-  createdAt?: string;
-}
-
-interface ExamItem {
-  id: string;
-  title: string;
-  description?: string;
-  duration?: number;
-  startTime?: string;
-  endTime?: string;
-  status?: string;
 }
 
 interface MemberItem {
@@ -64,11 +45,11 @@ export function ProfilePage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [classesLoading, setClassesLoading] = useState(false);
   const [selectedClass, setSelectedClass] = useState<ClassItem | null>(null);
-  const [classDetailTab, setClassDetailTab] = useState<ClassDetailTab>('homework');
-  const [homework, setHomework] = useState<HomeworkItem[]>([]);
-  const [exams, setExams] = useState<ExamItem[]>([]);
+  const [classDetailTab, setClassDetailTab] = useState<ClassDetailTab>('members');
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [analytics, setAnalytics] = useState<any>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   // 加入班级弹窗状态
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -134,17 +115,16 @@ export function ProfilePage() {
 
   const loadClassDetail = useCallback(async (cls: ClassItem) => {
     setSelectedClass(cls);
-    setClassDetailTab('homework');
+    setClassDetailTab('members');
     setDetailLoading(true);
+    setAnalytics(null);
     try {
-      const [hwRes, examRes, memberRes] = await Promise.all([
-        classAPI.getHomework(cls.id).catch(() => ({ success: false, data: [] })),
-        classAPI.getClassExams(cls.id).catch(() => ({ success: false, data: [] })),
+      const [memberRes, analyticsRes] = await Promise.all([
         classAPI.getMembers(cls.id).catch(() => ({ success: false, data: [] })),
+        classAPI.getAnalytics(cls.id).catch(() => ({ success: false, data: null })),
       ]);
-      if (hwRes.success) setHomework(hwRes.data || []);
-      if (examRes.success) setExams(examRes.data || []);
       if (memberRes.success) setMembers(memberRes.data || []);
+      if (analyticsRes.success) setAnalytics(analyticsRes.data);
     } catch (error) {
       console.error('加载班级详情失败', error);
     } finally {
@@ -197,10 +177,6 @@ export function ProfilePage() {
     });
   };
 
-  const formatDateTime = (date: string) => {
-    return new Date(date).toLocaleString('zh-CN');
-  };
-
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'ADMIN': return <Shield className="h-5 w-5 text-red-400" />;
@@ -234,25 +210,7 @@ export function ProfilePage() {
     }
   };
 
-  const getHomeworkStatus = (hw: HomeworkItem) => {
-    if (!hw.dueDate) return { label: '进行中', color: 'text-green-400' };
-    const due = new Date(hw.dueDate);
-    if (due < new Date()) return { label: '已截止', color: 'text-red-400' };
-    return { label: '进行中', color: 'text-green-400' };
-  };
 
-  const getExamStatus = (exam: ExamItem) => {
-    if (exam.status === 'ENDED') return { label: '已结束', color: 'text-slate-400' };
-    if (exam.status === 'IN_PROGRESS') return { label: '进行中', color: 'text-green-400' };
-    const now = Date.now();
-    if (exam.startTime && new Date(exam.startTime).getTime() > now) {
-      return { label: '未开始', color: 'text-yellow-400' };
-    }
-    if (exam.endTime && new Date(exam.endTime).getTime() < now) {
-      return { label: '已结束', color: 'text-slate-400' };
-    }
-    return { label: '进行中', color: 'text-green-400' };
-  };
 
   // ===================== 渲染：班级列表 =====================
   const renderClassList = () => {
@@ -424,9 +382,9 @@ export function ProfilePage() {
         {/* 详情子 tab */}
         <div className="flex space-x-1 mb-6 bg-slate-700 p-1 rounded-lg w-fit">
           {([
-            { key: 'homework' as ClassDetailTab, label: '作业', icon: <ClipboardList className="h-4 w-4" /> },
-            { key: 'exams' as ClassDetailTab, label: '考试', icon: <BookOpen className="h-4 w-4" /> },
             { key: 'members' as ClassDetailTab, label: '成员', icon: <Users className="h-4 w-4" /> },
+            { key: 'ranking' as ClassDetailTab, label: '排行', icon: <Trophy className="h-4 w-4" /> },
+            { key: 'activity' as ClassDetailTab, label: '动态', icon: <Activity className="h-4 w-4" /> },
           ]).map((tab) => (
             <button
               key={tab.key}
@@ -442,39 +400,68 @@ export function ProfilePage() {
         </div>
 
         {/* 子 tab 内容 */}
-        {classDetailTab === 'homework' && renderHomework()}
-        {classDetailTab === 'exams' && renderExams()}
         {classDetailTab === 'members' && renderMembers()}
+        {classDetailTab === 'ranking' && renderRanking()}
+        {classDetailTab === 'activity' && renderActivity()}
       </div>
     );
   };
 
-  // ===================== 渲染：作业列表 =====================
-  const renderHomework = () => {
-    if (homework.length === 0) {
-      return <p className="text-slate-400 text-center py-8">暂无作业</p>;
+  // ===================== 渲染：排行 =====================
+  const renderRanking = () => {
+    if (!analytics?.memberStats || analytics.memberStats.length === 0) {
+      return (
+        <div className="text-center py-12">
+          <Trophy className="h-12 w-12 text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-400">暂无排行数据</p>
+          <p className="text-slate-500 text-sm mt-1">班级成员完成题目后将在此显示排名</p>
+        </div>
+      );
     }
+
+    const sortedStats = [...analytics.memberStats].sort((a: any, b: any) => {
+      const scoreA = a.accepted ?? 0;
+      const scoreB = b.accepted ?? 0;
+      return scoreB - scoreA;
+    });
+
     return (
-      <div className="space-y-3">
-        {homework.map((hw) => {
-          const status = getHomeworkStatus(hw);
+      <div className="space-y-2">
+        {sortedStats.map((stat: any, index: number) => {
+          const rankIcon = index === 0
+            ? <span className="text-yellow-400 text-lg">🥇</span>
+            : index === 1
+              ? <span className="text-slate-300 text-lg">🥈</span>
+              : index === 2
+                ? <span className="text-amber-600 text-lg">🥉</span>
+                : <span className="text-slate-500 text-sm w-6 text-center">{index + 1}</span>;
+
           return (
-            <div key={hw.id} className="flex items-center justify-between p-4 bg-slate-700 rounded-lg">
+            <div
+              key={stat.userId}
+              className={`flex items-center gap-4 p-4 rounded-lg transition-colors ${
+                index < 3 ? 'bg-slate-700/80 border border-slate-600' : 'bg-slate-700/40'
+              }`}
+            >
+              <div className="w-8 flex justify-center shrink-0">{rankIcon}</div>
               <div className="flex-1 min-w-0">
-                <div className="text-white font-medium truncate">{hw.title}</div>
+                <div className="text-white font-medium truncate">{stat.username}</div>
                 <div className="flex items-center gap-3 text-slate-400 text-sm mt-1">
-                  {hw.dueDate && (
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3.5 w-3.5" />
-                      截止 {formatDate(hw.dueDate)}
-                    </span>
-                  )}
-                  {hw.problemCount !== undefined && (
-                    <span>{hw.problemCount} 道题</span>
-                  )}
+                  <span>提交 {stat.submissions ?? 0}</span>
+                  <span>通过 {stat.accepted ?? 0}</span>
                 </div>
               </div>
-              <span className={`text-sm shrink-0 ml-4 ${status.color}`}>{status.label}</span>
+              <div className="text-right shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-20 bg-slate-600 rounded-full h-2">
+                    <div
+                      className="bg-cyan-500 h-2 rounded-full transition-all"
+                      style={{ width: `${Math.min(stat.rate ?? 0, 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-sm text-slate-300 w-10 text-right">{Math.round(stat.rate ?? 0)}%</span>
+                </div>
+              </div>
             </div>
           );
         })}
@@ -482,33 +469,64 @@ export function ProfilePage() {
     );
   };
 
-  // ===================== 渲染：考试列表 =====================
-  const renderExams = () => {
-    if (exams.length === 0) {
-      return <p className="text-slate-400 text-center py-8">暂无考试</p>;
+  // ===================== 渲染：动态 =====================
+  const renderActivity = () => {
+    if (!analytics?.memberStats || analytics.memberStats.length === 0) {
+      return (
+        <div className="text-center py-12">
+          <Activity className="h-12 w-12 text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-400">暂无动态数据</p>
+          <p className="text-slate-500 text-sm mt-1">班级成员提交记录将在此显示</p>
+        </div>
+      );
     }
+
+    const sortedByActivity = [...analytics.memberStats]
+      .filter((stat: any) => stat.recentActivity)
+      .sort((a: any, b: any) => new Date(b.recentActivity).getTime() - new Date(a.recentActivity).getTime());
+
+    if (sortedByActivity.length === 0) {
+      return (
+        <div className="text-center py-12">
+          <Activity className="h-12 w-12 text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-400">暂无成员活动记录</p>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-3">
-        {exams.map((exam) => {
-          const status = getExamStatus(exam);
-          return (
-            <div key={exam.id} className="flex items-center justify-between p-4 bg-slate-700 rounded-lg">
-              <div className="flex-1 min-w-0">
-                <div className="text-white font-medium truncate">{exam.title}</div>
-                <div className="flex items-center gap-3 text-slate-400 text-sm mt-1">
-                  {exam.duration && <span>{exam.duration} 分钟</span>}
-                  {exam.startTime && (
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3.5 w-3.5" />
-                      {formatDateTime(exam.startTime)}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <span className={`text-sm shrink-0 ml-4 ${status.color}`}>{status.label}</span>
+        {sortedByActivity.map((stat: any) => (
+          <div key={stat.userId} className="flex items-center gap-4 p-4 bg-slate-700/50 rounded-lg">
+            <div className="w-9 h-9 bg-cyan-500/20 rounded-full flex items-center justify-center shrink-0">
+              <User className="h-4 w-4 text-cyan-400" />
             </div>
-          );
-        })}
+            <div className="flex-1 min-w-0">
+              <div className="text-white font-medium text-sm">{stat.username}</div>
+              <div className="text-slate-400 text-xs mt-0.5">
+                提交 {stat.submissions ?? 0} 次 · 通过 {stat.accepted ?? 0} 次
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-slate-400 text-xs">
+                {stat.recentActivity
+                  ? new Date(stat.recentActivity).toLocaleDateString('zh-CN', {
+                      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                    })
+                  : '-'}
+              </div>
+              <div className="text-xs mt-0.5">
+                <span className={`px-1.5 py-0.5 rounded ${
+                  (stat.rate ?? 0) >= 60 ? 'bg-green-500/20 text-green-400'
+                  : (stat.rate ?? 0) >= 30 ? 'bg-yellow-500/20 text-yellow-400'
+                  : 'bg-red-500/20 text-red-400'
+                }`}>
+                  通过率 {Math.round(stat.rate ?? 0)}%
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     );
   };
@@ -521,6 +539,11 @@ export function ProfilePage() {
 
     const teacher = members.find((m) => m.role === 'TEACHER');
     const students = members.filter((m) => m.role !== 'TEACHER');
+
+    const getMemberStats = (username: string) => {
+      if (!analytics?.memberStats) return null;
+      return analytics.memberStats.find((s: any) => s.username === username);
+    };
 
     return (
       <div>
@@ -547,14 +570,27 @@ export function ProfilePage() {
             学生 ({students.length})
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {students.map((member) => (
-              <div key={member.id} className="flex items-center gap-3 p-3 bg-slate-700 rounded-lg">
-                <div className="w-8 h-8 bg-green-500/20 rounded-full flex items-center justify-center">
-                  <User className="h-4 w-4 text-green-400" />
+            {students.map((member) => {
+              const memberStats = getMemberStats(member.username);
+              return (
+                <div key={member.id} className="flex items-center gap-3 p-3 bg-slate-700 rounded-lg">
+                  <div className="w-8 h-8 bg-green-500/20 rounded-full flex items-center justify-center">
+                    <User className="h-4 w-4 text-green-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white text-sm font-medium truncate">{member.username}</div>
+                    {memberStats && (
+                      <div className="text-slate-500 text-xs mt-0.5">
+                        通过 {memberStats.accepted ?? 0} 题
+                        {memberStats.recentActivity && (
+                          <> · 最近 {new Date(memberStats.recentActivity).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}</>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <span className="text-white text-sm">{member.username}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
