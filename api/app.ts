@@ -22,6 +22,10 @@ import classRoutes from './routes/class.js';
 import accessRoutes from './routes/access.js';
 import paymentRoutes from './routes/payment.js';
 import promotionRoutes from './routes/promotion.js';
+import discussionRoutes from './routes/discussion.js';
+import profileRoutes from './routes/profile.js';
+import dailyRoutes from './routes/daily.js';
+import dailyChallengeRoutes from './routes/daily-challenge.js';
 
 dotenv.config();
 
@@ -58,6 +62,10 @@ app.use('/api/classes', classRoutes);
 app.use('/api/access', accessRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/promotions', promotionRoutes);
+app.use('/api/discussions', discussionRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/api/daily', dailyRoutes);
+app.use('/api/daily-challenge', dailyChallengeRoutes);
 
 app.use(
   '/api/health',

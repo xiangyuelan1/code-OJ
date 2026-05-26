@@ -23,6 +23,9 @@ const AchievementPage = lazy(() => import("./pages/AchievementPage").then(m => (
 const PaymentPage = lazy(() => import("./pages/PaymentPage").then(m => ({ default: m.PaymentPage })));
 const AppDownloadPage = lazy(() => import("./pages/AppDownload").then(m => ({ default: m.AppDownloadPage })));
 const TeacherClassesPage = lazy(() => import("./pages/teacher/TeacherClassesPage").then(m => ({ default: m.TeacherClassesPage })));
+const TeacherDashboardPage = lazy(() => import("./pages/teacher/TeacherDashboard").then(m => ({ default: m.TeacherDashboard })));
+const DiscussionsPage = lazy(() => import("./pages/Discussions").then(m => ({ default: m.DiscussionsPage })));
+const DiscussionDetailPage = lazy(() => import("./pages/DiscussionDetail").then(m => ({ default: m.DiscussionDetailPage })));
 
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard").then(m => ({ default: m.AdminDashboard })));
 const AdminProblemsPage = lazy(() => import("./pages/admin/AdminProblemsPage").then(m => ({ default: m.AdminProblemsPage })));
@@ -216,6 +219,16 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/teacher/dashboard"
+                element={
+                  <ProtectedRoute allowedRole="TEACHER">
+                    <TeacherDashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/discussions" element={<DiscussionsPage />} />
+              <Route path="/discussions/:id" element={<DiscussionDetailPage />} />
             </Route>
 
             <Route

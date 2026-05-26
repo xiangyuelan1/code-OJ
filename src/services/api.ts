@@ -163,6 +163,7 @@ export const enhancedAiAPI = {
   recommendSimilar: (problemId: string) =>
     api.post('/api/ai/recommend-similar', { problemId }),
   batchClassify: (data: any) => api.post('/api/ai/batch-classify', data),
+  companionChat: (data: any) => api.post('/api/ai/companion', data),
 };
 
 export const uploadAPI = {
@@ -249,6 +250,7 @@ export const classAPI = {
   submitClassBattleAnswer: (battleId: string, data: any) => api.post(`/api/classes/battle/${battleId}/answer`, data),
   completeClassBattle: (battleId: string) => api.post(`/api/classes/battle/${battleId}/complete`),
   getClassBattles: (id: string) => api.get(`/api/classes/${id}/battles`),
+  getTeacherDashboard: () => api.get('/api/classes/teacher/dashboard'),
 };
 
 export const accessAPI = {
@@ -288,5 +290,141 @@ export const promotionAPI = {
   getOrders: () => api.get('/api/promotions/orders'),
   getFinancial: () => api.get('/api/promotions/financial'),
 };
+
+export const profileAPI = {
+  getMine: () => api.get('/api/profile/me'),
+  update: (data: any) => api.put('/api/profile/me', data),
+  getRecommendations: (count?: number) => api.get('/api/profile/recommendations', { params: { count } }),
+  refresh: () => api.post('/api/profile/refresh'),
+};
+
+export const discussionAPI = {
+  getAll: (params?: any) => api.get('/api/discussions', { params }),
+  getById: (id: string) => api.get(`/api/discussions/${id}`),
+  create: (data: any) => api.post('/api/discussions', data),
+  createReply: (id: string, content: string) => api.post(`/api/discussions/${id}/replies`, { content }),
+  vote: (id: string, isUpvote: boolean) => api.post(`/api/discussions/${id}/vote`, { isUpvote }),
+  delete: (id: string) => api.delete(`/api/discussions/${id}`),
+};
+
+export const dailyAPI = {
+  getToday: () => api.get('/api/daily-challenge/today'),
+  submit: (data: any) => api.post('/api/daily-challenge/submit', data),
+  getStats: () => api.get('/api/daily-challenge/stats'),
+};
+
+export const streamAPI = {
+  companionStream: (data: {
+    type: 'CODE_REVIEW' | 'ERROR_DIAGNOSIS' | 'HINT' | 'KNOWLEDGE_LINK';
+    code?: string;
+    language?: string;
+    problem?: any;
+    errorResult?: any;
+  }): ReadableStream<string> | null => {
+    const token = localStorage.getItem('token');
+    if (!token) return null;
+
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
+    const url = `${baseUrl}/api/ai/companion-stream`;
+
+    const abortController = new AbortController();
+
+    return new ReadableStream<string>({
+      async start(streamController) {
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify(data),
+            signal: abortController.signal,
+          });
+
+          if (!response.ok || !response.body) {
+            streamController.error(new Error(`请求失败: ${response.status}`));
+            return;
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data: ')) continue;
+
+              const jsonStr = trimmed.slice(6);
+              if (!jsonStr) continue;
+
+              try {
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.done) {
+                  streamController.close();
+                  return;
+                }
+                if (parsed.error) {
+                  streamController.error(new Error(parsed.error));
+                  return;
+                }
+                if (parsed.content) {
+                  streamController.enqueue(parsed.content);
+                }
+              } catch {
+                continue;
+              }
+            }
+          }
+
+          streamController.close();
+        } catch (err: any) {
+          if (err.name !== 'AbortError') {
+            streamController.error(err);
+          }
+        }
+      },
+      cancel() {
+        abortController.abort();
+      },
+    });
+  },
+};
+
+export function consumeStream(
+  stream: ReadableStream<string>,
+  onChunk: (text: string) => void,
+  onDone?: () => void,
+  onError?: (error: Error) => void,
+): () => void {
+  const reader = stream.getReader();
+  let cancelled = false;
+
+  (async () => {
+    try {
+      while (!cancelled) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        onChunk(value);
+      }
+      if (!cancelled && onDone) onDone();
+    } catch (err) {
+      if (!cancelled && onError) onError(err as Error);
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+    reader.cancel();
+  };
+}
 
 export default api;

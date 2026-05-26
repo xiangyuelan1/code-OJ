@@ -10,6 +10,62 @@ function daysAgo(n: number): Date {
   return d;
 }
 
+/**
+ * 格式化日期为 MM-DD
+ */
+function formatDateMMDD(date: Date): string {
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${mm}-${dd}`;
+}
+
+/**
+ * 生成近7天的空趋势数据
+ */
+function buildEmptyWeeklyTrend(): { date: string; submissions: number; accepted: number }[] {
+  const trend: { date: string; submissions: number; accepted: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    trend.push({ date: formatDateMMDD(d), submissions: 0, accepted: 0 });
+  }
+  return trend;
+}
+
+/**
+ * 根据提交记录构建近7天趋势
+ */
+function buildWeeklyTrend(
+  submissions: { createdAt: Date; status: string; result: string | null }[],
+  isAccepted: (s: { status: string; result: string | null }) => boolean,
+): { date: string; submissions: number; accepted: number }[] {
+  const sevenDaysAgo = daysAgo(7);
+
+  // 初始化7天桶
+  const buckets = new Map<string, { submissions: number; accepted: number }>();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    buckets.set(formatDateMMDD(d), { submissions: 0, accepted: 0 });
+  }
+
+  // 填充提交数据
+  for (const s of submissions) {
+    const created = new Date(s.createdAt);
+    if (created < sevenDaysAgo) continue;
+    const key = formatDateMMDD(created);
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.submissions++;
+      if (isAccepted(s)) bucket.accepted++;
+    }
+  }
+
+  return Array.from(buckets.entries()).map(([date, data]) => ({ date, ...data }));
+}
+
 export class ClassService {
   /**
    * 生成6位字母数字班级码，排除易混淆字符（0/O, 1/I/l）
@@ -494,6 +550,173 @@ export class ClassService {
         recentActivity: classRecentActivity,
       },
       memberAnalytics,
+    };
+  }
+
+  // ========================
+  // 教师仪表盘
+  // ========================
+
+  /**
+   * 获取教师仪表盘数据：汇总该教师所有班级的成员、提交、通过率、
+   * 近7天活跃度、待审核申请，以及跨班级的 Top 学生、难度分布、周趋势
+   */
+  async getTeacherDashboard(userId: string) {
+    const sevenDaysAgo = daysAgo(7);
+
+    // 查询该教师创建的所有班级
+    const teacherClasses = await prisma.class.findMany({
+      where: { createdBy: userId },
+      select: { id: true, name: true },
+    });
+
+    if (teacherClasses.length === 0) {
+      return {
+        totalClasses: 0,
+        totalStudents: 0,
+        totalSubmissions: 0,
+        totalAccepted: 0,
+        overallAcceptanceRate: 0,
+        recentActivity: 0,
+        pendingRequests: 0,
+        classSummaries: [],
+        topStudents: [],
+        difficultyDistribution: { EASY: { total: 0, accepted: 0 }, MEDIUM: { total: 0, accepted: 0 }, HARD: { total: 0, accepted: 0 } },
+        weeklyTrend: buildEmptyWeeklyTrend(),
+      };
+    }
+
+    const classIds = teacherClasses.map((c) => c.id);
+
+    // 批量获取所有班级成员（仅 STUDENT 角色）
+    const allMembers = await prisma.classMember.findMany({
+      where: { classId: { in: classIds }, role: 'STUDENT' },
+      select: { classId: true, userId: true, user: { select: { id: true, username: true } } },
+    });
+
+    // 去重统计学生总数
+    const uniqueStudentIds = new Set(allMembers.map((m) => m.userId));
+
+    // 按班级分组成员
+    const membersByClass = new Map<string, typeof allMembers>();
+    for (const m of allMembers) {
+      const list = membersByClass.get(m.classId) || [];
+      list.push(m);
+      membersByClass.set(m.classId, list);
+    }
+
+    // 批量获取所有学生的提交记录
+    const studentIds = Array.from(uniqueStudentIds);
+    const allSubmissions = studentIds.length > 0
+      ? await prisma.submission.findMany({
+          where: { userId: { in: studentIds } },
+          select: {
+            id: true,
+            userId: true,
+            problemId: true,
+            status: true,
+            result: true,
+            createdAt: true,
+            problem: { select: { difficulty: true } },
+          },
+        })
+      : [];
+
+    // 按用户分组提交记录
+    const submissionsByUser = new Map<string, typeof allSubmissions>();
+    for (const s of allSubmissions) {
+      const list = submissionsByUser.get(s.userId) || [];
+      list.push(s);
+      submissionsByUser.set(s.userId, list);
+    }
+
+    // 判断提交是否通过
+    const isAccepted = (s: { status: string; result: string | null }) =>
+      s.status === 'ACCEPTED' || s.result === 'ACCEPTED';
+
+    // ---- 每个班级的汇总 ----
+    const classSummaries = teacherClasses.map((cls) => {
+      const classMembers = membersByClass.get(cls.id) || [];
+      const classStudentIds = new Set(classMembers.map((m) => m.userId));
+
+      let classTotal = 0;
+      let classAccepted = 0;
+      let classRecent = 0;
+
+      for (const uid of classStudentIds) {
+        const userSubs = submissionsByUser.get(uid) || [];
+        classTotal += userSubs.length;
+        classAccepted += userSubs.filter(isAccepted).length;
+        classRecent += userSubs.filter((s) => new Date(s.createdAt) >= sevenDaysAgo).length;
+      }
+
+      const acceptanceRate = classTotal > 0 ? Math.round((classAccepted / classTotal) * 100) / 100 : 0;
+
+      return {
+        id: cls.id,
+        name: cls.name,
+        memberCount: classStudentIds.size,
+        submissionCount: classTotal,
+        acceptedCount: classAccepted,
+        acceptanceRate,
+        recentActivity: classRecent,
+      };
+    });
+
+    // ---- 全局汇总 ----
+    const totalSubmissions = allSubmissions.length;
+    const totalAccepted = allSubmissions.filter(isAccepted).length;
+    const overallAcceptanceRate = totalSubmissions > 0
+      ? Math.round((totalAccepted / totalSubmissions) * 100) / 100
+      : 0;
+    const recentActivity = allSubmissions.filter((s) => new Date(s.createdAt) >= sevenDaysAgo).length;
+
+    // ---- 待审核申请数 ----
+    const pendingRequests = await prisma.classJoinRequest.count({
+      where: { classId: { in: classIds }, status: 'PENDING' },
+    });
+
+    // ---- Top 5 学生（按通过数降序） ----
+    const studentStats = Array.from(uniqueStudentIds).map((uid) => {
+      const userSubs = submissionsByUser.get(uid) || [];
+      const accepted = userSubs.filter(isAccepted).length;
+      const rate = userSubs.length > 0 ? Math.round((accepted / userSubs.length) * 100) / 100 : 0;
+      const member = allMembers.find((m) => m.userId === uid);
+      return { userId: uid, username: member?.user.username ?? '', acceptedCount: accepted, acceptanceRate: rate };
+    });
+    const topStudents = studentStats
+      .sort((a, b) => b.acceptedCount - a.acceptedCount)
+      .slice(0, 5);
+
+    // ---- 难度分布 ----
+    const difficultyDistribution: Record<string, { total: number; accepted: number }> = {
+      EASY: { total: 0, accepted: 0 },
+      MEDIUM: { total: 0, accepted: 0 },
+      HARD: { total: 0, accepted: 0 },
+    };
+    for (const s of allSubmissions) {
+      const diff = s.problem.difficulty as string;
+      if (diff in difficultyDistribution) {
+        difficultyDistribution[diff].total++;
+        if (isAccepted(s)) difficultyDistribution[diff].accepted++;
+      }
+    }
+
+    // ---- 近7天趋势 ----
+    const weeklyTrend = buildWeeklyTrend(allSubmissions, isAccepted);
+
+    return {
+      totalClasses: teacherClasses.length,
+      totalStudents: uniqueStudentIds.size,
+      totalSubmissions,
+      totalAccepted,
+      overallAcceptanceRate,
+      recentActivity,
+      pendingRequests,
+      classSummaries,
+      topStudents,
+      difficultyDistribution,
+      weeklyTrend,
     };
   }
 

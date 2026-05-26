@@ -52,6 +52,19 @@ router.get('/pending-count', authMiddleware, async (req: Request, res: any): Pro
 });
 
 /**
+ * 教师仪表盘（必须在 /:id 路由之前注册，避免路径冲突）
+ */
+router.get('/teacher/dashboard', authMiddleware, roleMiddleware('TEACHER'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const dashboard = await classService.getTeacherDashboard(userId);
+    res.json({ success: true, data: dashboard });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/**
  * 重新生成班级码（仅创建者或管理员）
  */
 router.post('/:id/generate-code', authMiddleware, async (req: Request, res: any): Promise<void> => {

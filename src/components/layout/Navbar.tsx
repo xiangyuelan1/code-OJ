@@ -3,7 +3,7 @@ import { useAuthStore } from '../../stores/auth.store';
 import { usePointsStore } from '../../stores/points.store';
 import { useSocketStore } from '../../services/socket';
 import { classAPI } from '../../services/api';
-import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone } from 'lucide-react';
+import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone, LayoutDashboard } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 export function Navbar() {
@@ -89,6 +89,12 @@ export function Navbar() {
                     {pendingCount > 9 ? '9+' : pendingCount}
                   </span>
                 )}
+              </Link>
+            )}
+            {isAuthenticated && user?.role === 'TEACHER' && (
+              <Link to="/teacher/dashboard" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
+                <LayoutDashboard className="h-4 w-4" />
+                <span>工作台</span>
               </Link>
             )}
             {isAuthenticated && user?.role === 'TEACHER' && (
@@ -236,6 +242,16 @@ export function Navbar() {
                         {pendingCount > 9 ? '9+' : pendingCount}
                       </span>
                     )}
+                  </Link>
+                )}
+                {user?.role === 'TEACHER' && (
+                  <Link
+                    to="/teacher/dashboard"
+                    className="block hover:text-cyan-400 flex items-center space-x-1"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <LayoutDashboard className="h-4 w-4" />
+                    <span>工作台</span>
                   </Link>
                 )}
                 {user?.role === 'TEACHER' && (

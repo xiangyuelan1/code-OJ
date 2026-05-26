@@ -1174,6 +1174,96 @@ DP 解题步骤：
   }
 
   /**
+   * 流式调用 AI 接口，逐块返回文本内容。
+   * 复用 callAI 的端点构造与鉴权逻辑，在请求体中设置 stream: true，
+   * 通过 ReadableStream 逐行解析 SSE 协议（data: {...}\n\n），
+   * 将每个 chunk 的 choices[0].delta.content 以 yield 方式返回给调用方。
+   * 流结束后根据累计内容长度估算 token 并记录使用日志。
+   */
+  async *callAIStream(prompt: string, config: any, feature?: string, userId?: string): AsyncGenerator<string, void, unknown> {
+    const apiKey = config.apiKey;
+    const rawBaseUrl = config.baseUrl || 'https://api.openai.com/v1';
+    const model = config.model || 'gpt-3.5-turbo';
+
+    const baseUrl = rawBaseUrl.replace(/\/+$/, '');
+    const endpoint = baseUrl.endsWith('/chat/completions')
+      ? baseUrl
+      : `${baseUrl}/chat/completions`;
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: '你是一位专业的编程教练，擅长解释代码、提供解题思路、帮助调试程序、生成测试用例和题解。请用中文回答。'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 4000,
+        stream: true
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `API请求失败: ${response.status}`);
+    }
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullContent = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop()!;
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+          const data = trimmed.slice(6);
+          if (data === '[DONE]') continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              fullContent += content;
+              yield content;
+            }
+          } catch {
+            // 单个 chunk 解析失败时跳过，不影响整体流
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+
+      if (feature && userId) {
+        const promptTokens = Math.ceil(prompt.length / 4);
+        const completionTokens = Math.ceil(fullContent.length / 4);
+        await this.logAIUsage(userId, feature, promptTokens, completionTokens, model);
+      }
+    }
+  }
+
+  /**
    * 记录AI使用日志，包含token消耗和费用估算
    */
   private async logAIUsage(userId: string, feature: string, promptTokens: number, completionTokens: number, model?: string) {
@@ -1655,6 +1745,185 @@ ${JSON.stringify(scored.map(p => ({ id: p.id, title: p.title, tags: JSON.parse(p
     else if (problem.type === 'FILL_BLANK') tags.push('填空题');
 
     return tags.slice(0, 5);
+  }
+
+  async companionChat(params: { type: 'CODE_REVIEW' | 'ERROR_DIAGNOSIS' | 'HINT' | 'KNOWLEDGE_LINK'; code?: string; language?: string; problem?: any; errorResult?: any; userId?: string }) {
+    const config = await this.getConfig();
+
+    let prompt = '';
+    switch (params.type) {
+      case 'CODE_REVIEW':
+        prompt = `你是一位编程导师，正在审查学生的代码。请从以下维度简洁评价（每维度1-2句话）：
+1. 正确性：逻辑是否正确，边界是否处理
+2. 效率：时间/空间复杂度，有无优化空间
+3. 风格：命名、代码组织
+
+题目：${params.problem?.title || '未知'}
+语言：${params.language || '未知'}
+代码：
+\`\`\`${params.language || ''}
+${params.code || ''}
+\`\`\`
+
+请用中文回复，简洁明了。`;
+        break;
+      case 'ERROR_DIAGNOSIS':
+        prompt = `学生提交代码后判题失败，请诊断错误原因并给出修复建议。
+
+题目：${params.problem?.title || '未知'}
+语言：${params.language || '未知'}
+判题结果：${JSON.stringify(params.errorResult || {})}
+学生代码：
+\`\`\`${params.language || ''}
+${params.code || ''}
+\`\`\`
+
+请指出：
+1. 错误原因（1句话）
+2. 修复方向（1-2句话）
+3. 关键修改点（具体代码片段）
+
+用中文回复，简洁明了。`;
+        break;
+      case 'HINT':
+        prompt = `学生正在做以下题目，请给一个渐进式提示（不要直接给出答案）。
+
+题目：${params.problem?.title || '未知'}
+难度：${params.problem?.difficulty || '未知'}
+描述：${(params.problem?.description || '').substring(0, 500)}
+
+请给出：
+1. 解题思路方向（1句话）
+2. 关键算法/数据结构提示（1句话）
+3. 注意事项（1句话）
+
+用中文回复，不要给出完整代码。`;
+        break;
+      case 'KNOWLEDGE_LINK':
+        prompt = `学生刚完成一道题目，请推荐相关知识点和相似题目类型。
+
+题目：${params.problem?.title || '未知'}
+标签：${params.problem?.tags || '[]'}
+难度：${params.problem?.difficulty || '未知'}
+
+请推荐：
+1. 相关知识点（3-5个，每个1句话说明关联）
+2. 建议接下来练习的题目类型（2-3个）
+
+用中文回复，简洁明了。`;
+        break;
+    }
+
+    if (config?.enabled && config.apiKey) {
+      try {
+        const response = await this.callAI(prompt, config, `companion-${params.type.toLowerCase()}`, params.userId);
+        return { type: params.type, content: response, source: 'ai' };
+      } catch {
+        return { type: params.type, content: this.fallbackCompanion(params), source: 'fallback' };
+      }
+    }
+    return { type: params.type, content: this.fallbackCompanion(params), source: 'fallback' };
+  }
+
+  /**
+   * 流式版本的 companionChat，逐块 yield 文本内容。
+   * prompt 构建逻辑与 companionChat 完全一致，AI 可用时走 callAIStream，
+   * 不可用时将 fallback 文本作为单个 chunk 一次性 yield。
+   */
+  async *companionChatStream(
+    params: { type: 'CODE_REVIEW' | 'ERROR_DIAGNOSIS' | 'HINT' | 'KNOWLEDGE_LINK'; code?: string; language?: string; problem?: any; errorResult?: any; userId?: string }
+  ): AsyncGenerator<string, void, unknown> {
+    let prompt = '';
+    switch (params.type) {
+      case 'CODE_REVIEW':
+        prompt = `你是一位编程导师，正在审查学生的代码。请从以下维度简洁评价（每维度1-2句话）：
+1. 正确性：逻辑是否正确，边界是否处理
+2. 效率：时间/空间复杂度，有无优化空间
+3. 风格：命名、代码组织
+
+题目：${params.problem?.title || '未知'}
+语言：${params.language || '未知'}
+代码：
+\`\`\`${params.language || ''}
+${params.code || ''}
+\`\`\`
+
+请用中文回复，简洁明了。`;
+        break;
+      case 'ERROR_DIAGNOSIS':
+        prompt = `学生提交代码后判题失败，请诊断错误原因并给出修复建议。
+
+题目：${params.problem?.title || '未知'}
+语言：${params.language || '未知'}
+判题结果：${JSON.stringify(params.errorResult || {})}
+学生代码：
+\`\`\`${params.language || ''}
+${params.code || ''}
+\`\`\`
+
+请指出：
+1. 错误原因（1句话）
+2. 修复方向（1-2句话）
+3. 关键修改点（具体代码片段）
+
+用中文回复，简洁明了。`;
+        break;
+      case 'HINT':
+        prompt = `学生正在做以下题目，请给一个渐进式提示（不要直接给出答案）。
+
+题目：${params.problem?.title || '未知'}
+难度：${params.problem?.difficulty || '未知'}
+描述：${(params.problem?.description || '').substring(0, 500)}
+
+请给出：
+1. 解题思路方向（1句话）
+2. 关键算法/数据结构提示（1句话）
+3. 注意事项（1句话）
+
+用中文回复，不要给出完整代码。`;
+        break;
+      case 'KNOWLEDGE_LINK':
+        prompt = `学生刚完成一道题目，请推荐相关知识点和相似题目类型。
+
+题目：${params.problem?.title || '未知'}
+标签：${params.problem?.tags || '[]'}
+难度：${params.problem?.difficulty || '未知'}
+
+请推荐：
+1. 相关知识点（3-5个，每个1句话说明关联）
+2. 建议接下来练习的题目类型（2-3个）
+
+用中文回复，简洁明了。`;
+        break;
+    }
+
+    const config = await this.getConfig();
+
+    if (config?.enabled && config.apiKey) {
+      try {
+        yield* this.callAIStream(prompt, config, `companion-${params.type.toLowerCase()}`, params.userId);
+        return;
+      } catch {
+        // AI 调用失败时降级到 fallback
+      }
+    }
+
+    yield this.fallbackCompanion(params);
+  }
+
+  private fallbackCompanion(params: any): string {
+    switch (params.type) {
+      case 'CODE_REVIEW':
+        return '代码审查：请检查边界条件处理、变量命名规范性和算法复杂度。建议添加必要的注释说明关键逻辑。';
+      case 'ERROR_DIAGNOSIS':
+        return '错误诊断：请检查1)输入输出格式是否匹配 2)边界条件是否处理 3)数据类型是否溢出 4)算法复杂度是否超限。';
+      case 'HINT':
+        return '解题提示：先理解题目要求，考虑使用什么数据结构和算法，注意边界条件和特殊情况的处理。';
+      case 'KNOWLEDGE_LINK':
+        return '知识关联：建议复习相关算法和数据结构知识，尝试不同难度的相似题目来巩固理解。';
+      default:
+        return '暂无建议。';
+    }
   }
 }
 

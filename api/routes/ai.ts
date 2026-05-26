@@ -263,6 +263,48 @@ router.post('/recommend-similar', authMiddleware, async (req: Request, res: any)
   }
 });
 
+router.post('/companion', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user?.userId;
+    const result = await aiService.companionChat({ ...req.body, userId });
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/companion-stream', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  let closed = false;
+  req.on('close', () => { closed = true; });
+
+  const userId = (req as any).user?.userId;
+
+  try {
+    const stream = aiService.companionChatStream({ ...req.body, userId });
+    for await (const chunk of stream) {
+      if (closed) break;
+      res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+    }
+    if (!closed) {
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    }
+  } catch (error: any) {
+    if (!closed) {
+      res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+    }
+  } finally {
+    if (!closed) {
+      res.end();
+    }
+  }
+});
+
 router.post('/batch-classify', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
     const result = await aiService.batchClassifyProblems(req.body, (req as any).user?.userId);

@@ -40,6 +40,11 @@ model User {
   homeworkSubmissions HomeworkSubmission[]
   aiUsageLogs    AIUsageLog[]
   createdExams   Exam[]             @relation("UserExams")
+  learnerProfile   LearnerProfile?
+  discussions      Discussion[]
+  replies          Reply[]
+  discussionVotes  DiscussionVote[]
+  dailyChallenges  UserDailyChallenge[]
 }
 
 model Session {
@@ -91,6 +96,8 @@ model Problem {
   submissions           Submission[]
   examQuestions         ExamQuestion[]
   matchProblems         MatchProblem[]
+  discussions           Discussion[]
+  dailyChallenges       DailyChallenge[]
 }
 
 model Solution {
@@ -454,4 +461,88 @@ model PricingPlan {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   orders      Order[]
+}
+
+model LearnerProfile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id])
+  knowledgeMap    String   @default("{}")
+  abilityRadar    String   @default("{}")
+  learningStyle   String   @default("balanced")
+  weakPoints      String   @default("[]")
+  currentPath     String   @default("{}")
+  dailyGoal       Int      @default(3)
+  streakDays      Int      @default(0)
+  lastActiveAt    DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Discussion {
+  id          String    @id @default(uuid())
+  problemId   String?
+  problem     Problem?  @relation(fields: [problemId], references: [id])
+  title       String
+  content     String
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id])
+  type        String    @default("QUESTION")
+  tags        String    @default("[]")
+  upvotes     Int       @default(0)
+  replyCount  Int       @default(0)
+  isPinned    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  replies     Reply[]
+  votes       DiscussionVote[]
+}
+
+model Reply {
+  id           String     @id @default(uuid())
+  discussionId String
+  discussion   Discussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  content      String
+  authorId     String
+  author       User       @relation(fields: [authorId], references: [id])
+  upvotes      Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model DiscussionVote {
+  id           String     @id @default(uuid())
+  discussionId String?
+  discussion   Discussion? @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  replyId      String?
+  userId       String
+  user         User       @relation(fields: [userId], references: [id])
+  isUpvote     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+
+  @@unique([userId, discussionId])
+}
+
+model DailyChallenge {
+  id          String   @id @default(uuid())
+  problemId   String
+  problem     Problem  @relation(fields: [problemId], references: [id])
+  date        String   @unique
+  difficulty  String   @default("MEDIUM")
+  createdAt   DateTime @default(now())
+  userChallenges UserDailyChallenge[]
+}
+
+model UserDailyChallenge {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  dailyChallengeId String
+  dailyChallenge DailyChallenge @relation(fields: [dailyChallengeId], references: [id])
+  solved        Boolean  @default(false)
+  timeTaken     Int?
+  submittedAt   DateTime?
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, dailyChallengeId])
 }
