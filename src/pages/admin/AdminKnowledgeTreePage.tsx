@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { knowledgeTreeAPI, problemsAPI } from '../../services/api';
-import { Plus, Trash2, Edit3, ChevronRight, ChevronDown, FolderTree, Save, X, BookOpen, Link2, Eye, Unlink } from 'lucide-react';
+import { Plus, Trash2, Edit3, ChevronRight, ChevronDown, FolderTree, Save, X, BookOpen, Link2, Eye, Unlink, Sparkles, Loader2 } from 'lucide-react';
 
 interface TreeNode {
   id: string;
@@ -20,6 +20,21 @@ interface EditingNode {
   parentId?: string;
 }
 
+interface AutoComposeResult {
+  treeId: string | null;
+  nodes: Array<{ id: string; name: string; problemCount: number }>;
+  totalProblems: number;
+  title: string;
+  description: string;
+}
+
+const EXAMPLE_PROMPTS = [
+  '帮我组建一个动态规划专题，包含入门到进阶的10道题',
+  '创建一个字符串算法练习题单，5道中等难度',
+  '我想练习图论相关的中等难度题目，大概8道',
+  '组建一个排序算法专题，从简单到困难6道题',
+];
+
 export function AdminKnowledgeTreePage() {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +48,11 @@ export function AdminKnowledgeTreePage() {
   const [allProblems, setAllProblems] = useState<any[]>([]);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [linkSearch, setLinkSearch] = useState('');
+
+  const [showAutoComposeModal, setShowAutoComposeModal] = useState(false);
+  const [autoComposeInput, setAutoComposeInput] = useState('');
+  const [autoComposing, setAutoComposing] = useState(false);
+  const [autoComposeResult, setAutoComposeResult] = useState<AutoComposeResult | null>(null);
 
   useEffect(() => {
     loadTree();
@@ -204,6 +224,34 @@ export function AdminKnowledgeTreePage() {
     }
   };
 
+  const handleAutoCompose = async () => {
+    if (!autoComposeInput.trim()) {
+      alert('请输入题单描述');
+      return;
+    }
+    try {
+      setAutoComposing(true);
+      setAutoComposeResult(null);
+      const res = await knowledgeTreeAPI.autoCompose(autoComposeInput.trim());
+      if (res.success) {
+        setAutoComposeResult(res.data);
+        await loadTree();
+        await loadStats();
+      }
+    } catch (error: any) {
+      alert(error.error?.message || '自动组建失败');
+    } finally {
+      setAutoComposing(false);
+    }
+  };
+
+  const closeAutoComposeModal = () => {
+    setShowAutoComposeModal(false);
+    setAutoComposeInput('');
+    setAutoComposeResult(null);
+    setAutoComposing(false);
+  };
+
   const renderNode = useCallback((node: TreeNode, depth: number = 0) => {
     const isExpanded = expandedIds.has(node.id);
     const isEditingThis = editing?.id === node.id;
@@ -370,13 +418,22 @@ export function AdminKnowledgeTreePage() {
           <h1 className="text-3xl font-bold text-white">知识树管理</h1>
           <p className="text-slate-400 mt-2">管理题目分类的知识树结构</p>
         </div>
-        <button
-          onClick={() => startCreate()}
-          className="flex items-center px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          添加根节点
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => { setShowAutoComposeModal(true); setAutoComposeResult(null); }}
+            className="flex items-center px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors"
+          >
+            <Sparkles className="h-4 w-4 mr-2" />
+            AI自动组建题单
+          </button>
+          <button
+            onClick={() => startCreate()}
+            className="flex items-center px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            添加根节点
+          </button>
+        </div>
       </div>
 
       {stats && (
@@ -433,7 +490,7 @@ export function AdminKnowledgeTreePage() {
           <div className="text-center py-12">
             <FolderTree className="h-12 w-12 text-slate-500 mx-auto mb-4" />
             <p className="text-slate-400">暂无知识树节点</p>
-            <p className="text-slate-500 text-sm mt-1">点击"添加根节点"开始创建知识树</p>
+            <p className="text-slate-500 text-sm mt-1">点击"添加根节点"或使用"AI自动组建题单"开始创建知识树</p>
           </div>
         ) : (
           <div className="space-y-0.5">
@@ -533,6 +590,105 @@ export function AdminKnowledgeTreePage() {
                   </div>
                 ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {showAutoComposeModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-xl p-6 max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-purple-400" />
+                <h2 className="text-xl font-semibold text-white">AI自动组建题单</h2>
+              </div>
+              <button
+                onClick={closeAutoComposeModal}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="text-slate-400 text-sm mb-4">
+              用自然语言描述你想要的题单，AI 将自动解析需求、搜索匹配题目并组建知识树结构。
+            </p>
+
+            <textarea
+              value={autoComposeInput}
+              onChange={e => setAutoComposeInput(e.target.value)}
+              placeholder="例如：帮我组建一个动态规划专题，包含入门到进阶的10道题"
+              className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 mb-3 resize-none"
+              rows={4}
+              disabled={autoComposing}
+            />
+
+            <div className="flex flex-wrap gap-2 mb-4">
+              {EXAMPLE_PROMPTS.map((prompt, i) => (
+                <button
+                  key={i}
+                  onClick={() => setAutoComposeInput(prompt)}
+                  disabled={autoComposing}
+                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={handleAutoCompose}
+              disabled={autoComposing || !autoComposeInput.trim()}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-purple-500 hover:bg-purple-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
+            >
+              {autoComposing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  AI正在组建中...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  生成题单
+                </>
+              )}
+            </button>
+
+            {autoComposeResult && (
+              <div className="mt-4 border border-slate-600 rounded-lg p-4 overflow-y-auto">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">{autoComposeResult.title}</h3>
+                    {autoComposeResult.description && (
+                      <p className="text-slate-400 text-sm mt-1">{autoComposeResult.description}</p>
+                    )}
+                  </div>
+                  <span className="text-sm text-green-400 bg-green-500/10 px-3 py-1 rounded-full">
+                    共 {autoComposeResult.totalProblems} 道题
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {autoComposeResult.nodes.map((node, i) => (
+                    <div key={node.id} className="flex items-center gap-3 p-3 bg-slate-700 rounded-lg">
+                      <FolderTree className="h-4 w-4 text-cyan-400 flex-shrink-0" />
+                      <span className="text-white text-sm font-medium flex-1">{node.name}</span>
+                      <span className="flex items-center gap-1 text-xs text-slate-400">
+                        <BookOpen className="h-3 w-3" />
+                        {node.problemCount} 题
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    onClick={closeAutoComposeModal}
+                    className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors text-sm"
+                  >
+                    完成，查看知识树
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

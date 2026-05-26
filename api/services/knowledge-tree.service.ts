@@ -223,6 +223,94 @@ export class KnowledgeTreeService {
     });
   }
 
+  /**
+   * 从自然语言描述自动组建题单：
+   * 1. 调用 AI 解析描述为结构化需求（主题、难度、数量、标签）
+   * 2. 从数据库搜索匹配条件的题目
+   * 3. 将题目按 AI 建议的知识树结构分配到各节点
+   * 4. 创建知识树节点并关联题目
+   */
+  async autoComposeFromNL(userId: string, description: string) {
+    const parsed = await aiService.autoComposeFromNL(description, userId);
+    const { requirements, nodes: suggestedNodes } = parsed;
+
+    const where: any = {};
+    if (requirements.difficulty && ['EASY', 'MEDIUM', 'HARD'].includes(requirements.difficulty)) {
+      where.difficulty = requirements.difficulty;
+    }
+    if (requirements.tags.length > 0) {
+      where.OR = requirements.tags.map(tag => ({
+        tags: { contains: tag }
+      }));
+    }
+
+    let candidates = await prisma.problem.findMany({
+      where: Object.keys(where).length > 0 ? where : {},
+      select: { id: true, title: true, difficulty: true, tags: true, type: true },
+    });
+
+    if (candidates.length === 0) {
+      candidates = await prisma.problem.findMany({
+        select: { id: true, title: true, difficulty: true, tags: true, type: true },
+      });
+    }
+
+    const scored = candidates.map(p => {
+      const pTags: string[] = JSON.parse(p.tags || '[]');
+      const commonTags = pTags.filter(t => requirements.tags.includes(t));
+      let score = commonTags.length * 10;
+      if (requirements.difficulty && p.difficulty === requirements.difficulty) score += 5;
+      return { ...p, score, pTags };
+    }).sort((a, b) => b.score - a.score);
+
+    const targetCount = Math.min(requirements.count, scored.length);
+    const selectedProblems = scored.slice(0, targetCount);
+
+    if (selectedProblems.length === 0) {
+      throw new Error('系统中暂无匹配的题目，请先创建题目后再使用此功能');
+    }
+
+    const createdNodes: Array<{ id: string; name: string; problemCount: number }> = [];
+    const problemsPerNode = Math.ceil(selectedProblems.length / suggestedNodes.length);
+
+    for (let i = 0; i < suggestedNodes.length; i++) {
+      const nodeDef = suggestedNodes[i];
+      const parentNode = await prisma.knowledgeTree.create({
+        data: {
+          name: nodeDef.name,
+          description: nodeDef.description,
+          level: 1,
+          order: i,
+        },
+      });
+
+      const start = i * problemsPerNode;
+      const end = Math.min(start + problemsPerNode, selectedProblems.length);
+      const nodeProblems = selectedProblems.slice(start, end);
+
+      for (const problem of nodeProblems) {
+        await prisma.problem.update({
+          where: { id: problem.id },
+          data: { knowledgeTreeId: parentNode.id },
+        });
+      }
+
+      createdNodes.push({
+        id: parentNode.id,
+        name: nodeDef.name,
+        problemCount: nodeProblems.length,
+      });
+    }
+
+    return {
+      treeId: createdNodes.length > 0 ? createdNodes[0].id : null,
+      nodes: createdNodes,
+      totalProblems: selectedProblems.length,
+      title: parsed.title,
+      description: parsed.description,
+    };
+  }
+
   async getNodeStatistics() {
     const totalNodes = await prisma.knowledgeTree.count();
     const level1Nodes = await prisma.knowledgeTree.count({

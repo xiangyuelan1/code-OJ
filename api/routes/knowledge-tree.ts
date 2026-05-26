@@ -50,6 +50,21 @@ router.delete('/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Reque
   }
 });
 
+router.post('/auto-compose', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const { description } = req.body;
+    if (!description || !description.trim()) {
+      res.status(400).json({ success: false, error: { message: '请输入自然语言描述' } });
+      return;
+    }
+    const userId = (req as any).user?.id;
+    const result = await knowledgeTreeService.autoComposeFromNL(userId, description.trim());
+    res.status(201).json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
 router.post('/import', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
     const { content, fileType } = req.body;

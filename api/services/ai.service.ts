@@ -2324,6 +2324,156 @@ solve()
     return tags.slice(0, 5);
   }
 
+  /**
+   * 从自然语言描述中解析出结构化的题单组建需求与知识树建议。
+   * AI 启用时调用大模型解析，未启用时使用关键词规则兜底。
+   * 返回: { title, description, requirements: { topic, difficulty, count, tags }, nodes: [{ name, description, difficulty, tags }] }
+   */
+  async autoComposeFromNL(description: string, userId?: string): Promise<{
+    title: string;
+    description: string;
+    requirements: { topic: string; difficulty: string; count: number; tags: string[] };
+    nodes: Array<{ name: string; description: string; difficulty: string; tags: string[] }>;
+  }> {
+    const fallbackResult = this.fallbackAutoComposeFromNL(description);
+
+    if (!(await this.isFeatureEnabled('auto-compose'))) {
+      return fallbackResult;
+    }
+
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      return fallbackResult;
+    }
+
+    const prompt = `你是一位专业的编程教育专家。请根据以下自然语言描述，解析出结构化的题单组建需求，并建议一个知识树结构。
+
+用户描述：${description}
+
+请以JSON格式返回，格式为：
+{
+  "title": "题单标题（简洁明了）",
+  "description": "题单描述（1-2句话）",
+  "requirements": {
+    "topic": "主题（如：动态规划、字符串算法、图论等）",
+    "difficulty": "难度（EASY/MEDIUM/HARD 或混合，如 MEDIUM）",
+    "count": 5,
+    "tags": ["标签1", "标签2"]
+  },
+  "nodes": [
+    {
+      "name": "一级分类名称",
+      "description": "该分类的简要描述",
+      "difficulty": "EASY/MEDIUM/HARD",
+      "tags": ["相关标签"]
+    }
+  ]
+}
+
+要求：
+1. title 应简短有力，体现主题
+2. requirements 准确反映用户意图，count 默认为5
+3. nodes 是建议的知识树一级分类结构，每个分类代表题单中的一个子专题
+4. nodes 的数量应根据题目总数合理划分（通常2-5个分类）
+5. 各分类的难度应有梯度，从易到难排列
+6. 所有文本使用中文`;
+
+    const response = await this.callAI(prompt, config, 'auto-compose', userId);
+
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          title: parsed.title || fallbackResult.title,
+          description: parsed.description || fallbackResult.description,
+          requirements: {
+            topic: parsed.requirements?.topic || fallbackResult.requirements.topic,
+            difficulty: parsed.requirements?.difficulty || fallbackResult.requirements.difficulty,
+            count: parsed.requirements?.count || fallbackResult.requirements.count,
+            tags: Array.isArray(parsed.requirements?.tags) ? parsed.requirements.tags : fallbackResult.requirements.tags,
+          },
+          nodes: Array.isArray(parsed.nodes)
+            ? parsed.nodes.map((n: any) => ({
+                name: n.name || '未命名分类',
+                description: n.description || '',
+                difficulty: n.difficulty || 'MEDIUM',
+                tags: Array.isArray(n.tags) ? n.tags : [],
+              }))
+            : fallbackResult.nodes,
+        };
+      }
+    } catch (e) {
+      console.error('解析AI自动组建响应失败:', e);
+    }
+
+    return fallbackResult;
+  }
+
+  /**
+   * 基于关键词规则的兜底解析，AI 不可用时使用。
+   * 从描述中提取主题、难度、数量，生成简单的扁平知识树结构。
+   */
+  private fallbackAutoComposeFromNL(description: string): {
+    title: string;
+    description: string;
+    requirements: { topic: string; difficulty: string; count: number; tags: string[] };
+    nodes: Array<{ name: string; description: string; difficulty: string; tags: string[] }>;
+  } {
+    const desc = description.toLowerCase();
+
+    const topicRules: Array<{ keywords: string[]; topic: string; tags: string[] }> = [
+      { keywords: ['动态规划', 'dp', '记忆化', '递推'], topic: '动态规划', tags: ['动态规划', 'DP'] },
+      { keywords: ['字符串', 'string', '回文', '匹配', 'kmp'], topic: '字符串算法', tags: ['字符串'] },
+      { keywords: ['图', '最短路', 'bfs', 'dfs', '拓扑', '连通'], topic: '图论', tags: ['图论'] },
+      { keywords: ['树', '二叉树', '遍历', '节点'], topic: '树结构', tags: ['树'] },
+      { keywords: ['排序', 'sort', '快排', '归并', '冒泡'], topic: '排序算法', tags: ['排序'] },
+      { keywords: ['搜索', '查找', 'find', '二分', 'search'], topic: '搜索算法', tags: ['搜索', '二分'] },
+      { keywords: ['贪心', 'greedy'], topic: '贪心算法', tags: ['贪心'] },
+      { keywords: ['数学', '素数', 'gcd', '组合', '排列', '概率'], topic: '数学', tags: ['数学'] },
+      { keywords: ['数组', 'array', '双指针', '滑动窗口'], topic: '数组与双指针', tags: ['数组', '双指针'] },
+      { keywords: ['链表', 'linked list', '反转'], topic: '链表', tags: ['链表'] },
+      { keywords: ['栈', 'stack', '括号', '队列', 'queue'], topic: '栈与队列', tags: ['栈', '队列'] },
+      { keywords: ['递归', 'recursion', '分治', '回溯'], topic: '递归与分治', tags: ['递归', '分治'] },
+    ];
+
+    let topic = '综合练习';
+    let tags: string[] = [];
+    for (const rule of topicRules) {
+      if (rule.keywords.some(kw => desc.includes(kw))) {
+        topic = rule.topic;
+        tags = rule.tags;
+        break;
+      }
+    }
+
+    let difficulty = 'MEDIUM';
+    if (desc.includes('简单') || desc.includes('入门') || desc.includes('基础') || desc.includes('easy')) {
+      difficulty = 'EASY';
+    } else if (desc.includes('困难') || desc.includes('进阶') || desc.includes('hard') || desc.includes('高级')) {
+      difficulty = 'HARD';
+    } else if (desc.includes('中等') || desc.includes('medium')) {
+      difficulty = 'MEDIUM';
+    }
+
+    const countMatch = description.match(/(\d+)\s*[道题个]/);
+    const count = countMatch ? parseInt(countMatch[1], 10) : 5;
+
+    const difficultyLabels: Record<string, string> = { EASY: '入门', MEDIUM: '进阶', HARD: '高级' };
+    const nodes = [
+      { name: `${topic}-基础`, description: `${topic}基础概念与简单应用`, difficulty: 'EASY', tags },
+      { name: `${topic}-进阶`, description: `${topic}中等难度综合练习`, difficulty: 'MEDIUM', tags },
+      { name: `${topic}-挑战`, description: `${topic}高难度拓展挑战`, difficulty: 'HARD', tags },
+    ];
+
+    return {
+      title: `${topic}专题练习`,
+      description: `包含${difficultyLabels[difficulty] || ''}${topic}相关题目`,
+      requirements: { topic, difficulty, count, tags },
+      nodes,
+    };
+  }
+
   async companionChat(params: { type: 'CODE_REVIEW' | 'ERROR_DIAGNOSIS' | 'HINT' | 'KNOWLEDGE_LINK'; code?: string; language?: string; problem?: any; errorResult?: any; userId?: string }) {
     const config = await this.getConfig();
 
@@ -2524,6 +2674,7 @@ ${params.code || ''}
     { featureKey: 'generate-learning-path', featureName: '学习路径生成', description: '根据学生水平生成个性化学习路径' },
     { featureKey: 'analyze-submission-trend', featureName: '提交趋势分析', description: '分析近期提交中的常见错误和改进方向' },
     { featureKey: 'smart-hint', featureName: '智能提示', description: '根据尝试次数提供渐进式提示' },
+    { featureKey: 'auto-compose', featureName: 'AI自动组建题单', description: '从自然语言描述自动创建知识树题单' },
   ];
 
   /**

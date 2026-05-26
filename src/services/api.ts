@@ -144,8 +144,10 @@ export const knowledgeTreeAPI = {
     api.post('/api/knowledge-tree/import', { content, fileType }),
   classifyProblem: (problemId: string, knowledgeTreeId?: string) =>
     api.post(`/api/knowledge-tree/classify/${problemId}`, { knowledgeTreeId }),
-  getNodeProblems: (nodeId: string) => 
+  getNodeProblems: (nodeId: string) =>
     api.get(`/api/knowledge-tree/node/${nodeId}/problems`),
+  autoCompose: (description: string) =>
+    api.post('/api/knowledge-tree/auto-compose', { description }),
 };
 
 export const enhancedAiAPI = {
