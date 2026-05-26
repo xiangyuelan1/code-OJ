@@ -69,6 +69,8 @@ export const problemsAPI = {
   getStats: () => api.get('/api/problems/stats/overview'),
   getPublicStats: () => api.get('/api/problems/stats/public'),
   batchImport: (problems: any[]) => api.post('/api/problems/batch-import', { problems }),
+  batchDelete: (data: { ids?: string[]; beforeDate?: string; deleteAll?: boolean }) =>
+    api.delete('/api/problems/batch', { data }),
 };
 
 export const submissionsAPI = {
@@ -157,6 +159,8 @@ export const enhancedAiAPI = {
   aiJudge: (data: any) => api.post('/api/ai/ai-judge', data),
   getUsageStats: (params?: any) => api.get('/api/ai/usage/stats', { params }),
   getUsageLogs: (params?: any) => api.get('/api/ai/usage/logs', { params }),
+  getClassAIUsage: (classId: string) => api.get('/api/ai/usage/class/' + classId),
+  getTeacherAIUsage: () => api.get('/api/ai/usage/teacher'),
   generateExam: (data: any) => api.post('/api/ai/generate-exam', data),
   optimizeCode: (code: string, language: string) =>
     api.post('/api/ai/optimize-code', { code, language }),
@@ -164,6 +168,15 @@ export const enhancedAiAPI = {
     api.post('/api/ai/recommend-similar', { problemId }),
   batchClassify: (data: any) => api.post('/api/ai/batch-classify', data),
   companionChat: (data: any) => api.post('/api/ai/companion', data),
+  generateLearningPath: (data: { currentLevel: string; targetLevel: string; weakPoints: string[] }) =>
+    api.post('/api/ai/generate-learning-path', data),
+  analyzeSubmissionTrend: (data: { recentSubmissions: Array<{ problem: string; status: string; code?: string }> }) =>
+    api.post('/api/ai/analyze-submission-trend', data),
+  smartHint: (data: { problem: { title: string; description: string }; userCode: string; attemptCount: number; previousHints: string[] }) =>
+    api.post('/api/ai/smart-hint', data),
+  getFeatureConfigs: () => api.get('/api/ai/features'),
+  updateFeatureConfig: (featureKey: string, data: any) => api.put(`/api/ai/features/${featureKey}`, data),
+  initializeFeatureConfigs: () => api.post('/api/ai/features/initialize'),
 };
 
 export const uploadAPI = {
@@ -199,6 +212,7 @@ export const matchAPI = {
   submitAnswer: (id: string, data: { problemIndex: number; answer: string; time: number }) =>
     api.post(`/api/matches/${id}/answer`, data),
   endMatch: (id: string) => api.post(`/api/matches/${id}/end`),
+  requestSettlement: (id: string) => api.post(`/api/matches/${id}/request-settlement`),
   getHistory: (limit?: number) => api.get('/api/matches/history/me', { params: { limit } }),
   getLeaderboard: (type: string, limit?: number) =>
     api.get(`/api/matches/leaderboard/${type}`, { params: { limit } }),
@@ -251,6 +265,7 @@ export const classAPI = {
   completeClassBattle: (battleId: string) => api.post(`/api/classes/battle/${battleId}/complete`),
   getClassBattles: (id: string) => api.get(`/api/classes/${id}/battles`),
   getTeacherDashboard: () => api.get('/api/classes/teacher/dashboard'),
+  updateClassAIBilling: (classId: string, mode: string) => api.put('/api/classes/' + classId + '/ai-billing', { aiBillingMode: mode }),
 };
 
 export const accessAPI = {

@@ -136,6 +136,27 @@ router.put('/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request,
   }
 });
 
+router.delete('/batch', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const { ids, beforeDate, deleteAll } = req.body;
+
+    if (!deleteAll && !beforeDate && (!ids || !Array.isArray(ids) || ids.length === 0)) {
+      res.status(400).json({ success: false, error: { message: '请提供删除条件：ids、beforeDate 或 deleteAll' } });
+      return;
+    }
+
+    const result = await problemService.batchDeleteProblems({
+      ids,
+      beforeDate: beforeDate ? new Date(beforeDate) : undefined,
+      deleteAll: !!deleteAll,
+    });
+
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
 router.delete('/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
     await problemService.deleteProblem(req.params.id);

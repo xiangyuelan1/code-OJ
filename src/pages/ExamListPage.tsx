@@ -9,6 +9,7 @@ export function ExamListPage() {
   const [exams, setExams] = useState<any[]>([]);
   const [myAttempts, setMyAttempts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -25,8 +26,8 @@ export function ExamListPage() {
       if (attemptsRes.success) {
         setMyAttempts(attemptsRes.data || []);
       }
-    } catch (error) {
-      console.error('获取考试列表失败:', error);
+    } catch (error: any) {
+      setError(error.error?.message || error.message || '获取考试列表失败');
     } finally {
       setLoading(false);
     }
@@ -40,11 +41,28 @@ export function ExamListPage() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-400 text-xl mb-4">{error}</div>
+          <button
+            onClick={() => { setError(null); fetchExams(); }}
+            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg text-sm transition-colors"
+          >
+            重试
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const getTypeName = (type: string) => {
     switch (type) {
       case 'PRACTICE': return '练习';
       case 'EXAM': return '正式考试';
       case 'QUIZ': return '测验';
+      case 'CLASS_EXAM': return '班级考试';
       default: return type;
     }
   };

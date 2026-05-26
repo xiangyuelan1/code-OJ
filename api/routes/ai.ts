@@ -226,6 +226,48 @@ router.get('/usage/logs', authMiddleware, roleMiddleware('ADMIN'), async (req: R
   }
 });
 
+/**
+ * 获取指定班级的 AI 用量统计（教师或管理员）
+ */
+router.get('/usage/class/:classId', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const userRole = (req as any).user.role;
+    const classId = req.params.classId;
+
+    if (userRole !== 'ADMIN') {
+      const cls = await prisma.class.findUnique({ where: { id: classId }, select: { createdBy: true } });
+      if (!cls || cls.createdBy !== userId) {
+        const isMember = await prisma.classMember.findUnique({
+          where: { classId_userId: { classId, userId } },
+        });
+        if (!isMember) {
+          res.status(403).json({ success: false, error: { message: '无权查看该班级的AI用量' } });
+          return;
+        }
+      }
+    }
+
+    const stats = await aiService.getAIUsageByClass(classId);
+    res.json({ success: true, data: stats });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/**
+ * 获取当前教师的 AI 用量统计
+ */
+router.get('/usage/teacher', authMiddleware, roleMiddleware('TEACHER'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const stats = await aiService.getAIUsageByTeacher(userId);
+    res.json({ success: true, data: stats });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
 router.post('/generate-exam', authMiddleware, roleMiddleware('ADMIN', 'TEACHER'), async (req: Request, res: any): Promise<void> => {
   try {
     const result = await aiService.generateExam(req.body, (req as any).user?.userId);
@@ -308,6 +350,107 @@ router.post('/companion-stream', authMiddleware, async (req: Request, res: any):
 router.post('/batch-classify', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
     const result = await aiService.batchClassifyProblems(req.body, (req as any).user?.userId);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
+// 新增 AI 功能路由
+// ========================
+
+router.post('/generate-learning-path', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { currentLevel, targetLevel, weakPoints } = req.body;
+
+    if (!currentLevel || !targetLevel) {
+      res.status(400).json({ success: false, error: { message: '缺少当前水平或目标水平参数' } });
+      return;
+    }
+
+    const result = await aiService.generateLearningPath(
+      { userId, currentLevel, targetLevel, weakPoints: weakPoints || [] },
+      userId,
+    );
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/analyze-submission-trend', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { recentSubmissions } = req.body;
+
+    if (!recentSubmissions || !Array.isArray(recentSubmissions)) {
+      res.status(400).json({ success: false, error: { message: '缺少近期提交记录' } });
+      return;
+    }
+
+    const result = await aiService.analyzeSubmissionTrend(
+      { userId, recentSubmissions },
+      userId,
+    );
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/smart-hint', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { problem, userCode, attemptCount, previousHints } = req.body;
+
+    if (!problem || !problem.title || !problem.description) {
+      res.status(400).json({ success: false, error: { message: '缺少题目信息' } });
+      return;
+    }
+
+    const result = await aiService.smartHint(
+      {
+        problem,
+        userCode: userCode || '',
+        attemptCount: attemptCount || 1,
+        previousHints: previousHints || [],
+      },
+      userId,
+    );
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
+// AI 功能配置管理路由（管理员）
+// ========================
+
+router.get('/features', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const configs = await aiService.getFeatureConfigs();
+    res.json({ success: true, data: configs });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.put('/features/:featureKey', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const { featureKey } = req.params;
+    const result = await aiService.updateFeatureConfig(featureKey, req.body);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/features/initialize', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const result = await aiService.initializeFeatureConfigs();
     res.json({ success: true, data: result });
   } catch (error: any) {
     res.status(500).json({ success: false, error: { message: error.message } });

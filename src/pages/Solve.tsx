@@ -178,6 +178,11 @@ export function SolvePage() {
   const [showSimilar, setShowSimilar] = useState(false);
   const [editorSettings, setEditorSettings] = useState<EditorSettings>(loadEditorSettings);
   const [showEditorSettings, setShowEditorSettings] = useState(false);
+  const [smartHintLoading, setSmartHintLoading] = useState(false);
+  const [smartHintData, setSmartHintData] = useState<{ hint: string; level: string; nextAttemptSuggestion: string } | null>(null);
+  const [showSmartHint, setShowSmartHint] = useState(false);
+  const [smartHintAttemptCount, setSmartHintAttemptCount] = useState(1);
+  const [smartHintHistory, setSmartHintHistory] = useState<string[]>([]);
 
   useEffect(() => {
     if (id) loadProblem();
@@ -323,6 +328,33 @@ export function SolvePage() {
       setSimilarProblems([]);
     } finally {
       setSimilarLoading(false);
+    }
+  };
+
+  const getSmartHint = async () => {
+    if (!problem) return;
+    setSmartHintLoading(true);
+    setShowSmartHint(true);
+    try {
+      const res = await enhancedAiAPI.smartHint({
+        problem: { title: problem.title, description: problem.description },
+        userCode: code,
+        attemptCount: smartHintAttemptCount,
+        previousHints: smartHintHistory,
+      });
+      if (res.success && res.data) {
+        setSmartHintData(res.data);
+        setSmartHintHistory(prev => [...prev, res.data.hint]);
+        setSmartHintAttemptCount(prev => prev + 1);
+      }
+    } catch {
+      setSmartHintData({
+        hint: 'AI功能未启用或配置错误',
+        level: '未知',
+        nextAttemptSuggestion: '请稍后重试',
+      });
+    } finally {
+      setSmartHintLoading(false);
     }
   };
 
@@ -559,6 +591,17 @@ export function SolvePage() {
                 {similarLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
                 相似题目
               </button>
+              <button
+                onClick={getSmartHint}
+                disabled={smartHintLoading}
+                className="flex items-center px-4 py-2 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
+              >
+                {smartHintLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Lightbulb className="h-4 w-4 mr-2" />}
+                智能提示
+                {smartHintAttemptCount > 1 && (
+                  <span className="ml-1.5 text-xs bg-emerald-500/30 px-1.5 py-0.5 rounded">第{smartHintAttemptCount}次</span>
+                )}
+              </button>
             </div>
 
             {showHint && aiHint && (
@@ -604,6 +647,40 @@ export function SolvePage() {
                   </div>
                 ) : (
                   <p className="text-slate-400 text-sm">暂无相似题目推荐</p>
+                )}
+              </div>
+            )}
+
+            {showSmartHint && smartHintData && (
+              <div className="mt-4 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-emerald-400 font-semibold text-sm">智能提示</h4>
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      smartHintData.level === '方向性提示' ? 'bg-blue-500/20 text-blue-400' :
+                      smartHintData.level === '算法建议' ? 'bg-yellow-500/20 text-yellow-400' :
+                      smartHintData.level === '代码骨架' ? 'bg-red-500/20 text-red-400' :
+                      'bg-slate-500/20 text-slate-400'
+                    }`}>
+                      {smartHintData.level}
+                    </span>
+                  </div>
+                  <button onClick={() => setShowSmartHint(false)} className="text-slate-400 hover:text-white"><X className="h-4 w-4" /></button>
+                </div>
+                <div className="prose prose-invert max-w-none text-sm text-emerald-100/90">
+                  {renderHintContent(smartHintData.hint)}
+                </div>
+                {smartHintData.nextAttemptSuggestion && (
+                  <div className="mt-3 pt-3 border-t border-emerald-500/20">
+                    <p className="text-xs text-emerald-300/70">
+                      💡 下一步建议：{smartHintData.nextAttemptSuggestion}
+                    </p>
+                  </div>
+                )}
+                {smartHintHistory.length > 0 && (
+                  <div className="mt-2 text-xs text-slate-500">
+                    已获取 {smartHintHistory.length} 次提示 · 点击"智能提示"获取更具体的帮助
+                  </div>
                 )}
               </div>
             )}

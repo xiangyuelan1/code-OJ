@@ -24,6 +24,28 @@ export interface MatchResult {
   };
 }
 
+/** 各题型在比赛中的期望数量配置 */
+const PROBLEM_TYPE_DISTRIBUTION: Record<string, { type: string; count: number }[]> = {
+  '1V1_RANKED': [
+    { type: 'CHOICE', count: 2 },
+    { type: 'FILL_BLANK', count: 1 },
+    { type: 'PROGRAMMING', count: 2 }
+  ],
+  '1V1_FRIENDLY': [
+    { type: 'CHOICE', count: 1 },
+    { type: 'FILL_BLANK', count: 1 },
+    { type: 'PROGRAMMING', count: 1 }
+  ],
+  'GROUP_ARENA': [
+    { type: 'CHOICE', count: 3 },
+    { type: 'FILL_BLANK', count: 2 },
+    { type: 'PROGRAMMING', count: 5 }
+  ]
+};
+
+/** 结算冷却时间（毫秒） */
+const SETTLEMENT_COOLDOWN_MS = 60_000;
+
 export class MatchService {
   private static readonly MATCH_CONFIGS: Record<string, MatchConfig> = {
     '1V1_RANKED': { type: '1V1_RANKED', problemCount: 5, timeLimit: 600 },
@@ -36,7 +58,7 @@ export class MatchService {
 
     const selectedProblems = problemIds.length > 0
       ? problemIds.slice(0, config.problemCount)
-      : await this.getRandomProblems(config.problemCount);
+      : await this.getRandomProblems(type, config.problemCount);
 
     const match = await prisma.match.create({
       data: {
@@ -50,11 +72,7 @@ export class MatchService {
         }
       },
       include: {
-        problems: {
-          include: {
-            // No need to include problem here
-          }
-        },
+        problems: true,
         participants: {
           include: {
             user: {
@@ -76,9 +94,7 @@ export class MatchService {
   async joinMatch(matchId: string, userId: string): Promise<any> {
     const match = await prisma.match.findUnique({
       where: { id: matchId },
-      include: {
-        participants: true
-      }
+      include: { participants: true }
     });
 
     if (!match) {
@@ -94,18 +110,10 @@ export class MatchService {
     }
 
     const participant = await prisma.matchParticipant.create({
-      data: {
-        matchId,
-        userId
-      },
+      data: { matchId, userId },
       include: {
         user: {
-          select: {
-            id: true,
-            username: true,
-            points: true,
-            level: true
-          }
+          select: { id: true, username: true, points: true, level: true }
         }
       }
     });
@@ -117,12 +125,7 @@ export class MatchService {
         participants: {
           include: {
             user: {
-              select: {
-                id: true,
-                username: true,
-                points: true,
-                level: true
-              }
+              select: { id: true, username: true, points: true, level: true }
             }
           }
         }
@@ -139,6 +142,10 @@ export class MatchService {
     return participant;
   }
 
+  /**
+   * 提交答案，支持重提交：最新答案替换旧答案，同时记录尝试次数。
+   * problemIndex 参数允许自由切换题目，不强制顺序作答。
+   */
   async submitAnswer(
     matchId: string,
     userId: string,
@@ -147,19 +154,11 @@ export class MatchService {
     time: number
   ): Promise<any> {
     const participant = await prisma.matchParticipant.findFirst({
-      where: {
-        matchId,
-        userId
-      },
+      where: { matchId, userId },
       include: {
         match: {
           include: {
-            problems: {
-              include: {
-                // No need to include problem
-              },
-              orderBy: { order: 'asc' }
-            }
+            problems: { orderBy: { order: 'asc' } }
           }
         },
         submissions: true
@@ -175,10 +174,7 @@ export class MatchService {
       throw new Error('题目不存在');
     }
 
-    const problem = await prisma.problem.findUnique({
-      where: { id: problemId }
-    });
-
+    const problem = await prisma.problem.findUnique({ where: { id: problemId } });
     if (!problem) {
       throw new Error('题目不存在');
     }
@@ -190,7 +186,7 @@ export class MatchService {
       case 'CHOICE':
         isCorrect = answer === problem.correctAnswer;
         break;
-      case 'FILL_BLANK':
+      case 'FILL_BLANK': {
         let parsedAnswer: string[];
         try {
           const decoded = JSON.parse(answer);
@@ -199,10 +195,12 @@ export class MatchService {
           parsedAnswer = [answer];
         }
         const correctAnswers: string[] = JSON.parse(problem.fillBlanks || '[]');
-        isCorrect = parsedAnswer.length === correctAnswers.length && parsedAnswer.every((ans, idx) =>
-          ans.trim().toLowerCase() === correctAnswers[idx]?.trim().toLowerCase()
-        );
+        isCorrect = parsedAnswer.length === correctAnswers.length
+          && parsedAnswer.every((ans, idx) =>
+            ans.trim().toLowerCase() === correctAnswers[idx]?.trim().toLowerCase()
+          );
         break;
+      }
       case 'PROGRAMMING':
         // 安全风险：此处信任客户端传递的判题状态，理论上可被伪造。
         // 前端通过 submissionsAPI.submit 先调用后端判题再传回状态，
@@ -217,20 +215,42 @@ export class MatchService {
       points = basePoints + timeBonus;
     }
 
-    await prisma.submission.create({
-      data: {
-        userId,
-        problemId,
-        type: problem.type,
-        answer: typeof answer === 'string' ? answer : JSON.stringify(answer),
-        status: isCorrect ? 'ACCEPTED' : 'WRONG_ANSWER',
-        score: points,
-        matchParticipantId: participant.id
-      }
-    });
+    // 查找该参赛者对该题目的已有提交
+    const existingSubmission = participant.submissions.find(s => s.problemId === problemId);
 
-    const newScore = participant.score + points;
-    const newCorrectCount = participant.correctCount + (isCorrect ? 1 : 0);
+    let scoreDelta = points;
+    let correctCountDelta = isCorrect ? 1 : 0;
+
+    if (existingSubmission) {
+      // 重提交：减去旧分数，用新分数替换
+      scoreDelta = points - (existingSubmission.score || 0);
+      const wasCorrect = existingSubmission.status === 'ACCEPTED';
+      correctCountDelta = (isCorrect ? 1 : 0) - (wasCorrect ? 1 : 0);
+
+      await prisma.submission.update({
+        where: { id: existingSubmission.id },
+        data: {
+          answer: typeof answer === 'string' ? answer : JSON.stringify(answer),
+          status: isCorrect ? 'ACCEPTED' : 'WRONG_ANSWER',
+          score: points
+        }
+      });
+    } else {
+      await prisma.submission.create({
+        data: {
+          userId,
+          problemId,
+          type: problem.type,
+          answer: typeof answer === 'string' ? answer : JSON.stringify(answer),
+          status: isCorrect ? 'ACCEPTED' : 'WRONG_ANSWER',
+          score: points,
+          matchParticipantId: participant.id
+        }
+      });
+    }
+
+    const newScore = participant.score + scoreDelta;
+    const newCorrectCount = participant.correctCount + correctCountDelta;
     const newTotalTime = participant.totalTime + time;
 
     await prisma.matchParticipant.update({
@@ -242,28 +262,14 @@ export class MatchService {
       }
     });
 
-    const allParticipants = await prisma.matchParticipant.findMany({
-      where: { matchId },
-      include: { submissions: true }
-    });
-
-    const problemCompleted = allParticipants.every(p => {
-      return p.submissions && p.submissions.length >= problemIndex + 1;
-    });
-
-    if (problemCompleted) {
-      const totalProblems = participant.match.problems.length;
-      if (problemIndex >= totalProblems - 1) {
-        await this.endMatch(matchId);
-      }
-    }
-
     return {
       isCorrect,
       points,
       currentScore: newScore,
       correctCount: newCorrectCount,
-      totalTime: newTotalTime
+      totalTime: newTotalTime,
+      problemIndex,
+      isResubmission: !!existingSubmission
     };
   }
 
@@ -273,12 +279,7 @@ export class MatchService {
       include: {
         participants: {
           include: {
-            user: {
-              select: {
-                id: true,
-                username: true
-              }
-            }
+            user: { select: { id: true, username: true } }
           }
         }
       }
@@ -286,6 +287,10 @@ export class MatchService {
 
     if (!match) {
       throw new Error('比赛不存在');
+    }
+
+    if (match.status === 'COMPLETED') {
+      throw new Error('比赛已结束');
     }
 
     const participants = match.participants.sort((a, b) => {
@@ -311,7 +316,10 @@ export class MatchService {
 
       await prisma.matchParticipant.update({
         where: { id: participant.id },
-        data: { isWinner }
+        data: {
+          isWinner,
+          lastSettlementAt: new Date()
+        }
       });
 
       if (isRanked) {
@@ -380,6 +388,10 @@ export class MatchService {
     });
   }
 
+  /**
+   * 获取比赛详情，包含每位参赛者的作答进度。
+   * 对 FILL_BLANK 题型，仅发送空数数量，不泄露实际答案。
+   */
   async getMatch(matchId: string): Promise<any> {
     const match = await prisma.match.findUnique({
       where: { id: matchId },
@@ -412,26 +424,129 @@ export class MatchService {
                 points: true,
                 level: true
               }
+            },
+            submissions: {
+              select: {
+                id: true,
+                problemId: true,
+                status: true,
+                score: true,
+                answer: true,
+                createdAt: true
+              }
             }
           }
         }
       }
     });
 
-    if (match) {
-      for (const mp of match.problems) {
-        if (mp.problem && mp.problem.testCases) {
-          try {
-            const allCases = JSON.parse(mp.problem.testCases);
-            mp.problem.testCases = JSON.stringify(allCases.filter((tc: any) => tc.isSample));
-          } catch {
-            mp.problem.testCases = '[]';
-          }
+    if (!match) return null;
+
+    // 处理题目数据：过滤 testCases，隐藏 fillBlanks 答案
+    for (const mp of match.problems) {
+      if (!mp.problem) continue;
+
+      // 仅保留样例测试用例
+      if (mp.problem.testCases) {
+        try {
+          const allCases = JSON.parse(mp.problem.testCases);
+          mp.problem.testCases = JSON.stringify(allCases.filter((tc: any) => tc.isSample));
+        } catch {
+          mp.problem.testCases = '[]';
+        }
+      }
+
+      // FILL_BLANK 题型：隐藏答案，仅发送空数数量
+      if (mp.problem.type === 'FILL_BLANK' && mp.problem.fillBlanks) {
+        try {
+          const blanks = JSON.parse(mp.problem.fillBlanks);
+          const blankCount = Array.isArray(blanks) ? blanks.length : 1;
+          mp.problem.fillBlanks = JSON.stringify({ blankCount });
+        } catch {
+          mp.problem.fillBlanks = JSON.stringify({ blankCount: 1 });
         }
       }
     }
 
     return match;
+  }
+
+  /**
+   * 获取某位参赛者在比赛中的进度摘要（供 Socket.IO 实时推送使用）。
+   * 返回每道题的作答状态和当前总分。
+   */
+  async getParticipantProgress(matchId: string, userId: string): Promise<any> {
+    const participant = await prisma.matchParticipant.findFirst({
+      where: { matchId, userId },
+      include: {
+        submissions: {
+          select: {
+            problemId: true,
+            status: true,
+            score: true
+          }
+        }
+      }
+    });
+
+    if (!participant) return null;
+
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+      include: { problems: { orderBy: { order: 'asc' } } }
+    });
+
+    if (!match) return null;
+
+    // 构建每道题的作答状态
+    const problemProgress = match.problems.map((mp, index) => {
+      const submission = participant.submissions.find(s => s.problemId === mp.problemId);
+      return {
+        problemIndex: index,
+        problemId: mp.problemId,
+        answered: !!submission,
+        isCorrect: submission?.status === 'ACCEPTED',
+        score: submission?.score || 0
+      };
+    });
+
+    return {
+      userId,
+      score: participant.score,
+      correctCount: participant.correctCount,
+      totalTime: participant.totalTime,
+      problemProgress
+    };
+  }
+
+  /**
+   * 请求结算：检查 60 秒冷却时间。
+   * 返回是否可以结算，以及剩余冷却时间。
+   */
+  async requestSettlement(matchId: string, userId: string): Promise<{
+    canSettle: boolean;
+    remainingCooldown: number;
+  }> {
+    const participant = await prisma.matchParticipant.findFirst({
+      where: { matchId, userId }
+    });
+
+    if (!participant) {
+      throw new Error('未找到参赛记录');
+    }
+
+    const now = Date.now();
+    const lastSettlement = participant.lastSettlementAt
+      ? new Date(participant.lastSettlementAt).getTime()
+      : 0;
+
+    const elapsed = now - lastSettlement;
+    const remainingCooldown = Math.max(0, SETTLEMENT_COOLDOWN_MS - elapsed);
+
+    return {
+      canSettle: remainingCooldown === 0,
+      remainingCooldown
+    };
   }
 
   async getMatchHistory(userId: string, limit: number = 20): Promise<any[]> {
@@ -444,11 +559,7 @@ export class MatchService {
           include: {
             participants: {
               include: {
-                user: {
-                  select: {
-                    username: true
-                  }
-                }
+                user: { select: { username: true } }
               }
             }
           }
@@ -466,10 +577,7 @@ export class MatchService {
 
   async getLeaderboard(type: string = '1V1_RANKED', limit: number = 20): Promise<any[]> {
     const matches = await prisma.match.findMany({
-      where: {
-        type,
-        status: 'COMPLETED'
-      },
+      where: { type, status: 'COMPLETED' },
       include: {
         participants: {
           include: {
@@ -546,17 +654,53 @@ export class MatchService {
     return sorted[0];
   }
 
-  private async getRandomProblems(count: number): Promise<string[]> {
-    const problems = await prisma.problem.findMany({
-      where: {
-        testCases: { not: '[]' }
-      },
-      select: { id: true },
-      take: count * 2
-    });
+  /**
+   * 按题型混合选题：根据比赛类型配置各题型数量。
+   * 若某题型数量不足，用其他题型补充。
+   */
+  private async getRandomProblems(matchType: string, count: number): Promise<string[]> {
+    const distribution = PROBLEM_TYPE_DISTRIBUTION[matchType] || PROBLEM_TYPE_DISTRIBUTION['1V1_RANKED'];
 
-    const shuffled = problems.sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, count).map(p => p.id);
+    const result: string[] = [];
+    const usedIds = new Set<string>();
+
+    // 按配置的题型分布分别查询
+    for (const slot of distribution) {
+      const needed = slot.count;
+      const problems = await prisma.problem.findMany({
+        where: {
+          type: slot.type,
+          id: { notIn: Array.from(usedIds) }
+        },
+        select: { id: true }
+      });
+
+      const shuffled = problems.sort(() => Math.random() - 0.5);
+      const selected = shuffled.slice(0, needed);
+
+      for (const p of selected) {
+        result.push(p.id);
+        usedIds.add(p.id);
+      }
+    }
+
+    // 若总数不足，用任意题型补充
+    if (result.length < count) {
+      const remaining = count - result.length;
+      const extras = await prisma.problem.findMany({
+        where: { id: { notIn: Array.from(usedIds) } },
+        select: { id: true }
+      });
+
+      const shuffled = extras.sort(() => Math.random() - 0.5);
+      for (const p of shuffled.slice(0, remaining)) {
+        result.push(p.id);
+        usedIds.add(p.id);
+      }
+    }
+
+    // 打乱最终顺序，避免题型固定排列
+    return result.sort(() => Math.random() - 0.5);
   }
 }
 

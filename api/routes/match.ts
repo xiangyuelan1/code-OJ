@@ -125,4 +125,15 @@ router.post('/:id/end', authMiddleware, async (req: Request, res: any): Promise<
   }
 });
 
+/** 请求结算：检查冷却时间，返回是否可结算及剩余冷却时间 */
+router.post('/:id/request-settlement', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const result = await matchService.requestSettlement(req.params.id, userId);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
 export default router;

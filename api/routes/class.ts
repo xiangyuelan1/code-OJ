@@ -136,6 +136,36 @@ router.put('/:id', authMiddleware, async (req: Request, res: any): Promise<void>
   }
 });
 
+/**
+ * 更新班级 AI 费用承担模式（教师或管理员）
+ */
+router.put('/:id/ai-billing', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const userRole = (req as any).user.role;
+    const classId = req.params.id;
+    const { aiBillingMode } = req.body;
+
+    if (!aiBillingMode || !['TEACHER_PAYS', 'STUDENT_PAYS'].includes(aiBillingMode)) {
+      res.status(400).json({ success: false, error: { message: '无效的计费模式，可选值: TEACHER_PAYS, STUDENT_PAYS' } });
+      return;
+    }
+
+    if (userRole !== 'ADMIN') {
+      const isCreator = await classService.isClassCreator(classId, userId);
+      if (!isCreator) {
+        res.status(403).json({ success: false, error: { message: '只有班级创建者或管理员可以修改AI费用设置' } });
+        return;
+      }
+    }
+
+    const cls = await classService.updateClassAIBilling(classId, aiBillingMode);
+    res.json({ success: true, data: cls });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
 router.delete('/:id', authMiddleware, async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;

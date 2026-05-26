@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../../stores/auth.store';
-import { classAPI, problemsAPI, usersAPI, knowledgeTreeAPI } from '../../services/api';
+import { classAPI, problemsAPI, usersAPI, knowledgeTreeAPI, enhancedAiAPI } from '../../services/api';
 import {
   Plus, Users, BookOpen, ClipboardList, FileText, X, ChevronRight,
   CheckCircle2, XCircle, Clock, Save, Search, Loader2, GraduationCap,
   Calendar, ArrowLeft, Copy, RefreshCw, UserPlus,
   ChevronDown, TreePine, Trash2, BookMarked, FolderOpen,
+  Zap, DollarSign, Cpu, ToggleLeft, ToggleRight,
 } from 'lucide-react';
 
 type ViewMode = 'list' | 'create' | 'detail';
-type DetailTab = 'members' | 'homework' | 'exam' | 'course';
+type DetailTab = 'members' | 'homework' | 'exam' | 'course' | 'ai-usage';
 type ProblemSelectorTab = 'search' | 'tree';
 
 interface ClassForm {
@@ -148,6 +149,12 @@ export function TeacherClassesPage() {
   const [joinRequestsLoading, setJoinRequestsLoading] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
 
+  /* ---- AI用量相关状态 ---- */
+  const [aiUsage, setAiUsage] = useState<any>(null);
+  const [aiUsageLoading, setAiUsageLoading] = useState(false);
+  const [aiBillingMode, setAiBillingMode] = useState<string>('STUDENT_PAYS');
+  const [aiBillingSaving, setAiBillingSaving] = useState(false);
+
   useEffect(() => { fetchClasses(); }, []);
 
   /* ==================== 数据获取 ==================== */
@@ -203,6 +210,36 @@ export function TeacherClassesPage() {
       console.error('获取加入申请失败', error);
     } finally {
       setJoinRequestsLoading(false);
+    }
+  };
+
+  const fetchAIUsage = async (classId: string) => {
+    setAiUsageLoading(true);
+    try {
+      const res = await enhancedAiAPI.getClassAIUsage(classId);
+      if (res.success) {
+        setAiUsage(res.data);
+        setAiBillingMode(res.data?.aiBillingMode || 'STUDENT_PAYS');
+      }
+    } catch (error) {
+      console.error('获取班级AI用量失败', error);
+    } finally {
+      setAiUsageLoading(false);
+    }
+  };
+
+  const handleUpdateAIBilling = async () => {
+    if (!selectedClass) return;
+    setAiBillingSaving(true);
+    try {
+      const res = await classAPI.updateClassAIBilling(selectedClass.id, aiBillingMode);
+      if (res.success) {
+        alert('AI费用设置已更新');
+      }
+    } catch (error: any) {
+      alert(error.error?.message || '更新AI费用设置失败');
+    } finally {
+      setAiBillingSaving(false);
     }
   };
 
@@ -490,6 +527,9 @@ export function TeacherClassesPage() {
     if (tab === 'course') {
       loadCourses(selectedClass.id);
       fetchProblems();
+    }
+    if (tab === 'ai-usage') {
+      fetchAIUsage(selectedClass.id);
     }
   };
 
@@ -1394,6 +1434,7 @@ export function TeacherClassesPage() {
             { key: 'homework' as DetailTab, label: '作业管理', icon: ClipboardList },
             { key: 'exam' as DetailTab, label: '班级考试', icon: FileText },
             { key: 'course' as DetailTab, label: '课程体系', icon: BookMarked },
+            { key: 'ai-usage' as DetailTab, label: 'AI费用设置', icon: Zap },
           ]).map(tab => (
             <button
               key={tab.key}
@@ -1934,6 +1975,171 @@ export function TeacherClassesPage() {
 
         {/* ========== 课程体系 Tab ========== */}
         {activeTab === 'course' && renderCourseTab()}
+
+        {/* ========== AI费用设置 Tab ========== */}
+        {activeTab === 'ai-usage' && (
+          <div>
+            {/* 计费模式设置 */}
+            <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-6">
+              <div className="flex items-center gap-3 mb-4">
+                <DollarSign className="h-5 w-5 text-cyan-400" />
+                <h3 className="text-lg font-semibold text-white">AI费用承担模式</h3>
+              </div>
+              <p className="text-slate-400 text-sm mb-4">
+                设置本班级中 AI 功能产生的费用由谁承担。教师承担模式下，班级内所有学生的 AI 用量费用由教师统一支付；学生自付模式下，每位学生自行承担自己的 AI 用量费用。
+              </p>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setAiBillingMode('TEACHER_PAYS')}
+                  className={`flex items-center gap-2 px-5 py-3 rounded-lg border-2 transition-all ${
+                    aiBillingMode === 'TEACHER_PAYS'
+                      ? 'border-cyan-500 bg-cyan-500/10 text-cyan-400'
+                      : 'border-slate-600 bg-slate-700 text-slate-300 hover:border-slate-500'
+                  }`}
+                >
+                  {aiBillingMode === 'TEACHER_PAYS' ? (
+                    <ToggleRight className="h-5 w-5" />
+                  ) : (
+                    <ToggleLeft className="h-5 w-5" />
+                  )}
+                  <span className="font-medium">教师承担</span>
+                </button>
+                <button
+                  onClick={() => setAiBillingMode('STUDENT_PAYS')}
+                  className={`flex items-center gap-2 px-5 py-3 rounded-lg border-2 transition-all ${
+                    aiBillingMode === 'STUDENT_PAYS'
+                      ? 'border-purple-500 bg-purple-500/10 text-purple-400'
+                      : 'border-slate-600 bg-slate-700 text-slate-300 hover:border-slate-500'
+                  }`}
+                >
+                  {aiBillingMode === 'STUDENT_PAYS' ? (
+                    <ToggleRight className="h-5 w-5" />
+                  ) : (
+                    <ToggleLeft className="h-5 w-5" />
+                  )}
+                  <span className="font-medium">学生自付</span>
+                </button>
+                <button
+                  onClick={handleUpdateAIBilling}
+                  disabled={aiBillingSaving}
+                  className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg transition-colors ml-2"
+                >
+                  {aiBillingSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  保存设置
+                </button>
+              </div>
+            </div>
+
+            {/* 班级AI用量统计 */}
+            <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <Zap className="h-5 w-5 text-cyan-400" />
+                  <h3 className="text-lg font-semibold text-white">班级AI用量</h3>
+                </div>
+                <button
+                  onClick={() => selectedClass && fetchAIUsage(selectedClass.id)}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm transition-colors"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  刷新
+                </button>
+              </div>
+
+              {aiUsageLoading ? (
+                <div className="flex justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-4 border-cyan-500 border-t-transparent"></div>
+                </div>
+              ) : !aiUsage ? (
+                <div className="text-center py-12 text-slate-500">
+                  <Zap className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                  <p>暂无AI用量数据</p>
+                </div>
+              ) : (
+                <div>
+                  {/* 汇总卡片 */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div className="bg-slate-750 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Zap className="h-4 w-4 text-cyan-400" />
+                        <span className="text-slate-400 text-sm">总Token用量</span>
+                      </div>
+                      <div className="text-2xl font-bold text-cyan-400">
+                        {aiUsage.classTotal?.totalTokens
+                          ? aiUsage.classTotal.totalTokens >= 1000
+                            ? `${(aiUsage.classTotal.totalTokens / 1000).toFixed(1)}K`
+                            : aiUsage.classTotal.totalTokens
+                          : 0}
+                      </div>
+                    </div>
+                    <div className="bg-slate-750 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <DollarSign className="h-4 w-4 text-green-400" />
+                        <span className="text-slate-400 text-sm">总费用</span>
+                      </div>
+                      <div className="text-2xl font-bold text-green-400">
+                        ¥{(aiUsage.classTotal?.totalCost ?? 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="bg-slate-750 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Cpu className="h-4 w-4 text-purple-400" />
+                        <span className="text-slate-400 text-sm">总调用次数</span>
+                      </div>
+                      <div className="text-2xl font-bold text-purple-400">
+                        {aiUsage.classTotal?.totalCalls ?? 0}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 成员用量明细 */}
+                  {(aiUsage.users || []).length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="bg-slate-700">
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">用户</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">角色</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">Token用量</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">费用</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">调用次数</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700">
+                          {aiUsage.users.map((u: any) => (
+                            <tr key={u.userId} className="hover:bg-slate-750 transition-colors">
+                              <td className="px-4 py-3 text-white text-sm">{u.username || u.userId}</td>
+                              <td className="px-4 py-3">
+                                <span className={`text-xs px-2 py-1 rounded ${
+                                  u.role === 'TEACHER'
+                                    ? 'bg-blue-500/20 text-blue-400'
+                                    : 'bg-green-500/20 text-green-400'
+                                }`}>
+                                  {u.role === 'TEACHER' ? '教师' : '学生'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-cyan-400 text-sm">
+                                {u.totalTokens >= 1000
+                                  ? `${(u.totalTokens / 1000).toFixed(1)}K`
+                                  : u.totalTokens ?? 0}
+                              </td>
+                              <td className="px-4 py-3 text-green-400 text-sm">¥{(u.totalCost ?? 0).toFixed(4)}</td>
+                              <td className="px-4 py-3 text-slate-300 text-sm">{u.totalCalls ?? 0}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

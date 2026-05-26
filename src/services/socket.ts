@@ -19,6 +19,7 @@ interface SocketState {
   matchStatus: any;
   matchFound: any;
   matchEvents: any[];
+  opponentProgress: any;
   error: string | null;
 
   connect: (token: string) => void;
@@ -62,6 +63,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
   matchStatus: null,
   matchFound: null,
   matchEvents: [],
+  opponentProgress: null,
   error: null,
 
   connect: (token: string) => {
@@ -139,6 +141,10 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
     socket.on('match:settlement-rejected', (data: any) => {
       get().pushMatchEvent({ type: 'settlement-rejected', ...data });
+    });
+
+    socket.on('match:progress', (data: any) => {
+      set({ opponentProgress: data });
     });
 
     socket.on('exam:warning', (data: any) => {

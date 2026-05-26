@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { problemsAPI, enhancedAiAPI } from '../../services/api';
-import { Plus, Edit, Trash2, Code, CheckCircle, PenTool, Search, Upload, Loader2, X, Tags } from 'lucide-react';
+import { Plus, Edit, Trash2, Code, CheckCircle, PenTool, Search, Upload, Loader2, X, Tags, ChevronDown, Calendar, AlertTriangle } from 'lucide-react';
+
+type BatchDeleteMode = 'selected' | 'byDate' | 'all' | null;
 
 export function AdminProblemsPage() {
   const [problems, setProblems] = useState<any[]>([]);
@@ -15,8 +17,27 @@ export function AdminProblemsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [classifyLoading, setClassifyLoading] = useState(false);
 
+  // 批量删除相关状态
+  const [showDeleteMenu, setShowDeleteMenu] = useState(false);
+  const [deleteMode, setDeleteMode] = useState<BatchDeleteMode>(null);
+  const [beforeDate, setBeforeDate] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const deleteMenuRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     loadProblems();
+  }, []);
+
+  // 点击外部关闭批量删除下拉菜单
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (deleteMenuRef.current && !deleteMenuRef.current.contains(e.target as Node)) {
+        setShowDeleteMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const loadProblems = async () => {
@@ -42,6 +63,63 @@ export function AdminProblemsPage() {
       console.error('删除失败', error);
       alert('删除失败');
     }
+  };
+
+  const handleBatchDelete = async () => {
+    let params: { ids?: string[]; beforeDate?: string; deleteAll?: boolean } = {};
+
+    if (deleteMode === 'selected') {
+      if (selectedIds.size === 0) {
+        alert('请先选择要删除的题目');
+        return;
+      }
+      params = { ids: Array.from(selectedIds) };
+    } else if (deleteMode === 'byDate') {
+      if (!beforeDate) {
+        alert('请选择日期');
+        return;
+      }
+      params = { beforeDate };
+    } else if (deleteMode === 'all') {
+      params = { deleteAll: true };
+    } else {
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      const res = await problemsAPI.batchDelete(params);
+      if (res.success) {
+        alert(`成功删除 ${res.data.deletedCount} 道题目`);
+        setDeleteMode(null);
+        setBeforeDate('');
+        setConfirmText('');
+        setSelectedIds(new Set());
+        setBatchMode(false);
+        setShowDeleteMenu(false);
+        loadProblems();
+      }
+    } catch (error: any) {
+      alert(error.error?.message || '批量删除失败');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const openDeleteConfirm = (mode: BatchDeleteMode) => {
+    if (mode === 'selected' && selectedIds.size === 0) {
+      alert('请先选择要删除的题目');
+      return;
+    }
+    setDeleteMode(mode);
+    setConfirmText('');
+    setShowDeleteMenu(false);
+  };
+
+  const closeDeleteConfirm = () => {
+    setDeleteMode(null);
+    setBeforeDate('');
+    setConfirmText('');
   };
 
   const handleImport = async () => {
@@ -201,6 +279,46 @@ export function AdminProblemsPage() {
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-white">题目管理</h1>
         <div className="flex gap-3">
+          <div className="relative" ref={deleteMenuRef}>
+            <button
+              onClick={() => setShowDeleteMenu(!showDeleteMenu)}
+              className="flex items-center bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+            >
+              <Trash2 className="h-5 w-5 mr-2" />
+              批量删除
+              <ChevronDown className="h-4 w-4 ml-1" />
+            </button>
+            {showDeleteMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-slate-700 rounded-lg shadow-xl z-50 border border-slate-600 overflow-hidden">
+                <button
+                  onClick={() => {
+                    if (!batchMode) {
+                      setBatchMode(true);
+                    }
+                    openDeleteConfirm('selected');
+                  }}
+                  className="w-full text-left px-4 py-3 text-slate-200 hover:bg-slate-600 transition-colors flex items-center gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  删除所选
+                </button>
+                <button
+                  onClick={() => openDeleteConfirm('byDate')}
+                  className="w-full text-left px-4 py-3 text-slate-200 hover:bg-slate-600 transition-colors flex items-center gap-2"
+                >
+                  <Calendar className="h-4 w-4" />
+                  按时间删除
+                </button>
+                <button
+                  onClick={() => openDeleteConfirm('all')}
+                  className="w-full text-left px-4 py-3 text-red-400 hover:bg-slate-600 transition-colors flex items-center gap-2"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  删除全部
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => setShowImport(true)}
             className="flex items-center bg-purple-500 hover:bg-purple-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
@@ -244,6 +362,14 @@ export function AdminProblemsPage() {
             >
               {classifyLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Tags className="h-4 w-4 mr-2" />}
               {classifyLoading ? 'AI分类中...' : `AI打标签 (${selectedIds.size})`}
+            </button>
+            <button
+              onClick={() => openDeleteConfirm('selected')}
+              disabled={selectedIds.size === 0}
+              className="flex items-center px-4 py-2 bg-red-500/80 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              删除所选 ({selectedIds.size})
             </button>
           </>
         )}
@@ -434,6 +560,83 @@ export function AdminProblemsPage() {
                 >
                   {importing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
                   {importing ? '导入中...' : '开始导入'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 批量删除确认对话框 */}
+      {deleteMode && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-red-400 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" />
+                确认批量删除
+              </h2>
+              <button onClick={closeDeleteConfirm} className="text-slate-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {deleteMode === 'selected' && (
+                <p className="text-slate-300">
+                  确定要删除选中的 <span className="text-red-400 font-bold">{selectedIds.size}</span> 道题目吗？此操作不可撤销。
+                </p>
+              )}
+
+              {deleteMode === 'byDate' && (
+                <div className="space-y-3">
+                  <p className="text-slate-300">删除指定日期之前创建的所有题目：</p>
+                  <input
+                    type="date"
+                    value={beforeDate}
+                    onChange={(e) => setBeforeDate(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                  <p className="text-slate-500 text-sm">将删除 {beforeDate || '...'} 之前创建的所有题目</p>
+                </div>
+              )}
+
+              {deleteMode === 'all' && (
+                <div className="space-y-3">
+                  <p className="text-red-400 font-medium">
+                    ⚠️ 此操作将删除系统中所有题目，不可撤销！
+                  </p>
+                  <p className="text-slate-300">
+                    请输入 <span className="text-red-400 font-mono font-bold">确认删除</span> 以继续：
+                  </p>
+                  <input
+                    type="text"
+                    value={confirmText}
+                    onChange={(e) => setConfirmText(e.target.value)}
+                    placeholder="确认删除"
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={closeDeleteConfirm}
+                  className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleBatchDelete}
+                  disabled={
+                    deleting ||
+                    (deleteMode === 'byDate' && !beforeDate) ||
+                    (deleteMode === 'all' && confirmText !== '确认删除')
+                  }
+                  className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                  {deleting ? '删除中...' : '确认删除'}
                 </button>
               </div>
             </div>

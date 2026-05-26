@@ -28,11 +28,7 @@ export function setupSocketIO(httpServer: any) {
   const io = new SocketIOServer(httpServer, {
     cors: {
       origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-        if (!origin || origin.startsWith('http://localhost')) {
-          callback(null, true);
-        } else {
-          callback(null, true);
-        }
+        callback(null, true);
       },
       credentials: true
     }
@@ -294,15 +290,33 @@ async function handleMatchCancel(io: SocketIOServer, socket: any) {
   socket.leave(`match:${type}`);
 }
 
+/**
+ * 处理答题事件：广播答题通知和实时进度更新。
+ * 不再广播答案内容（安全），仅通知对方某题已作答。
+ */
 async function handleMatchAnswer(io: SocketIOServer, socket: any, data: { matchId: string; problemIndex: number; answer: string; time: number }) {
   const matchRoom = `match-room:${data.matchId}`;
+
+  // 广播答题通知（不含答案内容）
   io.to(matchRoom).emit('match:answer', {
     userId: socket.userId,
     username: socket.username,
     problemIndex: data.problemIndex,
-    answer: data.answer,
     time: data.time
   });
+
+  // 广播双方实时进度
+  try {
+    const match = await matchService.getMatch(data.matchId);
+    if (match?.participants) {
+      for (const participant of match.participants) {
+        const progress = await matchService.getParticipantProgress(data.matchId, participant.userId);
+        io.to(matchRoom).emit('match:progress', progress);
+      }
+    }
+  } catch (e) {
+    console.error('获取进度失败:', e);
+  }
 }
 
 const settlementRequests = new Map<string, Set<string>>();
@@ -367,7 +381,7 @@ async function handleSettlementReject(io: SocketIOServer, socket: any, matchId: 
 
 async function handleExamHeartbeat(io: SocketIOServer, socket: any, examId: string) {
   socket.join(`exam:${examId}`);
-  
+
   io.to(`exam:${examId}`).emit('exam:heartbeat', {
     userId: socket.userId,
     timestamp: new Date()

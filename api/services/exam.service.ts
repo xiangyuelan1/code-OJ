@@ -46,29 +46,32 @@ export class ExamService {
     enableProctoring?: boolean;
     problemIds: string[];
     points?: number[];
+    classId?: string;
     createdBy: string;
   }) {
     const { problemIds, points: customPoints, ...examData } = data;
 
-    const exam = await prisma.exam.create({
-      data: {
-        ...examData,
-        createdBy: data.createdBy
-      }
-    });
-
-    for (let i = 0; i < problemIds.length; i++) {
-      await prisma.examQuestion.create({
+    return await prisma.$transaction(async (tx) => {
+      const exam = await tx.exam.create({
         data: {
-          examId: exam.id,
-          problemId: problemIds[i],
-          order: i,
-          points: customPoints?.[i] || 10
+          ...examData,
+          createdBy: data.createdBy
         }
       });
-    }
 
-    return exam;
+      if (problemIds.length > 0) {
+        await tx.examQuestion.createMany({
+          data: problemIds.map((problemId, i) => ({
+            examId: exam.id,
+            problemId,
+            order: i,
+            points: customPoints?.[i] || 10
+          }))
+        });
+      }
+
+      return exam;
+    });
   }
 
   async updateExam(examId: string, data: any) {
@@ -122,9 +125,27 @@ export class ExamService {
     };
   }
 
-  async getExams(createdBy?: string) {
+  async getExams(createdBy?: string, userId?: string, userRole?: string) {
+    let where: any = createdBy ? { createdBy } : {};
+
+    if (userRole === 'STUDENT' && userId) {
+      const memberships = await prisma.classMember.findMany({
+        where: { userId },
+        select: { classId: true }
+      });
+      const classIds = memberships.map(m => m.classId);
+
+      where = {
+        ...where,
+        OR: [
+          { classId: null },
+          { classId: { in: classIds } }
+        ]
+      };
+    }
+
     return await prisma.exam.findMany({
-      where: createdBy ? { createdBy } : {},
+      where,
       include: {
         creator: {
           select: { id: true, username: true }
@@ -141,6 +162,24 @@ export class ExamService {
   }
 
   async startExam(examId: string, userId: string) {
+    const exam = await prisma.exam.findUnique({
+      where: { id: examId },
+      select: { classId: true }
+    });
+
+    if (!exam) {
+      throw new Error('考试不存在');
+    }
+
+    if (exam.classId) {
+      const membership = await prisma.classMember.findUnique({
+        where: { classId_userId: { classId: exam.classId, userId } }
+      });
+      if (!membership) {
+        throw new Error('您不是该班级的成员，无法参加此考试');
+      }
+    }
+
     const gradedAttempt = await prisma.examAttempt.findFirst({
       where: {
         examId,

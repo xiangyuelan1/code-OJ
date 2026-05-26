@@ -126,6 +126,16 @@ export class ClassService {
     });
   }
 
+  /**
+   * 更新班级的 AI 费用承担模式（教师承担 / 学生自付）
+   */
+  async updateClassAIBilling(classId: string, aiBillingMode: 'TEACHER_PAYS' | 'STUDENT_PAYS') {
+    return await prisma.class.update({
+      where: { id: classId },
+      data: { aiBillingMode },
+    });
+  }
+
   async deleteClass(id: string) {
     return await prisma.class.delete({
       where: { id },

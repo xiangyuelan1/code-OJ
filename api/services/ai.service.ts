@@ -82,7 +82,7 @@ export class AIService {
   }
 
   async explainCode(code: string, language: string, userId?: string): Promise<string> {
-    if (!(await this.isEnabled())) {
+    if (!(await this.isFeatureEnabled('explain-code'))) {
       return this.fallbackExplainCode(code, language);
     }
 
@@ -96,7 +96,7 @@ export class AIService {
   }
 
   async getHint(problem: { title: string; description: string }, context?: string, userId?: string): Promise<string> {
-    if (!(await this.isEnabled())) {
+    if (!(await this.isFeatureEnabled('hint'))) {
       return this.fallbackGetHint(problem, context);
     }
 
@@ -149,7 +149,7 @@ ${context ? `\n用户当前进度：${context}\n` : ''}
   }
 
   async diagnoseError(code: string, language: string, error: string, userId?: string): Promise<string> {
-    if (!(await this.isEnabled())) {
+    if (!(await this.isFeatureEnabled('diagnose'))) {
       return this.fallbackDiagnoseError(code, language, error);
     }
 
@@ -168,7 +168,7 @@ ${context ? `\n用户当前进度：${context}\n` : ''}
     problem: { title: string; description: string };
     testCases: TestCase[];
   }, userId?: string): Promise<AiJudgeResult> {
-    if (!(await this.isEnabled())) {
+    if (!(await this.isFeatureEnabled('ai-judge'))) {
       return this.fallbackAiJudge(params);
     }
 
@@ -345,7 +345,7 @@ ${testCaseSummary}
   }
 
   async generateSolution(problem: { title: string; description: string; type: string }, userId?: string): Promise<ProblemSolution> {
-    if (!(await this.isEnabled())) {
+    if (!(await this.isFeatureEnabled('generate-solution'))) {
       throw new Error('AI功能未启用');
     }
 
@@ -396,7 +396,7 @@ ${problem.description}
   }
 
   async generateTestCases(problem: { title: string; description: string }, userId?: string): Promise<TestCase[]> {
-    if (!(await this.isEnabled())) {
+    if (!(await this.isFeatureEnabled('generate-testcases'))) {
       throw new Error('AI功能未启用');
     }
 
@@ -434,7 +434,7 @@ ${problem.description}
   }
 
   async parseFileToKnowledgeTree(content: string, userId?: string): Promise<KnowledgeNode[]> {
-    if (!(await this.isEnabled())) {
+    if (!(await this.isFeatureEnabled('parse-knowledge-tree'))) {
       throw new Error('AI功能未启用');
     }
 
@@ -506,7 +506,7 @@ ${content}
   }
 
   async classifyProblem(problem: { title: string; description: string; type: string }, knowledgeTree: KnowledgeNode[], userId?: string): Promise<{ nodeIds: string[]; reason: string }> {
-    if (!(await this.isEnabled())) {
+    if (!(await this.isFeatureEnabled('classify-problem'))) {
       throw new Error('AI功能未启用');
     }
 
@@ -774,7 +774,7 @@ ${JSON.stringify(knowledgeTree, null, 2)}
       }
     }
 
-    if (!(await this.isEnabled())) {
+    if (!(await this.isFeatureEnabled('parse-problem-file'))) {
       if (fileType === 'txt' || fileType === 'text') {
         throw new Error('无法从文本中解析出题目，请检查格式。也可以配置AI API来增强解析能力。');
       }
@@ -1351,6 +1351,229 @@ DP 解题步骤：
   }
 
   /**
+   * 获取指定班级的 AI 用量统计，按用户聚合。
+   * 返回每个学生的 token、费用、功能明细，以及班级汇总。
+   */
+  async getAIUsageByClass(classId: string) {
+    const members = await prisma.classMember.findMany({
+      where: { classId },
+      select: { userId: true, role: true },
+    });
+
+    const memberUserIds = members.map(m => m.userId);
+
+    const cls = await prisma.class.findUnique({
+      where: { id: classId },
+      select: { id: true, name: true, aiBillingMode: true },
+    });
+
+    if (!cls) throw new Error('班级不存在');
+
+    const logs = await prisma.aIUsageLog.findMany({
+      where: { userId: { in: memberUserIds } },
+      include: { user: { select: { id: true, username: true, email: true } } },
+    });
+
+    const byUser: Record<string, {
+      userId: string;
+      username: string;
+      email: string;
+      role: string;
+      totalTokens: number;
+      totalCost: number;
+      totalCalls: number;
+      byFeature: Record<string, { totalTokens: number; totalCost: number; count: number }>;
+    }> = {};
+
+    for (const member of members) {
+      byUser[member.userId] = {
+        userId: member.userId,
+        username: '',
+        email: '',
+        role: member.role,
+        totalTokens: 0,
+        totalCost: 0,
+        totalCalls: 0,
+        byFeature: {},
+      };
+    }
+
+    for (const log of logs) {
+      const entry = byUser[log.userId];
+      if (!entry) continue;
+
+      entry.username = log.user.username;
+      entry.email = log.user.email;
+      entry.totalTokens += log.totalTokens;
+      entry.totalCost += log.cost;
+      entry.totalCalls += 1;
+
+      if (!entry.byFeature[log.feature]) {
+        entry.byFeature[log.feature] = { totalTokens: 0, totalCost: 0, count: 0 };
+      }
+      entry.byFeature[log.feature].totalTokens += log.totalTokens;
+      entry.byFeature[log.feature].totalCost += log.cost;
+      entry.byFeature[log.feature].count += 1;
+    }
+
+    const classTotalTokens = Object.values(byUser).reduce((s, u) => s + u.totalTokens, 0);
+    const classTotalCost = Object.values(byUser).reduce((s, u) => s + u.totalCost, 0);
+    const classTotalCalls = Object.values(byUser).reduce((s, u) => s + u.totalCalls, 0);
+
+    return {
+      classId: cls.id,
+      className: cls.name,
+      aiBillingMode: cls.aiBillingMode,
+      classTotal: {
+        totalTokens: classTotalTokens,
+        totalCost: Math.round(classTotalCost * 10000) / 10000,
+        totalCalls: classTotalCalls,
+      },
+      users: Object.values(byUser),
+    };
+  }
+
+  /**
+   * 获取指定教师所有班级的 AI 用量统计。
+   * 返回每个班级的汇总、每个班级内每个学生的用量，以及教师整体汇总与费用分摊信息。
+   */
+  async getAIUsageByTeacher(teacherId: string) {
+    const teacherClasses = await prisma.class.findMany({
+      where: { createdBy: teacherId },
+      select: { id: true, name: true, aiBillingMode: true },
+    });
+
+    if (teacherClasses.length === 0) {
+      return {
+        teacherId,
+        overallTotal: { totalTokens: 0, totalCost: 0, totalCalls: 0 },
+        teacherCost: 0,
+        studentCost: 0,
+        classes: [],
+      };
+    }
+
+    const classIds = teacherClasses.map(c => c.id);
+
+    const allMembers = await prisma.classMember.findMany({
+      where: { classId: { in: classIds } },
+      select: { classId: true, userId: true, role: true },
+    });
+
+    const allUserIds = [...new Set(allMembers.map(m => m.userId))];
+
+    const logs = allUserIds.length > 0
+      ? await prisma.aIUsageLog.findMany({
+          where: { userId: { in: allUserIds } },
+          include: { user: { select: { id: true, username: true, email: true } } },
+        })
+      : [];
+
+    const logsByUser = new Map<string, typeof logs>();
+    for (const log of logs) {
+      const list = logsByUser.get(log.userId) || [];
+      list.push(log);
+      logsByUser.set(log.userId, list);
+    }
+
+    const membersByClass = new Map<string, typeof allMembers>();
+    for (const m of allMembers) {
+      const list = membersByClass.get(m.classId) || [];
+      list.push(m);
+      membersByClass.set(m.classId, list);
+    }
+
+    let overallTokens = 0;
+    let overallCost = 0;
+    let overallCalls = 0;
+    let teacherTotalCost = 0;
+    let studentTotalCost = 0;
+
+    const classResults = teacherClasses.map(cls => {
+      const classMembers = membersByClass.get(cls.id) || [];
+      const isTeacherPays = cls.aiBillingMode === 'TEACHER_PAYS';
+
+      let classTokens = 0;
+      let classCost = 0;
+      let classCalls = 0;
+      let classTeacherCost = 0;
+      let classStudentCost = 0;
+
+      const userUsages = classMembers.map(member => {
+        const userLogs = logsByUser.get(member.userId) || [];
+        const userTokens = userLogs.reduce((s, l) => s + l.totalTokens, 0);
+        const userCost = userLogs.reduce((s, l) => s + l.cost, 0);
+        const userCalls = userLogs.length;
+
+        const byFeature: Record<string, { totalTokens: number; totalCost: number; count: number }> = {};
+        for (const log of userLogs) {
+          if (!byFeature[log.feature]) {
+            byFeature[log.feature] = { totalTokens: 0, totalCost: 0, count: 0 };
+          }
+          byFeature[log.feature].totalTokens += log.totalTokens;
+          byFeature[log.feature].totalCost += log.cost;
+          byFeature[log.feature].count += 1;
+        }
+
+        const userInfo = userLogs[0]?.user || { id: member.userId, username: '未知', email: '' };
+
+        if (isTeacherPays || member.role === 'TEACHER') {
+          classTeacherCost += userCost;
+        } else {
+          classStudentCost += userCost;
+        }
+
+        classTokens += userTokens;
+        classCost += userCost;
+        classCalls += userCalls;
+
+        return {
+          userId: member.userId,
+          username: userInfo.username,
+          email: userInfo.email,
+          role: member.role,
+          totalTokens: userTokens,
+          totalCost: Math.round(userCost * 10000) / 10000,
+          totalCalls: userCalls,
+          byFeature,
+        };
+      });
+
+      overallTokens += classTokens;
+      overallCost += classCost;
+      overallCalls += classCalls;
+      teacherTotalCost += classTeacherCost;
+      studentTotalCost += classStudentCost;
+
+      return {
+        classId: cls.id,
+        className: cls.name,
+        aiBillingMode: cls.aiBillingMode,
+        classTotal: {
+          totalTokens: classTokens,
+          totalCost: Math.round(classCost * 10000) / 10000,
+          totalCalls: classCalls,
+        },
+        teacherCost: Math.round(classTeacherCost * 10000) / 10000,
+        studentCost: Math.round(classStudentCost * 10000) / 10000,
+        users: userUsages,
+      };
+    });
+
+    return {
+      teacherId,
+      overallTotal: {
+        totalTokens: overallTokens,
+        totalCost: Math.round(overallCost * 10000) / 10000,
+        totalCalls: overallCalls,
+      },
+      teacherCost: Math.round(teacherTotalCost * 10000) / 10000,
+      studentCost: Math.round(studentTotalCost * 10000) / 10000,
+      classes: classResults,
+    };
+  }
+
+  /**
    * 获取AI使用日志（分页）
    */
   async getAIUsageLogs(params: { userId?: string; feature?: string; page?: number; pageSize?: number }) {
@@ -1449,7 +1672,7 @@ DP 解题步骤：
       };
     }
 
-    if (!(await this.isEnabled())) {
+    if (!(await this.isFeatureEnabled('generate-exam'))) {
       const shuffled = [...filtered].sort(() => Math.random() - 0.5);
       const selected = shuffled.slice(0, problemCount);
       return {
@@ -1511,7 +1734,7 @@ ${JSON.stringify(problemList, null, 2)}
   }
 
   async optimizeCode(code: string, language: string, userId?: string): Promise<string> {
-    if (!(await this.isEnabled())) {
+    if (!(await this.isFeatureEnabled('optimize-code'))) {
       return `## 代码优化建议\n\nAI功能未启用，无法提供优化建议。请在管理后台配置AI后使用此功能。\n\n### 通用优化建议\n1. 检查是否有重复计算\n2. 考虑使用更高效的数据结构\n3. 注意时间复杂度和空间复杂度`;
     }
 
@@ -1572,7 +1795,7 @@ ${code}
       return { ...p, score };
     }).sort((a, b) => b.score - a.score).slice(0, 5);
 
-    if (!(await this.isEnabled()) || !await this.getConfig().then(c => c?.apiKey)) {
+    if (!(await this.isFeatureEnabled('recommend-similar')) || !await this.getConfig().then(c => c?.apiKey)) {
       return {
         problemIds: scored.map(p => p.id),
         reasoning: `基于标签相似度推荐了 ${scored.length} 道题目`
@@ -1612,6 +1835,360 @@ ${JSON.stringify(scored.map(p => ({ id: p.id, title: p.title, tags: JSON.parse(p
       problemIds: scored.map(p => p.id),
       reasoning: 'AI结果解析失败，已降级为标签相似度推荐'
     };
+  }
+
+  /**
+   * 生成学习路径：根据用户当前水平和薄弱点，规划阶段性学习计划
+   */
+  async generateLearningPath(
+    params: {
+      userId: string;
+      currentLevel: string;
+      targetLevel: string;
+      weakPoints: string[];
+    },
+    userId?: string,
+  ): Promise<{
+    path: Array<{
+      stage: string;
+      description: string;
+      recommendedProblems: string[];
+      estimatedTime: string;
+    }>;
+  }> {
+    if (!(await this.isFeatureEnabled('generate-learning-path'))) {
+      return this.fallbackGenerateLearningPath(params);
+    }
+
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      return this.fallbackGenerateLearningPath(params);
+    }
+
+    const prompt = `你是一位专业的编程教育规划师。请根据以下学生信息，生成一条结构化的学习路径。
+
+当前水平：${params.currentLevel}
+目标水平：${params.targetLevel}
+薄弱知识点：${params.weakPoints.join('、')}
+
+请以JSON格式返回，格式为：
+{
+  "path": [
+    {
+      "stage": "阶段名称",
+      "description": "该阶段的学习目标和内容描述",
+      "recommendedProblems": ["推荐练习的题目类型或关键词"],
+      "estimatedTime": "预计所需时间（如：1-2周）"
+    }
+  ]
+}
+
+要求：
+1. 路径应分为3-5个阶段，循序渐进
+2. 每个阶段应针对薄弱点设计
+3. 推荐题目类型应具体可操作
+4. 预估时间应合理`;
+
+    const response = await this.callAI(prompt, config, 'generate-learning-path', userId);
+
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed.path)) {
+          return { path: parsed.path };
+        }
+      }
+    } catch (e) {
+      console.error('解析学习路径响应失败:', e);
+    }
+
+    return this.fallbackGenerateLearningPath(params);
+  }
+
+  private fallbackGenerateLearningPath(params: {
+    currentLevel: string;
+    targetLevel: string;
+    weakPoints: string[];
+  }) {
+    const stages = [
+      { stage: '基础巩固', description: `巩固${params.weakPoints.slice(0, 2).join('、')}等基础知识`, recommendedProblems: ['基础练习题'], estimatedTime: '1-2周' },
+      { stage: '能力提升', description: `针对${params.weakPoints.join('、')}进行专项训练`, recommendedProblems: ['中等难度练习题'], estimatedTime: '2-3周' },
+      { stage: '综合应用', description: '综合运用所学知识解决复杂问题', recommendedProblems: ['综合练习题', '竞赛题'], estimatedTime: '2-4周' },
+    ];
+    return { path: stages };
+  }
+
+  /**
+   * 分析提交趋势：识别近期提交中的常见错误和改进方向
+   */
+  async analyzeSubmissionTrend(
+    params: {
+      userId: string;
+      recentSubmissions: Array<{
+        problem: string;
+        status: string;
+        code?: string;
+      }>;
+    },
+    userId?: string,
+  ): Promise<{
+    summary: string;
+    commonMistakes: string[];
+    improvementSuggestions: string[];
+    nextSteps: string[];
+  }> {
+    if (!(await this.isFeatureEnabled('analyze-submission-trend'))) {
+      return this.fallbackAnalyzeSubmissionTrend(params);
+    }
+
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      return this.fallbackAnalyzeSubmissionTrend(params);
+    }
+
+    const submissionSummary = params.recentSubmissions
+      .slice(0, 20)
+      .map((s, i) => `  ${i + 1}. 题目: ${s.problem}, 结果: ${s.status}`)
+      .join('\n');
+
+    const prompt = `你是一位专业的编程教育分析师。请分析以下学生的近期提交记录，识别其学习模式和改进方向。
+
+近期提交记录：
+${submissionSummary}
+
+请以JSON格式返回，格式为：
+{
+  "summary": "总体学习情况概述（2-3句话）",
+  "commonMistakes": ["常见错误1", "常见错误2", ...],
+  "improvementSuggestions": ["改进建议1", "改进建议2", ...],
+  "nextSteps": ["下一步行动1", "下一步行动2", ...]
+}
+
+要求：
+1. commonMistakes 列出3-5个最常见的错误模式
+2. improvementSuggestions 给出3-5个具体可执行的改进建议
+3. nextSteps 给出2-3个下一步学习方向`;
+
+    const response = await this.callAI(prompt, config, 'analyze-submission-trend', userId);
+
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          summary: parsed.summary || '暂无分析',
+          commonMistakes: Array.isArray(parsed.commonMistakes) ? parsed.commonMistakes : [],
+          improvementSuggestions: Array.isArray(parsed.improvementSuggestions) ? parsed.improvementSuggestions : [],
+          nextSteps: Array.isArray(parsed.nextSteps) ? parsed.nextSteps : [],
+        };
+      }
+    } catch (e) {
+      console.error('解析提交趋势分析响应失败:', e);
+    }
+
+    return this.fallbackAnalyzeSubmissionTrend(params);
+  }
+
+  private fallbackAnalyzeSubmissionTrend(params: {
+    recentSubmissions: Array<{ problem: string; status: string; code?: string }>;
+  }) {
+    const total = params.recentSubmissions.length;
+    const accepted = params.recentSubmissions.filter(s => s.status === 'ACCEPTED').length;
+    const failed = total - accepted;
+    const rate = total > 0 ? Math.round((accepted / total) * 100) : 0;
+
+    const mistakes: string[] = [];
+    const suggestions: string[] = [];
+
+    if (rate < 30) {
+      mistakes.push('通过率较低，可能存在基础概念理解不足');
+      suggestions.push('建议回顾基础知识点，从简单题目开始练习');
+    } else if (rate < 60) {
+      mistakes.push('部分题目未通过，可能存在算法实现细节问题');
+      suggestions.push('仔细检查边界条件和特殊情况处理');
+    }
+
+    if (failed > accepted) {
+      mistakes.push('失败次数多于成功次数，需要加强练习');
+      suggestions.push('每次提交前先用示例数据手动验证');
+    }
+
+    if (mistakes.length === 0) {
+      mistakes.push('提交记录较少，暂无法识别明显错误模式');
+      suggestions.push('继续练习以积累更多数据');
+    }
+
+    return {
+      summary: `近期提交 ${total} 次，通过 ${accepted} 次，通过率 ${rate}%。`,
+      commonMistakes: mistakes,
+      improvementSuggestions: suggestions,
+      nextSteps: ['继续坚持每日练习', '重点关注未通过题目的错误类型'],
+    };
+  }
+
+  /**
+   * 智能提示：根据尝试次数提供渐进式提示
+   * 尝试1-2次：给出方向性提示
+   * 尝试3-4次：给出具体算法建议
+   * 尝试5次以上：给出接近完整的代码骨架
+   */
+  async smartHint(
+    params: {
+      problem: { title: string; description: string };
+      userCode: string;
+      attemptCount: number;
+      previousHints: string[];
+    },
+    userId?: string,
+  ): Promise<{
+    hint: string;
+    level: string;
+    nextAttemptSuggestion: string;
+  }> {
+    if (!(await this.isFeatureEnabled('smart-hint'))) {
+      return this.fallbackSmartHint(params);
+    }
+
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      return this.fallbackSmartHint(params);
+    }
+
+    let hintLevel: string;
+    let hintInstruction: string;
+
+    if (params.attemptCount <= 2) {
+      hintLevel = '方向性提示';
+      hintInstruction = `请只给出解题的方向性提示，不要提及具体算法名称或代码。
+提示应该帮助学生思考问题的本质，例如：
+- 这道题的核心挑战是什么
+- 应该从什么角度思考
+- 有没有类似的生活场景可以类比`;
+    } else if (params.attemptCount <= 4) {
+      hintLevel = '算法建议';
+      hintInstruction = `请给出具体的算法或数据结构建议，但不要给出完整代码。
+可以提及：
+- 推荐使用什么算法（如动态规划、二分查找等）
+- 算法的核心思路
+- 关键变量的定义方式
+- 但不要给出完整的代码实现`;
+    } else {
+      hintLevel = '代码骨架';
+      hintInstruction = `请给出接近完整的代码骨架，包含：
+- 主要函数结构
+- 关键算法的实现框架
+- 重要的变量声明和初始化
+- 用注释标出需要学生自己填写的部分
+注意：仍然不要给出100%完整的代码，留一些关键部分让学生自己完成`;
+    }
+
+    const previousHintsSection = params.previousHints.length > 0
+      ? `\n之前已给出的提示：\n${params.previousHints.map((h, i) => `  ${i + 1}. ${h}`).join('\n')}\n请在此基础上给出更进一步的提示，不要重复之前的内容。`
+      : '';
+
+    const prompt = `你是一位耐心的编程导师，正在为学生提供渐进式提示。
+
+题目：${params.problem.title}
+${params.problem.description}
+
+学生当前代码：
+\`\`\`
+${params.userCode || '（尚未编写代码）'}
+\`\`\`
+
+学生已经尝试了 ${params.attemptCount} 次。
+
+${hintInstruction}
+${previousHintsSection}
+
+请以JSON格式返回：
+{
+  "hint": "提示内容（Markdown格式）",
+  "nextAttemptSuggestion": "如果学生还是不会，建议下一步尝试什么"
+}`;
+
+    const response = await this.callAI(prompt, config, 'smart-hint', userId);
+
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          hint: parsed.hint || '暂无提示',
+          level: hintLevel,
+          nextAttemptSuggestion: parsed.nextAttemptSuggestion || '继续尝试',
+        };
+      }
+    } catch (e) {
+      console.error('解析智能提示响应失败:', e);
+    }
+
+    return {
+      hint: response,
+      level: hintLevel,
+      nextAttemptSuggestion: '如果仍无法解决，可以查看题解或请教老师',
+    };
+  }
+
+  private fallbackSmartHint(params: {
+    problem: { title: string; description: string };
+    userCode: string;
+    attemptCount: number;
+  }) {
+    const desc = params.problem.description.toLowerCase();
+    let hint: string;
+    let level: string;
+    let nextSuggestion: string;
+
+    if (params.attemptCount <= 2) {
+      level = '方向性提示';
+      if (desc.includes('排序') || desc.includes('sort')) {
+        hint = '这道题的核心是对数据进行有序处理，思考一下如何利用有序性来简化问题。';
+      } else if (desc.includes('查找') || desc.includes('搜索')) {
+        hint = '这道题需要在数据中找到目标，思考一下如何高效地缩小搜索范围。';
+      } else if (desc.includes('最短') || desc.includes('路径')) {
+        hint = '这道题涉及最优路径问题，思考一下如何逐步扩展已知的最优解。';
+      } else {
+        hint = '先仔细理解题目要求，尝试用最简单的方法解决，再考虑优化。';
+      }
+      nextSuggestion = '尝试用暴力方法先写出解法，再考虑优化';
+    } else if (params.attemptCount <= 4) {
+      level = '算法建议';
+      if (desc.includes('排序') || desc.includes('sort')) {
+        hint = '建议使用排序算法，可以考虑快速排序或归并排序。排序后通常配合双指针或二分查找使用。';
+      } else if (desc.includes('动态规划') || desc.includes('dp') || desc.includes('最优')) {
+        hint = '建议使用动态规划。定义状态 dp[i] 表示什么，然后思考状态转移方程 dp[i] 如何从之前的状态推导而来。';
+      } else if (desc.includes('图') || desc.includes('最短')) {
+        hint = '建议使用BFS或Dijkstra算法处理图的问题。注意区分有权图和无权图的不同处理方式。';
+      } else {
+        hint = '考虑使用分治、贪心或动态规划等常见策略。先确定算法思路，再编写代码。';
+      }
+      nextSuggestion = '如果还是无法解决，可以查看类似题目的题解寻找灵感';
+    } else {
+      level = '代码骨架';
+      hint = `以下是一个通用的代码框架，请根据题目要求填充关键逻辑：
+
+\`\`\`python
+def solve():
+    # 1. 读取输入
+    n = int(input())
+    data = list(map(int, input().split()))
+    
+    # 2. 核心算法逻辑（请自行实现）
+    result = None
+    
+    # 3. 输出结果
+    print(result)
+
+solve()
+\`\`\`
+
+请根据题目具体要求，在"核心算法逻辑"部分填写你的实现。`;
+      nextSuggestion = '如果仍然无法解决，建议查看题解或向老师求助';
+    }
+
+    return { hint, level, nextAttemptSuggestion: nextSuggestion };
   }
 
   /**
@@ -1924,6 +2501,120 @@ ${params.code || ''}
       default:
         return '暂无建议。';
     }
+  }
+
+  /**
+   * 默认功能配置定义：所有 AI 功能的 featureKey、名称、描述
+   */
+  private static DEFAULT_FEATURE_CONFIGS = [
+    { featureKey: 'explain-code', featureName: '代码解释', description: '学生可以对代码请求AI解释，了解代码逻辑' },
+    { featureKey: 'hint', featureName: '解题提示', description: '提供解题思路，引导但不直接给出答案' },
+    { featureKey: 'diagnose', featureName: '错误诊断', description: '分析代码错误原因并提供修复建议' },
+    { featureKey: 'generate-solution', featureName: '题解生成', description: 'AI自动生成题目的详细题解' },
+    { featureKey: 'generate-testcases', featureName: '测试用例生成', description: '为编程题自动生成判题测试用例' },
+    { featureKey: 'parse-knowledge-tree', featureName: '知识树解析', description: '从文本文件解析生成知识树结构' },
+    { featureKey: 'classify-problem', featureName: '题目分类', description: 'AI自动将题目归类到知识树节点' },
+    { featureKey: 'parse-problem-file', featureName: '题目文件解析', description: '从txt/pdf文件批量导入题目' },
+    { featureKey: 'ai-judge', featureName: 'AI判题', description: 'AI预测代码能否通过测试用例' },
+    { featureKey: 'optimize-code', featureName: '代码优化', description: 'AI分析代码并给出优化建议' },
+    { featureKey: 'recommend-similar', featureName: '相似题目推荐', description: '基于标签和内容推荐相似题目' },
+    { featureKey: 'generate-exam', featureName: '智能组卷', description: 'AI根据条件自动组卷' },
+    { featureKey: 'batch-classify', featureName: '批量分类', description: '批量为题目打标签' },
+    { featureKey: 'companion', featureName: 'AI学伴', description: 'AI学伴对话功能' },
+    { featureKey: 'generate-learning-path', featureName: '学习路径生成', description: '根据学生水平生成个性化学习路径' },
+    { featureKey: 'analyze-submission-trend', featureName: '提交趋势分析', description: '分析近期提交中的常见错误和改进方向' },
+    { featureKey: 'smart-hint', featureName: '智能提示', description: '根据尝试次数提供渐进式提示' },
+  ];
+
+  /**
+   * 获取所有功能配置
+   */
+  async getFeatureConfigs() {
+    return prisma.aIFeatureConfig.findMany({
+      orderBy: { featureKey: 'asc' },
+    });
+  }
+
+  /**
+   * 更新指定功能的配置
+   */
+  async updateFeatureConfig(featureKey: string, data: {
+    enabled?: boolean;
+    promptTemplate?: string;
+    maxTokens?: number;
+    temperature?: number;
+    description?: string;
+    featureName?: string;
+  }) {
+    const existing = await prisma.aIFeatureConfig.findUnique({
+      where: { featureKey },
+    });
+
+    if (!existing) {
+      throw new Error(`功能配置 ${featureKey} 不存在，请先初始化`);
+    }
+
+    return prisma.aIFeatureConfig.update({
+      where: { featureKey },
+      data: {
+        ...(data.enabled !== undefined && { enabled: data.enabled }),
+        ...(data.promptTemplate !== undefined && { promptTemplate: data.promptTemplate }),
+        ...(data.maxTokens !== undefined && { maxTokens: data.maxTokens }),
+        ...(data.temperature !== undefined && { temperature: data.temperature }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.featureName !== undefined && { featureName: data.featureName }),
+      },
+    });
+  }
+
+  /**
+   * 初始化默认功能配置：为所有已知功能创建配置记录
+   * 已存在的功能不会被覆盖
+   */
+  async initializeFeatureConfigs() {
+    const existing = await prisma.aIFeatureConfig.findMany({
+      select: { featureKey: true },
+    });
+    const existingKeys = new Set(existing.map(e => e.featureKey));
+
+    const toCreate = AIService.DEFAULT_FEATURE_CONFIGS.filter(
+      cfg => !existingKeys.has(cfg.featureKey),
+    );
+
+    if (toCreate.length === 0) {
+      return { created: 0, total: existing.length };
+    }
+
+    await prisma.aIFeatureConfig.createMany({
+      data: toCreate.map(cfg => ({
+        featureKey: cfg.featureKey,
+        featureName: cfg.featureName,
+        description: cfg.description,
+        enabled: true,
+        promptTemplate: '',
+        maxTokens: 4000,
+        temperature: 0.7,
+      })),
+    });
+
+    return { created: toCreate.length, total: existing.length + toCreate.length };
+  }
+
+  /**
+   * 检查指定功能是否启用
+   * 如果配置记录不存在，默认视为启用（向后兼容）
+   */
+  async isFeatureEnabled(featureKey: string): Promise<boolean> {
+    const globalEnabled = await this.isEnabled();
+    if (!globalEnabled) return false;
+
+    const config = await prisma.aIFeatureConfig.findUnique({
+      where: { featureKey },
+      select: { enabled: true },
+    });
+
+    if (!config) return true;
+    return config.enabled;
   }
 }
 

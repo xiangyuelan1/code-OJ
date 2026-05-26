@@ -3,15 +3,37 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { matchAPI, submissionsAPI } from '../services/api';
 import { useSocketStore } from '../services/socket';
 import { useAuthStore } from '../stores/auth.store';
-import { ArrowLeft, Clock, CheckCircle, XCircle, Loader2, Flag, Handshake, X, MessageCircle } from 'lucide-react';
+import {
+  ArrowLeft, Clock, CheckCircle, XCircle, Loader2,
+  Flag, Handshake, MessageCircle,
+  RotateCcw, Timer
+} from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { MarkdownRenderer } from '../components/MarkdownEditor';
+
+/** 题型中文标签 */
+const TYPE_LABELS: Record<string, string> = {
+  CHOICE: '选择题',
+  FILL_BLANK: '填空题',
+  PROGRAMMING: '编程题'
+};
+
+/** 难度样式映射 */
+const DIFFICULTY_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  EASY: { bg: 'bg-green-500/20', text: 'text-green-400', label: '简单' },
+  MEDIUM: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: '中等' },
+  HARD: { bg: 'bg-red-500/20', text: 'text-red-400', label: '困难' }
+};
 
 export function MatchBattlePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { matchEvents, emitSurrender, emitSettlementRequest, emitSettlementAgree, emitSettlementReject, clearMatchEvents } = useSocketStore();
+  const {
+    matchEvents, opponentProgress,
+    emitSurrender, emitSettlementRequest, emitSettlementAgree, emitSettlementReject,
+    clearMatchEvents
+  } = useSocketStore();
 
   const [match, setMatch] = useState<any>(null);
   const [currentProblemIndex, setCurrentProblemIndex] = useState(0);
@@ -26,11 +48,20 @@ export function MatchBattlePage() {
   const [countdown, setCountdown] = useState(600);
   const [showSettlementDialog, setShowSettlementDialog] = useState(false);
   const [settlementFrom, setSettlementFrom] = useState('');
-  const [opponentAnswered, setOpponentAnswered] = useState<Record<number, boolean>>({});
   const [notifications, setNotifications] = useState<string[]>([]);
   const [programmingCode, setProgrammingCode] = useState('');
   const [programmingLanguage, setProgrammingLanguage] = useState('javascript');
   const [programmingSubmitting, setProgrammingSubmitting] = useState(false);
+
+  // 结算冷却相关状态
+  const [settlementCooldown, setSettlementCooldown] = useState(0);
+  const [settlementCooldownTimer, setSettlementCooldownTimer] = useState<ReturnType<typeof setInterval> | null>(null);
+
+  // 对手进度（从 Socket 推送中提取非自己的进度）
+  const [opponentProgressState, setOpponentProgressState] = useState<any>(null);
+
+  // 我的提交记录：problemId -> submission
+  const [mySubmissions, setMySubmissions] = useState<Record<string, any>>({});
 
   const addNotification = useCallback((msg: string) => {
     setNotifications(prev => [...prev.slice(-4), msg]);
@@ -39,11 +70,13 @@ export function MatchBattlePage() {
     }, 4000);
   }, []);
 
+  // 初始化加载比赛
   useEffect(() => {
     if (id) loadMatch();
     return () => { clearMatchEvents(); };
   }, [id]);
 
+  // 倒计时
   useEffect(() => {
     if (!match || matchEnded) return;
     const timer = setInterval(() => {
@@ -59,25 +92,62 @@ export function MatchBattlePage() {
     return () => clearInterval(timer);
   }, [match, matchEnded]);
 
+  // 切换题目时重置作答状态（保留已提交的答案）
   useEffect(() => {
     const prob = getCurrentProblem();
-    if (prob?.problem?.type === 'FILL_BLANK') {
-      const blanks = prob.problem.fillBlanks ? (typeof prob.problem.fillBlanks === 'string' ? JSON.parse(prob.problem.fillBlanks) : prob.problem.fillBlanks) : [];
-      const count = blanks.length || (prob.problem.description?.match(/_____/g) || []).length || 1;
-      setFillAnswers(Array(count).fill(''));
-    } else {
+    if (!prob?.problem) return;
+
+    const existingSubmission = mySubmissions[prob.problem.id];
+
+    if (prob.problem.type === 'FILL_BLANK') {
+      // 从 fillBlanks 中获取空数数量（后端已替换为 { blankCount } 格式）
+      let blankCount = 1;
+      try {
+        const parsed = typeof prob.problem.fillBlanks === 'string'
+          ? JSON.parse(prob.problem.fillBlanks)
+          : prob.problem.fillBlanks;
+        blankCount = parsed?.blankCount || parsed?.length || 1;
+      } catch { /* 保持默认 1 */ }
+
+      if (existingSubmission) {
+        // 恢复之前的填空答案
+        try {
+          const prev = JSON.parse(existingSubmission.answer);
+          setFillAnswers(Array.isArray(prev) ? prev : Array(blankCount).fill(''));
+        } catch {
+          setFillAnswers(Array(blankCount).fill(''));
+        }
+      } else {
+        setFillAnswers(Array(blankCount).fill(''));
+      }
       setSelectedAnswer('');
+    } else if (prob.problem.type === 'CHOICE') {
+      if (existingSubmission) {
+        setSelectedAnswer(existingSubmission.answer || '');
+      } else {
+        setSelectedAnswer('');
+      }
+      setFillAnswers([]);
+    } else {
+      // PROGRAMMING: 恢复之前的代码
+      if (existingSubmission?.answer && existingSubmission.answer !== 'ACCEPTED' && existingSubmission.answer !== 'WRONG_ANSWER') {
+        setProgrammingCode(existingSubmission.answer);
+      } else {
+        setProgrammingCode('');
+      }
+      setSelectedAnswer('');
+      setFillAnswers([]);
     }
+
     setProblemStartTime(Date.now());
     setLastResult(null);
-    setProgrammingCode('');
     setProgrammingSubmitting(false);
-  }, [currentProblemIndex, match]);
+  }, [currentProblemIndex, match, mySubmissions]);
 
+  // 处理 Socket 事件
   useEffect(() => {
     for (const event of matchEvents) {
       if (event.type === 'answer' && event.userId !== user?.id) {
-        setOpponentAnswered(prev => ({ ...prev, [event.problemIndex]: true }));
         addNotification(`对手完成了第 ${event.problemIndex + 1} 题`);
       }
       if (event.type === 'surrender' && event.userId !== user?.id) {
@@ -102,12 +172,50 @@ export function MatchBattlePage() {
     }
   }, [matchEvents]);
 
+  // 处理对手进度推送
+  useEffect(() => {
+    if (opponentProgress && opponentProgress.userId !== user?.id) {
+      setOpponentProgressState(opponentProgress);
+    }
+  }, [opponentProgress, user?.id]);
+
+  // 结算冷却倒计时
+  useEffect(() => {
+    if (settlementCooldown <= 0) {
+      if (settlementCooldownTimer) {
+        clearInterval(settlementCooldownTimer);
+        setSettlementCooldownTimer(null);
+      }
+      return;
+    }
+    if (!settlementCooldownTimer) {
+      const timer = setInterval(() => {
+        setSettlementCooldown(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            setSettlementCooldownTimer(null);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      setSettlementCooldownTimer(timer);
+    }
+    return () => {
+      if (settlementCooldownTimer) {
+        clearInterval(settlementCooldownTimer);
+      }
+    };
+  }, [settlementCooldown > 0]);
+
   const loadMatch = async () => {
     try {
       setLoading(true);
       const res = await matchAPI.getById(id!);
       if (res.success) {
         const matchData = res.data;
+
+        // 解析 choices 和 fillBlanks
         if (matchData.problems) {
           matchData.problems = matchData.problems.map((mp: any) => ({
             ...mp,
@@ -120,13 +228,26 @@ export function MatchBattlePage() {
               : null
           }));
         }
+
+        // 从参赛者提交记录中构建 mySubmissions 映射
+        const submissionsMap: Record<string, any> = {};
+        if (matchData.participants) {
+          const me = matchData.participants.find((p: any) => p.userId === user?.id);
+          if (me?.submissions) {
+            for (const sub of me.submissions) {
+              submissionsMap[sub.problemId] = sub;
+            }
+          }
+        }
+        setMySubmissions(submissionsMap);
+
         setMatch(matchData);
         if (matchData.status === 'COMPLETED') {
           setMatchEnded(true);
           try {
             const endRes = await matchAPI.endMatch(id!);
             if (endRes.success) setMatchResult(endRes.data);
-          } catch {}
+          } catch { /* 比赛已结束 */ }
         } else {
           const timeLimit = matchData.type === '1V1_RANKED' ? 600 : 900;
           setCountdown(timeLimit);
@@ -144,6 +265,7 @@ export function MatchBattlePage() {
     return match.problems[currentProblemIndex];
   };
 
+  // 通用答案提交（CHOICE / FILL_BLANK）
   const handleSubmitAnswer = async () => {
     if (!match || submitting) return;
     setSubmitting(true);
@@ -157,12 +279,27 @@ export function MatchBattlePage() {
       });
       if (res.success) {
         setLastResult(res.data);
-        if (res.data && match.problems && currentProblemIndex < match.problems.length - 1) {
-          setTimeout(() => {
-            setCurrentProblemIndex(prev => prev + 1);
-          }, 1500);
-        } else {
-          setTimeout(() => handleEndMatch(), 1500);
+        // 更新本地提交记录
+        const problemId = getCurrentProblem()?.problem?.id;
+        if (problemId) {
+          setMySubmissions(prev => ({
+            ...prev,
+            [problemId]: {
+              problemId,
+              answer: selectedAnswer || JSON.stringify(fillAnswers),
+              status: res.data.isCorrect ? 'ACCEPTED' : 'WRONG_ANSWER',
+              score: res.data.points
+            }
+          }));
+        }
+        // 更新本地分数
+        if (match.participants) {
+          const me = match.participants.find((p: any) => p.userId === user?.id);
+          if (me) {
+            me.score = res.data.currentScore;
+            me.correctCount = res.data.correctCount;
+          }
+          setMatch({ ...match });
         }
       }
     } catch (error: any) {
@@ -172,6 +309,7 @@ export function MatchBattlePage() {
     }
   };
 
+  // 编程题提交
   const handleSubmitProgramming = async () => {
     if (!match || programmingSubmitting || !programmingCode.trim()) return;
     setProgrammingSubmitting(true);
@@ -198,12 +336,25 @@ export function MatchBattlePage() {
             judgeStatus: status,
             isCorrect: status === 'ACCEPTED'
           });
-          if (res.data && match.problems && currentProblemIndex < match.problems.length - 1) {
-            setTimeout(() => {
-              setCurrentProblemIndex(prev => prev + 1);
-            }, 1500);
-          } else {
-            setTimeout(() => handleEndMatch(), 1500);
+          const problemId = getCurrentProblem()?.problem?.id;
+          if (problemId) {
+            setMySubmissions(prev => ({
+              ...prev,
+              [problemId]: {
+                problemId,
+                answer: status,
+                status: res.data.isCorrect ? 'ACCEPTED' : 'WRONG_ANSWER',
+                score: res.data.points
+              }
+            }));
+          }
+          if (match.participants) {
+            const me = match.participants.find((p: any) => p.userId === user?.id);
+            if (me) {
+              me.score = res.data.currentScore;
+              me.correctCount = res.data.correctCount;
+            }
+            setMatch({ ...match });
           }
         }
       }
@@ -232,9 +383,24 @@ export function MatchBattlePage() {
     setTimeout(() => handleEndMatch(), 1000);
   };
 
-  const handleRequestSettlement = () => {
-    emitSettlementRequest(id!);
-    addNotification('已发送结算请求，等待对手同意...');
+  const handleRequestSettlement = async () => {
+    if (settlementCooldown > 0) return;
+    try {
+      const res = await matchAPI.requestSettlement(id!);
+      if (res.success) {
+        if (res.data.canSettle) {
+          emitSettlementRequest(id!);
+          addNotification('已发送结算请求，等待对手同意...');
+          setSettlementCooldown(60);
+        } else {
+          const remaining = Math.ceil(res.data.remainingCooldown / 1000);
+          setSettlementCooldown(remaining);
+          addNotification(`请等待 ${remaining} 秒后再请求结算`);
+        }
+      }
+    } catch (error: any) {
+      console.error('请求结算失败', error);
+    }
   };
 
   const handleAcceptSettlement = () => {
@@ -264,6 +430,25 @@ export function MatchBattlePage() {
     return match.participants.find((p: any) => p.userId !== user.id);
   };
 
+  // 获取对手在某道题上的状态
+  const getOpponentProblemStatus = (problemIndex: number): { answered: boolean; isCorrect: boolean } => {
+    if (!opponentProgressState?.problemProgress) return { answered: false, isCorrect: false };
+    const prog = opponentProgressState.problemProgress.find((p: any) => p.problemIndex === problemIndex);
+    return { answered: prog?.answered || false, isCorrect: prog?.isCorrect || false };
+  };
+
+  // 获取我在某道题上的状态
+  const getMyProblemStatus = (problemIndex: number): { answered: boolean; isCorrect: boolean } => {
+    const problemId = match?.problems?.[problemIndex]?.problem?.id;
+    if (!problemId) return { answered: false, isCorrect: false };
+    const sub = mySubmissions[problemId];
+    return { answered: !!sub, isCorrect: sub?.status === 'ACCEPTED' };
+  };
+
+  const totalProblems = match?.problems?.length || 0;
+  const opponentData = getOpponent();
+  const opponentScore = opponentProgressState?.score ?? opponentData?.score ?? 0;
+
   if (loading) {
     return (
       <div className="flex justify-center items-center py-20">
@@ -283,6 +468,7 @@ export function MatchBattlePage() {
     );
   }
 
+  // 比赛结束结果页
   if (matchEnded && matchResult) {
     const isWinner = matchResult.winnerId === user?.id;
     return (
@@ -317,10 +503,10 @@ export function MatchBattlePage() {
 
   const problem = getCurrentProblem();
   const problemData = problem?.problem;
-  const totalProblems = match.problems?.length || 0;
 
   return (
     <div className="max-w-7xl mx-auto relative">
+      {/* 通知浮层 */}
       {notifications.length > 0 && (
         <div className="fixed top-20 right-4 z-50 space-y-2">
           {notifications.map((msg, i) => (
@@ -331,6 +517,7 @@ export function MatchBattlePage() {
         </div>
       )}
 
+      {/* 结算请求对话框 */}
       {showSettlementDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
@@ -360,7 +547,8 @@ export function MatchBattlePage() {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-6">
+      {/* 顶部栏：退出、倒计时、分数对比 */}
+      <div className="flex items-center justify-between mb-4">
         <button
           onClick={() => navigate('/match')}
           className="flex items-center text-slate-400 hover:text-white transition-colors"
@@ -368,243 +556,345 @@ export function MatchBattlePage() {
           <ArrowLeft className="h-5 w-5 mr-2" />
           退出
         </button>
-        <div className="flex items-center gap-6">
-          <div className={`flex items-center gap-2 ${countdown < 60 ? 'text-red-400 animate-pulse' : countdown < 180 ? 'text-yellow-400' : 'text-green-400'}`}>
-            <Clock className="h-5 w-5" />
-            <span className="text-2xl font-mono font-bold">{formatTime(countdown)}</span>
-          </div>
-          <span className="text-slate-400">
-            第 {currentProblemIndex + 1}/{totalProblems} 题
-          </span>
+        <div className={`flex items-center gap-2 ${countdown < 60 ? 'text-red-400 animate-pulse' : countdown < 180 ? 'text-yellow-400' : 'text-green-400'}`}>
+          <Clock className="h-5 w-5" />
+          <span className="text-2xl font-mono font-bold">{formatTime(countdown)}</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-slate-800 rounded-lg p-4 text-center">
+      {/* 分数对比栏 */}
+      <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="bg-slate-800 rounded-lg p-3 text-center">
           <div className="text-sm text-slate-400">我</div>
           <div className="text-lg font-semibold text-cyan-400">{user?.username}</div>
           <div className="text-2xl font-bold text-white">{getMyScore()}分</div>
         </div>
-        <div className="bg-slate-800 rounded-lg p-4 text-center flex flex-col items-center justify-center">
+        <div className="bg-slate-800 rounded-lg p-3 text-center flex flex-col items-center justify-center">
           <div className="text-slate-500 text-xs mb-1">VS</div>
-          <div className="flex gap-2">
-            {match.problems?.map((_: any, i: number) => (
-              <div
-                key={i}
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                  i === currentProblemIndex
-                    ? 'bg-cyan-500 text-white'
-                    : opponentAnswered[i]
-                    ? 'bg-orange-500/20 text-orange-400'
-                    : i < currentProblemIndex
-                    ? 'bg-green-500/20 text-green-400'
-                    : 'bg-slate-700 text-slate-500'
-                }`}
-              >
-                {i + 1}
-              </div>
-            ))}
-          </div>
+          <div className="text-lg font-bold text-cyan-400">{getMyScore()} <span className="text-slate-500">:</span> {opponentScore}</div>
         </div>
-        <div className="bg-slate-800 rounded-lg p-4 text-center">
+        <div className="bg-slate-800 rounded-lg p-3 text-center">
           <div className="text-sm text-slate-400">对手</div>
-          <div className="text-lg font-semibold text-orange-400">{getOpponent()?.user?.username || '等待中'}</div>
-          <div className="text-2xl font-bold text-white">{getOpponent()?.score || 0}分</div>
+          <div className="text-lg font-semibold text-orange-400">{opponentData?.user?.username || '等待中'}</div>
+          <div className="text-2xl font-bold text-white">{opponentScore}分</div>
         </div>
       </div>
 
-      {problemData ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-slate-800 rounded-xl p-6 shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-white">{problemData.title || `题目 ${currentProblemIndex + 1}`}</h2>
-              <span className={`text-xs px-2 py-1 rounded ${
-                problemData.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400' :
-                problemData.difficulty === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
-                'bg-red-500/20 text-red-400'
-              }`}>
-                {problemData.difficulty === 'EASY' ? '简单' : problemData.difficulty === 'MEDIUM' ? '中等' : '困难'}
-              </span>
-            </div>
-            <div className="prose prose-invert max-w-none mb-6">
-              <MarkdownRenderer content={problemData.description} />
-            </div>
+      {/* 主体：左侧题目列表 + 中间题目内容 + 右侧操作面板 */}
+      <div className="grid grid-cols-12 gap-4">
+        {/* 左侧：题目导航列表 */}
+        <div className="col-span-2">
+          <div className="bg-slate-800 rounded-xl p-3 shadow-xl">
+            <h3 className="text-sm font-semibold text-slate-400 mb-3 text-center">题目列表</h3>
+            <div className="space-y-2">
+              {match.problems?.map((mp: any, i: number) => {
+                const myStatus = getMyProblemStatus(i);
+                const oppStatus = getOpponentProblemStatus(i);
+                const isActive = i === currentProblemIndex;
 
-            {problemData.type === 'CHOICE' && problemData.choices && (
-              <div className="space-y-3">
-                {problemData.choices.map((choice: any) => (
-                  <label
-                    key={choice.key}
-                    className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${
-                      selectedAnswer === choice.key
-                        ? 'bg-cyan-500/20 border-2 border-cyan-500'
-                        : 'bg-slate-700 hover:bg-slate-600 border-2 border-transparent'
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setCurrentProblemIndex(i)}
+                    className={`w-full p-2 rounded-lg text-left transition-all ${
+                      isActive
+                        ? 'bg-cyan-500/20 border border-cyan-500/50'
+                        : 'bg-slate-700/50 border border-transparent hover:bg-slate-700'
                     }`}
                   >
-                    <input
-                      type="radio"
-                      name="matchAnswer"
-                      value={choice.key}
-                      checked={selectedAnswer === choice.key}
-                      onChange={(e) => setSelectedAnswer(e.target.value)}
-                      className="mr-3"
-                    />
-                    <span className="text-white">{choice.key}. {choice.text}</span>
-                  </label>
-                ))}
-              </div>
-            )}
+                    <div className="flex items-center justify-between">
+                      <span className={`text-xs font-bold ${isActive ? 'text-cyan-400' : 'text-slate-400'}`}>
+                        {i + 1}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {myStatus.answered && (
+                          myStatus.isCorrect
+                            ? <CheckCircle className="h-3 w-3 text-green-400" />
+                            : <XCircle className="h-3 w-3 text-red-400" />
+                        )}
+                        {oppStatus.answered && (
+                          <span className="w-2 h-2 rounded-full bg-orange-400 inline-block" title="对手已作答" />
+                        )}
+                      </div>
+                    </div>
+                    <div className={`text-xs mt-1 truncate ${isActive ? 'text-white' : 'text-slate-500'}`}>
+                      {TYPE_LABELS[mp.problem?.type] || '题目'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
 
-            {problemData.type === 'FILL_BLANK' && (
-              <div className="space-y-3">
-                {fillAnswers.map((_, index) => (
-                  <div key={index} className="flex items-center gap-3">
-                    <span className="w-8 h-8 flex items-center justify-center bg-cyan-500/20 text-cyan-400 rounded-lg font-bold text-sm">{index + 1}</span>
-                    <input
-                      type="text"
-                      value={fillAnswers[index]}
-                      onChange={(e) => {
-                        const newAnswers = [...fillAnswers];
-                        newAnswers[index] = e.target.value;
-                        setFillAnswers(newAnswers);
+        {/* 中间：题目内容 + 作答区域 */}
+        <div className="col-span-7">
+          {problemData ? (
+            <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+              {/* 题目标题栏 */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-xl font-bold text-white">{problemData.title || `题目 ${currentProblemIndex + 1}`}</h2>
+                  <span className={`text-xs px-2 py-1 rounded ${DIFFICULTY_STYLES[problemData.difficulty]?.bg || ''} ${DIFFICULTY_STYLES[problemData.difficulty]?.text || 'text-slate-400'}`}>
+                    {DIFFICULTY_STYLES[problemData.difficulty]?.label || problemData.difficulty}
+                  </span>
+                  <span className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">
+                    {TYPE_LABELS[problemData.type] || problemData.type}
+                  </span>
+                </div>
+                {mySubmissions[problemData.id] && (
+                  <span className="text-xs text-slate-500 flex items-center gap-1">
+                    <RotateCcw className="h-3 w-3" />
+                    可重提交
+                  </span>
+                )}
+              </div>
+
+              {/* 题目描述 */}
+              <div className="prose prose-invert max-w-none mb-6">
+                <MarkdownRenderer content={problemData.description} />
+              </div>
+
+              {/* 选择题作答 */}
+              {problemData.type === 'CHOICE' && problemData.choices && (
+                <div className="space-y-3">
+                  {problemData.choices.map((choice: any) => (
+                    <label
+                      key={choice.key}
+                      className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${
+                        selectedAnswer === choice.key
+                          ? 'bg-cyan-500/20 border-2 border-cyan-500'
+                          : 'bg-slate-700 hover:bg-slate-600 border-2 border-transparent'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="matchAnswer"
+                        value={choice.key}
+                        checked={selectedAnswer === choice.key}
+                        onChange={(e) => setSelectedAnswer(e.target.value)}
+                        className="mr-3"
+                      />
+                      <span className="text-white">{choice.key}. {choice.text}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {/* 填空题作答 */}
+              {problemData.type === 'FILL_BLANK' && (
+                <div className="space-y-3">
+                  {fillAnswers.map((_, index) => (
+                    <div key={index} className="flex items-center gap-3">
+                      <span className="w-8 h-8 flex items-center justify-center bg-cyan-500/20 text-cyan-400 rounded-lg font-bold text-sm">{index + 1}</span>
+                      <input
+                        type="text"
+                        value={fillAnswers[index]}
+                        onChange={(e) => {
+                          const newAnswers = [...fillAnswers];
+                          newAnswers[index] = e.target.value;
+                          setFillAnswers(newAnswers);
+                        }}
+                        placeholder={`第 ${index + 1} 空`}
+                        className="flex-1 px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 编程题作答 */}
+              {problemData.type === 'PROGRAMMING' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold text-slate-300">代码编辑器</h4>
+                    <select
+                      value={programmingLanguage}
+                      onChange={(e) => setProgrammingLanguage(e.target.value)}
+                      className="px-3 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    >
+                      <option value="javascript">JavaScript</option>
+                      <option value="python">Python</option>
+                      <option value="cpp">C++</option>
+                      <option value="c">C</option>
+                    </select>
+                  </div>
+                  <div style={{ height: '350px' }}>
+                    <Editor
+                      height="100%"
+                      language={
+                        programmingLanguage === 'python' ? 'python'
+                        : programmingLanguage === 'cpp' || programmingLanguage === 'c' ? 'cpp'
+                        : 'javascript'
+                      }
+                      value={programmingCode}
+                      onChange={(value) => setProgrammingCode(value || '')}
+                      theme="vs-dark"
+                      options={{
+                        minimap: { enabled: false },
+                        fontSize: 14,
+                        lineNumbers: 'on',
+                        scrollBeyondLastLine: false,
+                        automaticLayout: true,
+                        padding: { top: 8 },
                       }}
-                      placeholder={`第 ${index + 1} 空`}
-                      className="flex-1 px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                     />
                   </div>
-                ))}
-              </div>
-            )}
-
-            {problemData.type === 'PROGRAMMING' && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-sm font-semibold text-slate-300">代码编辑器</h4>
-                  <select
-                    value={programmingLanguage}
-                    onChange={(e) => setProgrammingLanguage(e.target.value)}
-                    className="px-3 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  >
-                    <option value="javascript">JavaScript</option>
-                    <option value="python">Python</option>
-                    <option value="cpp">C++</option>
-                    <option value="c">C</option>
-                  </select>
                 </div>
-                <div style={{ height: '400px' }}>
-                  <Editor
-                    height="100%"
-                    language={
-                      programmingLanguage === 'python' ? 'python'
-                      : programmingLanguage === 'cpp' || programmingLanguage === 'c' ? 'cpp'
-                      : 'javascript'
-                    }
-                    value={programmingCode}
-                    onChange={(value) => setProgrammingCode(value || '')}
-                    theme="vs-dark"
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 14,
-                      lineNumbers: 'on',
-                      scrollBeyondLastLine: false,
-                      automaticLayout: true,
-                      padding: { top: 8 },
-                    }}
-                  />
-                </div>
-              </div>
-            )}
+              )}
 
-            {problemData.type === 'PROGRAMMING' ? (
-              <button
-                onClick={handleSubmitProgramming}
-                disabled={programmingSubmitting || !programmingCode.trim()}
-                className="mt-6 w-full bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {programmingSubmitting ? (
-                  <><Loader2 className="h-5 w-5 animate-spin" /> 判题中...</>
-                ) : (
-                  <><CheckCircle className="h-5 w-5" /> 提交代码</>
-                )}
-              </button>
-            ) : (
-              <button
-                onClick={handleSubmitAnswer}
-                disabled={submitting || (!selectedAnswer && fillAnswers.every(a => !a))}
-                className="mt-6 w-full bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {submitting ? (
-                  <><Loader2 className="h-5 w-5 animate-spin" /> 提交中...</>
-                ) : (
-                  <><CheckCircle className="h-5 w-5" /> 提交答案</>
-                )}
-              </button>
-            )}
-
-            {lastResult && (
-              <div className={`mt-4 p-4 rounded-lg ${lastResult.isCorrect ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>
-                <div className="flex items-center gap-2">
-                  {lastResult.isCorrect ? <CheckCircle className="h-5 w-5 text-green-400" /> : <XCircle className="h-5 w-5 text-red-400" />}
-                  <span className={`font-semibold ${lastResult.isCorrect ? 'text-green-400' : 'text-red-400'}`}>
-                    {lastResult.isCorrect ? '回答正确！' : '回答错误'}
-                  </span>
-                  {lastResult.isCorrect && lastResult.points > 0 && (
-                    <span className="text-yellow-400 ml-2">+{lastResult.points}分</span>
+              {/* 提交按钮 */}
+              {problemData.type === 'PROGRAMMING' ? (
+                <button
+                  onClick={handleSubmitProgramming}
+                  disabled={programmingSubmitting || !programmingCode.trim()}
+                  className="mt-6 w-full bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {programmingSubmitting ? (
+                    <><Loader2 className="h-5 w-5 animate-spin" /> 判题中...</>
+                  ) : (
+                    <><CheckCircle className="h-5 w-5" /> {mySubmissions[problemData.id] ? '重新提交' : '提交代码'}</>
                   )}
+                </button>
+              ) : (
+                <button
+                  onClick={handleSubmitAnswer}
+                  disabled={submitting || (!selectedAnswer && fillAnswers.every(a => !a))}
+                  className="mt-6 w-full bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {submitting ? (
+                    <><Loader2 className="h-5 w-5 animate-spin" /> 提交中...</>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-5 w-5" />
+                      {mySubmissions[problemData.id] ? '重新提交' : '提交答案'}
+                    </>
+                  )}
+                </button>
+              )}
+
+              {/* 提交结果反馈 */}
+              {lastResult && (
+                <div className={`mt-4 p-4 rounded-lg ${lastResult.isCorrect ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>
+                  <div className="flex items-center gap-2">
+                    {lastResult.isCorrect ? <CheckCircle className="h-5 w-5 text-green-400" /> : <XCircle className="h-5 w-5 text-red-400" />}
+                    <span className={`font-semibold ${lastResult.isCorrect ? 'text-green-400' : 'text-red-400'}`}>
+                      {lastResult.isCorrect ? '回答正确！' : '回答错误'}
+                    </span>
+                    {lastResult.isCorrect && lastResult.points > 0 && (
+                      <span className="text-yellow-400 ml-2">+{lastResult.points}分</span>
+                    )}
+                    {lastResult.isResubmission && (
+                      <span className="text-slate-400 text-xs ml-2">（重提交）</span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-20 text-slate-400">题目数据加载中...</div>
+          )}
+        </div>
+
+        {/* 右侧：操作面板 + 对手进度 */}
+        <div className="col-span-3 space-y-4">
+          {/* 对手进度面板 */}
+          <div className="bg-slate-800 rounded-xl p-4 shadow-xl">
+            <h3 className="text-sm font-semibold text-slate-400 mb-3 flex items-center gap-2">
+              <MessageCircle className="h-4 w-4" />
+              对手进度
+            </h3>
+            <div className="space-y-2">
+              {match.problems?.map((mp: any, i: number) => {
+                const oppStatus = getOpponentProblemStatus(i);
+                const myStatus = getMyProblemStatus(i);
+                return (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className="text-slate-500 w-6">P{i + 1}</span>
+                    <span className="text-slate-400 flex-1 truncate">{TYPE_LABELS[mp.problem?.type] || ''}</span>
+                    <div className="flex items-center gap-2">
+                      {/* 我的标记 */}
+                      {myStatus.answered ? (
+                        myStatus.isCorrect
+                          ? <span className="text-green-400" title="我：正确">✓</span>
+                          : <span className="text-red-400" title="我：错误">✗</span>
+                      ) : (
+                        <span className="text-slate-600" title="我：未答">—</span>
+                      )}
+                      <span className="text-slate-600">|</span>
+                      {/* 对手标记 */}
+                      {oppStatus.answered ? (
+                        oppStatus.isCorrect
+                          ? <span className="text-green-400" title="对手：正确">✓</span>
+                          : <span className="text-red-400" title="对手：错误">✗</span>
+                      ) : (
+                        <span className="text-slate-600" title="对手：未答">—</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="bg-slate-800 rounded-xl p-6 shadow-xl flex flex-col">
-            <h3 className="text-lg font-semibold text-white mb-4">操作面板</h3>
-
-            <div className="space-y-3 flex-1">
+          {/* 操作面板 */}
+          <div className="bg-slate-800 rounded-xl p-4 shadow-xl">
+            <h3 className="text-sm font-semibold text-slate-400 mb-3">操作</h3>
+            <div className="space-y-2">
               <button
                 onClick={handleRequestSettlement}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors border border-blue-500/30"
+                disabled={settlementCooldown > 0}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors border border-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
               >
-                <Handshake className="h-4 w-4" />
-                申请结算
+                {settlementCooldown > 0 ? (
+                  <>
+                    <Timer className="h-4 w-4" />
+                    冷却中 {settlementCooldown}s
+                  </>
+                ) : (
+                  <>
+                    <Handshake className="h-4 w-4" />
+                    申请结算
+                  </>
+                )}
               </button>
 
               <button
                 onClick={handleSurrender}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors border border-red-500/30"
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors border border-red-500/30 text-sm"
               >
                 <Flag className="h-4 w-4" />
                 投降
               </button>
+            </div>
 
-              <div className="border-t border-slate-700 pt-3 mt-3">
-                <div className="flex items-center gap-2 mb-3">
-                  <MessageCircle className="h-4 w-4 text-slate-400" />
-                  <span className="text-sm text-slate-400">对战动态</span>
-                </div>
-                <div className="space-y-1 max-h-48 overflow-y-auto">
-                  {matchEvents.filter(e => e.type === 'answer' || e.type === 'surrender').map((event, i) => (
-                    <div key={i} className="text-xs text-slate-500">
-                      {event.type === 'answer' && `${event.username} 完成了第 ${event.problemIndex + 1} 题`}
-                      {event.type === 'surrender' && `${event.username} 投降了`}
-                    </div>
-                  ))}
-                  {matchEvents.filter(e => e.type === 'answer' || e.type === 'surrender').length === 0 && (
-                    <p className="text-xs text-slate-600">暂无动态</p>
-                  )}
-                </div>
+            {/* 对战动态 */}
+            <div className="border-t border-slate-700 pt-3 mt-3">
+              <div className="flex items-center gap-2 mb-2">
+                <MessageCircle className="h-4 w-4 text-slate-400" />
+                <span className="text-xs text-slate-400">对战动态</span>
               </div>
+              <div className="space-y-1 max-h-36 overflow-y-auto">
+                {matchEvents.filter(e => e.type === 'answer' || e.type === 'surrender').map((event, i) => (
+                  <div key={i} className="text-xs text-slate-500">
+                    {event.type === 'answer' && `${event.username} 完成了第 ${event.problemIndex + 1} 题`}
+                    {event.type === 'surrender' && `${event.username} 投降了`}
+                  </div>
+                ))}
+                {matchEvents.filter(e => e.type === 'answer' || e.type === 'surrender').length === 0 && (
+                  <p className="text-xs text-slate-600">暂无动态</p>
+                )}
+              </div>
+            </div>
 
-              <div className="border-t border-slate-700 pt-3">
-                <p className="text-xs text-slate-500">
-                  💡 提示：申请结算需双方同意后才生效。投降将直接判负。
-                </p>
-              </div>
+            <div className="border-t border-slate-700 pt-3 mt-3">
+              <p className="text-xs text-slate-500">
+                提示：可自由切换题目，支持重提交。申请结算需双方同意，60秒冷却。
+              </p>
             </div>
           </div>
         </div>
-      ) : (
-        <div className="text-center py-20 text-slate-400">题目数据加载中...</div>
-      )}
+      </div>
     </div>
   );
 }

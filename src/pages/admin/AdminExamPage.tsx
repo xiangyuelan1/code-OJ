@@ -229,6 +229,7 @@ export function AdminExamPage() {
       case 'PRACTICE': return '练习';
       case 'EXAM': return '正式考试';
       case 'QUIZ': return '测验';
+      case 'CLASS_EXAM': return '班级考试';
       default: return type;
     }
   };

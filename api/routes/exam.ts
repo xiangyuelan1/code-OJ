@@ -11,10 +11,10 @@ router.get('/', authMiddleware, async (req: Request, res: any): Promise<void> =>
     const userRole = (req as any).user.role;
 
     if (userRole === 'ADMIN' || userRole === 'TEACHER') {
-      const exams = await examService.getExams();
+      const exams = await examService.getExams(undefined, userId, userRole);
       res.json({ success: true, data: exams });
     } else {
-      const exams = await examService.getExams();
+      const exams = await examService.getExams(undefined, userId, userRole);
       const attempts = await examService.getStudentAttempts(userId);
       const attemptedExamIds = new Set(attempts.map((a: any) => a.examId));
 
@@ -34,8 +34,18 @@ router.get('/', authMiddleware, async (req: Request, res: any): Promise<void> =>
 router.post('/', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
+    const { title, description, type, duration, startTime, endTime, enableProctoring, problemIds, points, classId } = req.body;
     const exam = await examService.createExam({
-      ...req.body,
+      title,
+      description,
+      type,
+      duration,
+      startTime: startTime ? new Date(startTime) : undefined,
+      endTime: endTime ? new Date(endTime) : undefined,
+      enableProctoring,
+      problemIds,
+      points,
+      classId,
       createdBy: userId
     });
     res.status(201).json({ success: true, data: exam });

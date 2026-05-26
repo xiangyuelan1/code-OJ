@@ -182,6 +182,53 @@ export class ProblemService {
     });
   }
 
+  async batchDeleteProblems(params: {
+    ids?: string[];
+    beforeDate?: Date;
+    deleteAll?: boolean;
+  }): Promise<{ deletedCount: number }> {
+    const where: any = {};
+
+    if (params.deleteAll) {
+      // 无条件，删除全部
+    } else if (params.beforeDate) {
+      where.createdAt = { lt: params.beforeDate };
+    } else if (params.ids && params.ids.length > 0) {
+      where.id = { in: params.ids };
+    } else {
+      throw new Error('请提供删除条件：ids、beforeDate 或 deleteAll');
+    }
+
+    const problemsToDelete = await prisma.problem.findMany({
+      where,
+      select: { id: true },
+    });
+
+    if (problemsToDelete.length === 0) {
+      return { deletedCount: 0 };
+    }
+
+    const problemIds = problemsToDelete.map((p) => p.id);
+
+    await prisma.$transaction(async (tx) => {
+      // Solution 有 onDelete: Cascade，无需手动删除
+      // 以下模型没有级联删除，需手动清理
+      await tx.submission.deleteMany({ where: { problemId: { in: problemIds } } });
+      await tx.matchProblem.deleteMany({ where: { problemId: { in: problemIds } } });
+      await tx.examQuestion.deleteMany({ where: { problemId: { in: problemIds } } });
+      // Discussion 的 problemId 可为空，将关联题目的 problemId 置空而非删除讨论
+      await tx.discussion.updateMany({
+        where: { problemId: { in: problemIds } },
+        data: { problemId: null },
+      });
+      await tx.dailyChallenge.deleteMany({ where: { problemId: { in: problemIds } } });
+
+      await tx.problem.deleteMany({ where: { id: { in: problemIds } } });
+    });
+
+    return { deletedCount: problemIds.length };
+  }
+
   async batchCreateProblems(problems: ProblemInput[]) {
     const results: { success: boolean; data?: any; error?: string; title?: string }[] = [];
 

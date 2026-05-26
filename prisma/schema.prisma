@@ -155,18 +155,19 @@ model MatchProblem {
 }
 
 model MatchParticipant {
-  id              String   @id @default(uuid())
-  matchId         String
-  match           Match    @relation(fields: [matchId], references: [id])
-  userId          String
-  user            User     @relation(fields: [userId], references: [id])
-  score           Int      @default(0)
-  correctCount    Int      @default(0)
-  totalTime       Int      @default(0)
-  isWinner        Boolean  @default(false)
-  submissions     Submission[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id               String   @id @default(uuid())
+  matchId          String
+  match            Match    @relation(fields: [matchId], references: [id])
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  score            Int      @default(0)
+  correctCount     Int      @default(0)
+  totalTime        Int      @default(0)
+  isWinner         Boolean  @default(false)
+  lastSettlementAt DateTime?
+  submissions      Submission[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model Exam {
@@ -272,22 +273,36 @@ model AIConfig {
   updatedAt DateTime @updatedAt
 }
 
+model AIFeatureConfig {
+  id             String   @id @default(uuid())
+  featureKey     String   @unique
+  featureName    String
+  description    String   @default("")
+  enabled        Boolean  @default(true)
+  promptTemplate String   @default("")
+  maxTokens      Int      @default(4000)
+  temperature    Float    @default(0.7)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 model Class {
-  id          String   @id @default(uuid())
-  name        String
-  description String?
-  grade       String?
-  classCode   String   @default("")
-  createdBy   String
-  creator     User     @relation("UserClasses", fields: [createdBy], references: [id])
-  members      ClassMember[]
-  joinRequests ClassJoinRequest[]
-  homeworks    Homework[]
-  exams        Exam[]
+  id            String   @id @default(uuid())
+  name          String
+  description   String?
+  grade         String?
+  classCode     String   @default("")
+  aiBillingMode String   @default("STUDENT_PAYS")
+  createdBy     String
+  creator       User     @relation("UserClasses", fields: [createdBy], references: [id])
+  members       ClassMember[]
+  joinRequests  ClassJoinRequest[]
+  homeworks     Homework[]
+  exams         Exam[]
   initiatorBattles  ClassBattle[] @relation("InitiatorBattles")
   challengerBattles ClassBattle[] @relation("ChallengerBattles")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@map("classes")
 }

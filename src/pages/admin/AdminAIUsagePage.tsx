@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { enhancedAiAPI } from '../../services/api';
+import { enhancedAiAPI, classAPI } from '../../services/api';
 import {
   BarChart3, Cpu, DollarSign, Zap, Users, Search,
   ChevronLeft, ChevronRight, Code, Lightbulb, Bug,
   FileText, CheckCircle, TreePine, Tag, FileUp, Gavel,
+  GraduationCap, School,
 } from 'lucide-react';
 
 const FEATURE_META: Record<string, { label: string; icon: any; color: string }> = {
@@ -42,7 +43,12 @@ const COLOR_TEXT: Record<string, string> = {
   indigo: 'text-indigo-400',
 };
 
+type PageTab = 'overview' | 'class' | 'teacher';
+
 export function AdminAIUsagePage() {
+  const [activeTab, setActiveTab] = useState<PageTab>('overview');
+
+  // 概览数据
   const [stats, setStats] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,14 +58,38 @@ export function AdminAIUsagePage() {
   const [filterUser, setFilterUser] = useState('');
   const [filterFeature, setFilterFeature] = useState('');
 
+  // 班级用量数据
+  const [classList, setClassList] = useState<any[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [classUsage, setClassUsage] = useState<any>(null);
+  const [classUsageLoading, setClassUsageLoading] = useState(false);
+
+  // 教师用量数据
+  const [teacherUsage, setTeacherUsage] = useState<any>(null);
+  const [teacherUsageLoading, setTeacherUsageLoading] = useState(false);
+  const [expandedTeacherClass, setExpandedTeacherClass] = useState<string | null>(null);
+
   useEffect(() => {
     loadStats();
     loadLogs();
+    loadClassList();
   }, []);
 
   useEffect(() => {
     loadLogs();
   }, [page, filterUser, filterFeature]);
+
+  useEffect(() => {
+    if (activeTab === 'class' && selectedClassId) {
+      loadClassUsage(selectedClassId);
+    }
+  }, [selectedClassId]);
+
+  useEffect(() => {
+    if (activeTab === 'teacher') {
+      loadTeacherUsage();
+    }
+  }, [activeTab]);
 
   const loadStats = async () => {
     try {
@@ -91,6 +121,120 @@ export function AdminAIUsagePage() {
       console.error('获取AI用量日志失败', error);
     } finally {
       setLogsLoading(false);
+    }
+  };
+
+  const loadClassList = async () => {
+    try {
+      const res = await classAPI.getAll();
+      if (res.success) {
+        setClassList(res.data || []);
+      }
+    } catch (error) {
+      console.error('获取班级列表失败', error);
+    }
+  };
+
+  const loadClassUsage = async (classId: string) => {
+    try {
+      setClassUsageLoading(true);
+      const res = await enhancedAiAPI.getClassAIUsage(classId);
+      if (res.success) {
+        setClassUsage(res.data);
+      }
+    } catch (error) {
+      console.error('获取班级AI用量失败', error);
+    } finally {
+      setClassUsageLoading(false);
+    }
+  };
+
+  const loadTeacherUsage = async () => {
+    try {
+      setTeacherUsageLoading(true);
+      // 管理员视角：获取所有教师（TEACHER 角色）的 AI 用量
+      // 由于后端 /usage/teacher 仅限 TEACHER 角色，管理员需要通过班级维度查看
+      // 这里我们通过遍历所有班级来构建教师维度的数据
+      const classesRes = await classAPI.getAll();
+      if (!classesRes.success) return;
+
+      const allClasses: any[] = classesRes.data || [];
+
+      // 按教师（createdBy）分组
+      const teacherMap = new Map<string, { teacherId: string; teacherName: string; classes: any[] }>();
+      for (const cls of allClasses) {
+        const teacherId = cls.createdBy || cls.creator?.id;
+        const teacherName = cls.creator?.username || '未知教师';
+        if (!teacherMap.has(teacherId)) {
+          teacherMap.set(teacherId, { teacherId, teacherName, classes: [] });
+        }
+        teacherMap.get(teacherId)!.classes.push(cls);
+      }
+
+      // 为每个教师获取其班级的 AI 用量
+      const teacherResults = [];
+      for (const [, teacher] of teacherMap) {
+        let overallTokens = 0;
+        let overallCost = 0;
+        let overallCalls = 0;
+        let teacherCost = 0;
+        let studentCost = 0;
+        const classUsages = [];
+
+        for (const cls of teacher.classes) {
+          try {
+            const usageRes = await enhancedAiAPI.getClassAIUsage(cls.id);
+            if (usageRes.success && usageRes.data) {
+              const data = usageRes.data;
+              overallTokens += data.classTotal?.totalTokens ?? 0;
+              overallCost += data.classTotal?.totalCost ?? 0;
+              overallCalls += data.classTotal?.totalCalls ?? 0;
+
+              const isTeacherPays = data.aiBillingMode === 'TEACHER_PAYS';
+              const teacherPart = (data.users || [])
+                .filter((u: any) => isTeacherPays || u.role === 'TEACHER')
+                .reduce((s: number, u: any) => s + (u.totalCost ?? 0), 0);
+              const studentPart = (data.users || [])
+                .filter((u: any) => !isTeacherPays && u.role !== 'TEACHER')
+                .reduce((s: number, u: any) => s + (u.totalCost ?? 0), 0);
+
+              teacherCost += teacherPart;
+              studentCost += studentPart;
+
+              classUsages.push({
+                classId: cls.id,
+                className: cls.name || data.className,
+                aiBillingMode: data.aiBillingMode,
+                classTotal: data.classTotal,
+                teacherCost: teacherPart,
+                studentCost: studentPart,
+                users: data.users || [],
+              });
+            }
+          } catch {
+            // 跳过无法获取用量的班级
+          }
+        }
+
+        teacherResults.push({
+          teacherId: teacher.teacherId,
+          teacherName: teacher.teacherName,
+          overallTotal: {
+            totalTokens: overallTokens,
+            totalCost: Math.round(overallCost * 10000) / 10000,
+            totalCalls: overallCalls,
+          },
+          teacherCost: Math.round(teacherCost * 10000) / 10000,
+          studentCost: Math.round(studentCost * 10000) / 10000,
+          classes: classUsages,
+        });
+      }
+
+      setTeacherUsage(teacherResults);
+    } catch (error) {
+      console.error('获取教师AI用量失败', error);
+    } finally {
+      setTeacherUsageLoading(false);
     }
   };
 
@@ -139,10 +283,9 @@ export function AdminAIUsagePage() {
 
   const maxFeatureValue = Math.max(...Object.values(featureBreakdown), 1);
 
-  return (
-    <div className="max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold text-white mb-8">AI 用量统计</h1>
-
+  // ==================== 概览标签页 ====================
+  const renderOverviewTab = () => (
+    <>
       {/* 概览卡片 */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
@@ -396,6 +539,280 @@ export function AdminAIUsagePage() {
           </>
         )}
       </div>
+    </>
+  );
+
+  // ==================== 班级AI用量标签页 ====================
+  const renderClassTab = () => (
+    <div>
+      <div className="flex items-center gap-4 mb-6">
+        <GraduationCap className="h-6 w-6 text-cyan-400" />
+        <h2 className="text-xl font-semibold text-white">班级AI用量</h2>
+        <select
+          value={selectedClassId}
+          onChange={(e) => setSelectedClassId(e.target.value)}
+          className="px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 min-w-[200px]"
+        >
+          <option value="">选择班级...</option>
+          {classList.map((cls: any) => (
+            <option key={cls.id} value={cls.id}>{cls.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {!selectedClassId ? (
+        <div className="bg-slate-800 rounded-xl p-12 text-center">
+          <GraduationCap className="h-12 w-12 text-slate-500 mx-auto mb-3" />
+          <p className="text-slate-400">请选择一个班级查看AI用量</p>
+        </div>
+      ) : classUsageLoading ? (
+        <div className="flex justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-cyan-500 border-t-transparent"></div>
+        </div>
+      ) : !classUsage ? (
+        <div className="bg-slate-800 rounded-xl p-12 text-center">
+          <Cpu className="h-12 w-12 text-slate-500 mx-auto mb-3" />
+          <p className="text-slate-400">暂无数据</p>
+        </div>
+      ) : (
+        <div>
+          {/* 班级汇总卡片 */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-slate-800 rounded-xl p-5 shadow-xl">
+              <div className="flex items-center gap-2 mb-2">
+                <Zap className="h-4 w-4 text-cyan-400" />
+                <span className="text-slate-400 text-sm">总Token</span>
+              </div>
+              <div className="text-2xl font-bold text-cyan-400">{formatTokens(classUsage.classTotal?.totalTokens ?? 0)}</div>
+            </div>
+            <div className="bg-slate-800 rounded-xl p-5 shadow-xl">
+              <div className="flex items-center gap-2 mb-2">
+                <DollarSign className="h-4 w-4 text-green-400" />
+                <span className="text-slate-400 text-sm">总费用</span>
+              </div>
+              <div className="text-2xl font-bold text-green-400">¥{(classUsage.classTotal?.totalCost ?? 0).toFixed(2)}</div>
+            </div>
+            <div className="bg-slate-800 rounded-xl p-5 shadow-xl">
+              <div className="flex items-center gap-2 mb-2">
+                <Cpu className="h-4 w-4 text-purple-400" />
+                <span className="text-slate-400 text-sm">总调用</span>
+              </div>
+              <div className="text-2xl font-bold text-purple-400">{classUsage.classTotal?.totalCalls ?? 0}</div>
+            </div>
+            <div className="bg-slate-800 rounded-xl p-5 shadow-xl">
+              <div className="flex items-center gap-2 mb-2">
+                <School className="h-4 w-4 text-yellow-400" />
+                <span className="text-slate-400 text-sm">计费模式</span>
+              </div>
+              <div className="text-lg font-bold text-yellow-400">
+                {classUsage.aiBillingMode === 'TEACHER_PAYS' ? '教师承担' : '学生自付'}
+              </div>
+            </div>
+          </div>
+
+          {/* 班级成员用量表 */}
+          <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-white mb-4">成员用量明细</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-slate-700">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">用户</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">角色</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">Token用量</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">费用</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">调用次数</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">功能明细</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700">
+                  {(classUsage.users || []).map((u: any) => (
+                    <tr key={u.userId} className="hover:bg-slate-750 transition-colors">
+                      <td className="px-4 py-3 text-white text-sm">{u.username || u.userId}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          u.role === 'TEACHER' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
+                        }`}>
+                          {u.role === 'TEACHER' ? '教师' : '学生'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-cyan-400 text-sm">{formatTokens(u.totalTokens ?? 0)}</td>
+                      <td className="px-4 py-3 text-green-400 text-sm">¥{(u.totalCost ?? 0).toFixed(4)}</td>
+                      <td className="px-4 py-3 text-slate-300 text-sm">{u.totalCalls ?? 0}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {Object.entries(u.byFeature || {}).map(([feature, data]: [string, any]) => {
+                            const meta = FEATURE_META[feature] || { label: feature, color: 'slate' };
+                            return (
+                              <span key={feature} className={`text-xs px-1.5 py-0.5 rounded ${COLOR_TEXT[meta.color] || 'text-slate-400'} bg-slate-700`}>
+                                {meta.label} {formatTokens(data.totalTokens)}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // ==================== 教师AI用量标签页 ====================
+  const renderTeacherTab = () => (
+    <div>
+      <div className="flex items-center gap-3 mb-6">
+        <School className="h-6 w-6 text-cyan-400" />
+        <h2 className="text-xl font-semibold text-white">教师AI用量</h2>
+      </div>
+
+      {teacherUsageLoading ? (
+        <div className="flex justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-cyan-500 border-t-transparent"></div>
+        </div>
+      ) : !teacherUsage || teacherUsage.length === 0 ? (
+        <div className="bg-slate-800 rounded-xl p-12 text-center">
+          <School className="h-12 w-12 text-slate-500 mx-auto mb-3" />
+          <p className="text-slate-400">暂无教师用量数据</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {teacherUsage.map((teacher: any) => (
+            <div key={teacher.teacherId} className="bg-slate-800 rounded-xl shadow-xl overflow-hidden">
+              {/* 教师头部 */}
+              <div
+                className="flex items-center justify-between px-6 py-4 cursor-pointer hover:bg-slate-750 transition-colors"
+                onClick={() => setExpandedTeacherClass(
+                  expandedTeacherClass === teacher.teacherId ? null : teacher.teacherId
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <School className="h-5 w-5 text-cyan-400" />
+                  <span className="text-lg font-semibold text-white">{teacher.teacherName}</span>
+                  <span className="text-sm text-slate-400">{teacher.classes.length} 个班级</span>
+                </div>
+                <div className="flex items-center gap-6 text-sm">
+                  <div>
+                    <span className="text-slate-400">总Token: </span>
+                    <span className="text-cyan-400">{formatTokens(teacher.overallTotal?.totalTokens ?? 0)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">总费用: </span>
+                    <span className="text-green-400">¥{(teacher.overallTotal?.totalCost ?? 0).toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">教师承担: </span>
+                    <span className="text-yellow-400">¥{(teacher.teacherCost ?? 0).toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">学生自付: </span>
+                    <span className="text-purple-400">¥{(teacher.studentCost ?? 0).toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 展开的班级明细 */}
+              {expandedTeacherClass === teacher.teacherId && (
+                <div className="border-t border-slate-700 px-6 py-4 space-y-4">
+                  {teacher.classes.map((cls: any) => (
+                    <div key={cls.classId} className="bg-slate-750 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <GraduationCap className="h-4 w-4 text-yellow-400" />
+                          <span className="font-medium text-white">{cls.className}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded ${
+                            cls.aiBillingMode === 'TEACHER_PAYS'
+                              ? 'bg-yellow-500/20 text-yellow-400'
+                              : 'bg-green-500/20 text-green-400'
+                          }`}>
+                            {cls.aiBillingMode === 'TEACHER_PAYS' ? '教师承担' : '学生自付'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="text-cyan-400">{formatTokens(cls.classTotal?.totalTokens ?? 0)} tokens</span>
+                          <span className="text-green-400">¥{(cls.classTotal?.totalCost ?? 0).toFixed(2)}</span>
+                          <span className="text-yellow-400">教师 ¥{(cls.teacherCost ?? 0).toFixed(2)}</span>
+                          <span className="text-purple-400">学生 ¥{(cls.studentCost ?? 0).toFixed(2)}</span>
+                        </div>
+                      </div>
+
+                      {/* 班级内学生明细 */}
+                      {(cls.users || []).length > 0 && (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-slate-700">
+                                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-300">用户</th>
+                                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-300">角色</th>
+                                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-300">Token</th>
+                                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-300">费用</th>
+                                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-300">调用</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700">
+                              {cls.users.map((u: any) => (
+                                <tr key={u.userId} className="hover:bg-slate-700">
+                                  <td className="px-3 py-2 text-white">{u.username || u.userId}</td>
+                                  <td className="px-3 py-2">
+                                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                      u.role === 'TEACHER' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
+                                    }`}>
+                                      {u.role === 'TEACHER' ? '教师' : '学生'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-cyan-400">{formatTokens(u.totalTokens ?? 0)}</td>
+                                  <td className="px-3 py-2 text-green-400">¥{(u.totalCost ?? 0).toFixed(4)}</td>
+                                  <td className="px-3 py-2 text-slate-300">{u.totalCalls ?? 0}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="max-w-7xl mx-auto">
+      <h1 className="text-3xl font-bold text-white mb-8">AI 用量统计</h1>
+
+      {/* 标签页切换 */}
+      <div className="flex border-b border-slate-700 mb-8">
+        {([
+          { key: 'overview' as PageTab, label: '总览', icon: BarChart3 },
+          { key: 'class' as PageTab, label: '班级AI用量', icon: GraduationCap },
+          { key: 'teacher' as PageTab, label: '教师AI用量', icon: School },
+        ]).map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.key
+                ? 'border-cyan-500 text-cyan-400'
+                : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            <tab.icon className="h-4 w-4 mr-2" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'overview' && renderOverviewTab()}
+      {activeTab === 'class' && renderClassTab()}
+      {activeTab === 'teacher' && renderTeacherTab()}
     </div>
   );
 }
