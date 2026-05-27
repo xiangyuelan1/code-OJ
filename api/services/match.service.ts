@@ -273,7 +273,11 @@ export class MatchService {
     };
   }
 
-  async endMatch(matchId: string): Promise<MatchResult> {
+  /**
+   * 结束比赛并计算结果。
+   * 若 surrenderedById 有值，表示该玩家投降：投降者分数归零，对手自动获胜。
+   */
+  async endMatch(matchId: string, surrenderedById?: string): Promise<MatchResult> {
     const match = await prisma.match.findUnique({
       where: { id: matchId },
       include: {
@@ -293,6 +297,55 @@ export class MatchService {
       throw new Error('比赛已结束');
     }
 
+    // 投降处理：投降者分数归零，对手自动获胜
+    if (surrenderedById) {
+      const surrendering = match.participants.find(p => p.userId === surrenderedById);
+      const opponent = match.participants.find(p => p.userId !== surrenderedById);
+
+      if (surrendering) {
+        await prisma.matchParticipant.update({
+          where: { id: surrendering.id },
+          data: { score: 0, correctCount: 0, isWinner: false, lastSettlementAt: new Date() }
+        });
+      }
+
+      if (opponent) {
+        await prisma.matchParticipant.update({
+          where: { id: opponent.id },
+          data: { isWinner: true, lastSettlementAt: new Date() }
+        });
+      }
+
+      const winnerId = opponent?.userId || '';
+      await prisma.match.update({
+        where: { id: matchId },
+        data: { status: 'COMPLETED', endTime: new Date(), winnerId }
+      });
+
+      // 排位赛积分奖励
+      if (match.type === '1V1_RANKED' && opponent) {
+        await pointsService.awardMatchPoints(opponent.userId, matchId, true, true);
+      }
+
+      const winnerPoints = match.type === '1V1_RANKED' ? 15 : 5;
+      const loserPoints = match.type === '1V1_RANKED' ? -5 : 0;
+
+      return {
+        matchId,
+        winnerId,
+        participants: match.participants.map(p => ({
+          userId: p.userId,
+          username: p.user.username,
+          score: p.userId === surrenderedById ? 0 : p.score,
+          correctCount: p.userId === surrenderedById ? 0 : p.correctCount,
+          totalTime: p.totalTime,
+          isWinner: p.userId === winnerId
+        })),
+        rewards: { winnerPoints, loserPoints }
+      };
+    }
+
+    // 正常结算：按分数和用时判定胜负
     const participants = match.participants.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       return a.totalTime - b.totalTime;

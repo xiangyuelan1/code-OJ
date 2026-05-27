@@ -1,15 +1,32 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/auth.store';
 import { usePointsStore } from '../stores/points.store';
-import { submissionsAPI, pointsAPI, classAPI } from '../services/api';
+import { submissionsAPI, pointsAPI, classAPI, enhancedAiAPI } from '../services/api';
 import {
   User, Mail, Clock, CheckCircle, XCircle, Award, Shield, GraduationCap,
   Crown, TrendingUp, Users, BookOpen, ClipboardList, Plus, LogOut, X,
-  ChevronRight, ArrowLeft, Loader2, Trophy, Activity,
+  ChevronRight, ArrowLeft, Loader2, Trophy, Activity, Brain, Sparkles,
+  ListChecks, FileText, Target, Timer, ArrowRight,
 } from 'lucide-react';
 
-type ProfileTab = 'submissions' | 'points' | 'classes';
+type ProfileTab = 'submissions' | 'points' | 'classes' | 'ai-plan';
 type ClassDetailTab = 'members' | 'ranking' | 'activity';
+
+interface PersonalizedPlan {
+  title: string;
+  description: string;
+  problems: Array<{ id: string; reason: string }>;
+  estimatedTime: string;
+  focusAreas: string[];
+}
+
+interface PersonalizedRecommendations {
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  nextSteps: Array<{ area: string; reason: string; problemIds: string[] }>;
+}
 
 interface ClassItem {
   id: string;
@@ -60,6 +77,14 @@ export function ProfilePage() {
   // 待审核申请状态
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
 
+  // AI 学习计划相关状态
+  const navigate = useNavigate();
+  const [aiPlan, setAiPlan] = useState<PersonalizedPlan | null>(null);
+  const [aiRecommendations, setAiRecommendations] = useState<PersonalizedRecommendations | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [planType, setPlanType] = useState<'PROBLEM_LIST' | 'EXAM'>('PROBLEM_LIST');
+
   useEffect(() => {
     loadData();
   }, []);
@@ -69,6 +94,9 @@ export function ProfilePage() {
     if (activeTab === 'classes') {
       if (classes.length === 0) loadClasses();
       loadPendingRequests();
+    }
+    if (activeTab === 'ai-plan' && !aiRecommendations && !recommendationsLoading) {
+      loadRecommendations();
     }
   }, [activeTab]);
 
@@ -171,6 +199,37 @@ export function ProfilePage() {
       alert(error.error?.message || '退出班级失败');
     }
   };
+
+  const handleGeneratePlan = async (type: 'PROBLEM_LIST' | 'EXAM') => {
+    setPlanType(type);
+    setPlanLoading(true);
+    setAiPlan(null);
+    try {
+      const res = await enhancedAiAPI.generatePersonalizedPlan({ type });
+      if (res.success && res.data) {
+        setAiPlan(res.data);
+      }
+    } catch (error: any) {
+      console.error('生成个性化计划失败:', error);
+      alert(error.error?.message || '生成失败，请稍后重试');
+    } finally {
+      setPlanLoading(false);
+    }
+  };
+
+  const loadRecommendations = useCallback(async () => {
+    setRecommendationsLoading(true);
+    try {
+      const res = await enhancedAiAPI.getPersonalizedRecommendations();
+      if (res.success && res.data) {
+        setAiRecommendations(res.data);
+      }
+    } catch (error) {
+      console.error('加载个性化建议失败:', error);
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  }, []);
 
   const getTrialDaysLeft = () => {
     if (!accessStatus?.expiresAt) return 0;
@@ -629,6 +688,214 @@ export function ProfilePage() {
     );
   };
 
+  // ===================== 渲染：AI 学习计划 =====================
+  const renderAIPlan = () => {
+    return (
+      <div className="space-y-6">
+        {/* 操作按钮区 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <button
+            onClick={() => handleGeneratePlan('PROBLEM_LIST')}
+            disabled={planLoading}
+            className="flex items-center justify-center gap-3 p-5 bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 rounded-xl hover:border-cyan-400/50 transition-all group disabled:opacity-50"
+          >
+            <div className="p-3 bg-cyan-500/20 rounded-lg group-hover:bg-cyan-500/30 transition-colors">
+              <ListChecks className="h-6 w-6 text-cyan-400" />
+            </div>
+            <div className="text-left">
+              <div className="text-white font-semibold">生成个性化题单</div>
+              <div className="text-slate-400 text-sm">基于你的薄弱点智能选题，难度渐进</div>
+            </div>
+          </button>
+          <button
+            onClick={() => handleGeneratePlan('EXAM')}
+            disabled={planLoading}
+            className="flex items-center justify-center gap-3 p-5 bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 rounded-xl hover:border-purple-400/50 transition-all group disabled:opacity-50"
+          >
+            <div className="p-3 bg-purple-500/20 rounded-lg group-hover:bg-purple-500/30 transition-colors">
+              <FileText className="h-6 w-6 text-purple-400" />
+            </div>
+            <div className="text-left">
+              <div className="text-white font-semibold">生成个性化考试</div>
+              <div className="text-slate-400 text-sm">针对知识盲区组卷，检验真实水平</div>
+            </div>
+          </button>
+        </div>
+
+        {/* 加载状态 */}
+        {planLoading && (
+          <div className="flex flex-col items-center justify-center py-12">
+            <div className="relative">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-cyan-500/30 border-t-cyan-500" />
+              <Brain className="h-5 w-5 text-cyan-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            <p className="text-slate-400 mt-4">
+              AI 正在分析你的学习数据，{planType === 'EXAM' ? '组织考试' : '精选题目'}中...
+            </p>
+          </div>
+        )}
+
+        {/* 生成的计划 */}
+        {aiPlan && !planLoading && (
+          <div className="bg-slate-700/50 rounded-xl border border-slate-600 overflow-hidden">
+            <div className="p-5 bg-gradient-to-r from-cyan-500/10 to-purple-500/10 border-b border-slate-600">
+              <div className="flex items-center gap-3 mb-2">
+                <Sparkles className="h-5 w-5 text-cyan-400" />
+                <h3 className="text-lg font-semibold text-white">{aiPlan.title}</h3>
+              </div>
+              <p className="text-slate-400 text-sm">{aiPlan.description}</p>
+              <div className="flex items-center gap-4 mt-3">
+                <div className="flex items-center gap-1.5 text-sm text-slate-400">
+                  <Timer className="h-4 w-4" />
+                  <span>预计 {aiPlan.estimatedTime}</span>
+                </div>
+                {aiPlan.focusAreas.length > 0 && (
+                  <div className="flex items-center gap-1.5 text-sm">
+                    <Target className="h-4 w-4 text-orange-400" />
+                    <span className="text-slate-400">重点：</span>
+                    {aiPlan.focusAreas.map((area, i) => (
+                      <span key={i} className="px-2 py-0.5 bg-orange-500/20 text-orange-300 rounded text-xs">
+                        {area}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-5 space-y-3">
+              {aiPlan.problems.map((problem, index) => (
+                <div
+                  key={problem.id}
+                  className="flex items-center gap-4 p-3 bg-slate-700/50 rounded-lg hover:bg-slate-700 transition-colors"
+                >
+                  <div className="w-8 h-8 bg-cyan-500/20 rounded-full flex items-center justify-center text-cyan-400 font-semibold text-sm shrink-0">
+                    {index + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white text-sm font-medium truncate">题目 {problem.id.slice(0, 8)}...</div>
+                    <div className="text-slate-400 text-xs mt-0.5">{problem.reason}</div>
+                  </div>
+                  <button
+                    onClick={() => navigate(`/problems/${problem.id}`)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors text-sm shrink-0"
+                  >
+                    开始练习
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {aiPlan.problems.length > 0 && (
+              <div className="p-4 border-t border-slate-600 bg-slate-700/30">
+                <button
+                  onClick={() => navigate(`/problems/${aiPlan.problems[0].id}`)}
+                  className="flex items-center justify-center gap-2 w-full py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors font-medium"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  开始练习第一题
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* AI 学习建议 */}
+        <div className="bg-slate-700/50 rounded-xl border border-slate-600 p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <Brain className="h-6 w-6 text-purple-400" />
+            <h3 className="text-lg font-semibold text-white">AI 学习建议</h3>
+            {!recommendationsLoading && (
+              <button
+                onClick={loadRecommendations}
+                className="ml-auto text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+              >
+                刷新
+              </button>
+            )}
+          </div>
+
+          {recommendationsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-purple-500 border-t-transparent" />
+            </div>
+          ) : aiRecommendations ? (
+            <div className="space-y-4">
+              {/* 总体概述 */}
+              <div className="p-4 bg-slate-700 rounded-lg">
+                <p className="text-slate-300 text-sm leading-relaxed">{aiRecommendations.summary}</p>
+              </div>
+
+              {/* 优势与不足 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+                  <h4 className="text-green-400 font-medium mb-2 flex items-center gap-1.5">
+                    <CheckCircle className="h-4 w-4" />
+                    优势领域
+                  </h4>
+                  <ul className="space-y-1">
+                    {aiRecommendations.strengths.map((s, i) => (
+                      <li key={i} className="text-slate-300 text-sm">• {s}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+                  <h4 className="text-red-400 font-medium mb-2 flex items-center gap-1.5">
+                    <XCircle className="h-4 w-4" />
+                    待提升领域
+                  </h4>
+                  <ul className="space-y-1">
+                    {aiRecommendations.weaknesses.map((w, i) => (
+                      <li key={i} className="text-slate-300 text-sm">• {w}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* 下一步建议 */}
+              {aiRecommendations.nextSteps.length > 0 && (
+                <div>
+                  <h4 className="text-white font-medium mb-3 flex items-center gap-1.5">
+                    <ArrowRight className="h-4 w-4 text-cyan-400" />
+                    建议下一步
+                  </h4>
+                  <div className="space-y-2">
+                    {aiRecommendations.nextSteps.map((step, i) => (
+                      <div key={i} className="flex items-start gap-3 p-3 bg-slate-700 rounded-lg">
+                        <div className="w-6 h-6 bg-cyan-500/20 rounded-full flex items-center justify-center text-cyan-400 text-xs font-semibold shrink-0 mt-0.5">
+                          {i + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-white text-sm font-medium">{step.area}</div>
+                          <div className="text-slate-400 text-xs mt-0.5">{step.reason}</div>
+                          {step.problemIds.length > 0 && (
+                            <button
+                              onClick={() => navigate(`/problems/${step.problemIds[0]}`)}
+                              className="mt-2 text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1"
+                            >
+                              去练习 <ArrowRight className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-slate-500">
+              <Brain className="h-10 w-10 mx-auto mb-3 opacity-50" />
+              <p>暂无学习建议</p>
+              <p className="text-sm mt-1">多做题后 AI 将为你生成个性化建议</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // ===================== 渲染：加入班级弹窗 =====================
   const renderJoinModal = () => {
     if (!showJoinModal) return null;
@@ -805,6 +1072,15 @@ export function ProfilePage() {
           >
             我的班级
           </button>
+          <button
+            onClick={() => setActiveTab('ai-plan')}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-md transition-colors text-sm ${
+              activeTab === 'ai-plan' ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Brain className="h-4 w-4" />
+            AI学习计划
+          </button>
         </div>
 
         {/* 最近提交 */}
@@ -868,6 +1144,9 @@ export function ProfilePage() {
         {activeTab === 'classes' && (
           selectedClass ? renderClassDetail() : renderClassList()
         )}
+
+        {/* AI 学习计划 */}
+        {activeTab === 'ai-plan' && renderAIPlan()}
       </div>
 
       {/* 加入班级弹窗 */}

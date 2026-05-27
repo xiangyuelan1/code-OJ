@@ -179,6 +179,12 @@ export const enhancedAiAPI = {
   getFeatureConfigs: () => api.get('/api/ai/features'),
   updateFeatureConfig: (featureKey: string, data: any) => api.put(`/api/ai/features/${featureKey}`, data),
   initializeFeatureConfigs: () => api.post('/api/ai/features/initialize'),
+  generatePersonalizedPlan: (data: { type: 'PROBLEM_LIST' | 'EXAM'; options?: { targetArea?: string; difficulty?: string; count?: number; timeLimit?: number } }) =>
+    api.post('/api/ai/personalized-plan', data),
+  getPersonalizedRecommendations: () => api.get('/api/ai/personalized-recommendations'),
+  updatePersonalizationConfig: (data: { minWeakPointScore?: number; maxProblemsPerPlan?: number; difficultyProgression?: string; focusWeight?: number }) =>
+    api.put('/api/ai/personalization-config', data),
+  getPersonalizationConfig: () => api.get('/api/ai/personalization-config'),
 };
 
 export const uploadAPI = {
@@ -213,7 +219,8 @@ export const matchAPI = {
   join: (id: string) => api.post(`/api/matches/${id}/join`),
   submitAnswer: (id: string, data: { problemIndex: number; answer: string; time: number }) =>
     api.post(`/api/matches/${id}/answer`, data),
-  endMatch: (id: string) => api.post(`/api/matches/${id}/end`),
+  endMatch: (id: string, data?: { surrendered?: boolean }) =>
+    api.post(`/api/matches/${id}/end`, data),
   requestSettlement: (id: string) => api.post(`/api/matches/${id}/request-settlement`),
   getHistory: (limit?: number) => api.get('/api/matches/history/me', { params: { limit } }),
   getLeaderboard: (type: string, limit?: number) =>
@@ -322,6 +329,14 @@ export const discussionAPI = {
   createReply: (id: string, content: string) => api.post(`/api/discussions/${id}/replies`, { content }),
   vote: (id: string, isUpvote: boolean) => api.post(`/api/discussions/${id}/vote`, { isUpvote }),
   delete: (id: string) => api.delete(`/api/discussions/${id}`),
+};
+
+export const starpathAPI = {
+  getMap: () => api.get('/api/starpath/map'),
+  getPlanet: (id: string) => api.get('/api/starpath/planet/' + id),
+  submitChallenge: (planetId: string, data: any) => api.post('/api/starpath/planet/' + planetId + '/submit', data),
+  guideChat: (data: { planetId?: string; message: string }) => api.post('/api/starpath/guide', data),
+  initialize: () => api.post('/api/starpath/initialize'),
 };
 
 export const dailyAPI = {

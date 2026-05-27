@@ -26,6 +26,9 @@ const TeacherClassesPage = lazy(() => import("./pages/teacher/TeacherClassesPage
 const TeacherDashboardPage = lazy(() => import("./pages/teacher/TeacherDashboard").then(m => ({ default: m.TeacherDashboard })));
 const DiscussionsPage = lazy(() => import("./pages/Discussions").then(m => ({ default: m.DiscussionsPage })));
 const DiscussionDetailPage = lazy(() => import("./pages/DiscussionDetail").then(m => ({ default: m.DiscussionDetailPage })));
+const StarPathPage = lazy(() => import("./pages/StarPath").then(m => ({ default: m.StarPathPage })));
+const StarRegionPage = lazy(() => import("./pages/StarRegion").then(m => ({ default: m.StarRegionPage })));
+const StarChallengePage = lazy(() => import("./pages/StarChallenge").then(m => ({ default: m.StarChallengePage })));
 
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard").then(m => ({ default: m.AdminDashboard })));
 const AdminProblemsPage = lazy(() => import("./pages/admin/AdminProblemsPage").then(m => ({ default: m.AdminProblemsPage })));
@@ -229,6 +232,30 @@ export default function App() {
               />
               <Route path="/discussions" element={<DiscussionsPage />} />
               <Route path="/discussions/:id" element={<DiscussionDetailPage />} />
+              <Route
+                path="/starpath"
+                element={
+                  <ProtectedRoute>
+                    <StarPathPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/starpath/region/:id"
+                element={
+                  <ProtectedRoute>
+                    <StarRegionPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/starpath/planet/:id"
+                element={
+                  <ProtectedRoute>
+                    <StarChallengePage />
+                  </ProtectedRoute>
+                }
+              />
             </Route>
 
             <Route

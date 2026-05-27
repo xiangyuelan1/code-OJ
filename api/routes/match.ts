@@ -118,7 +118,10 @@ router.post('/:id/answer', authMiddleware, async (req: Request, res: any): Promi
 
 router.post('/:id/end', authMiddleware, async (req: Request, res: any): Promise<void> => {
   try {
-    const result = await matchService.endMatch(req.params.id);
+    const userId = (req as any).user.userId;
+    const { surrendered } = req.body || {};
+    const surrenderedById = surrendered ? userId : undefined;
+    const result = await matchService.endMatch(req.params.id, surrenderedById);
     res.json({ success: true, data: result });
   } catch (error: any) {
     res.status(400).json({ success: false, error: { message: error.message } });

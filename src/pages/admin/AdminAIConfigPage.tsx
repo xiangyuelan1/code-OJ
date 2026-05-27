@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { aiAPI, enhancedAiAPI } from '../../services/api';
-import { Cpu, Save, Loader2, Brain, Code, Lightbulb, Bug, FileText, TreePine, Tag, FileUp, CheckCircle, XCircle, Settings2, ToggleLeft, ToggleRight, Edit3, Plus, X, Play, RotateCcw, Zap, ZapOff, BarChart3, DollarSign, Activity, BookOpen, GraduationCap, PenTool, Gavel, Layers } from 'lucide-react';
+import { Cpu, Save, Loader2, Brain, Code, Lightbulb, Bug, FileText, TreePine, Tag, FileUp, CheckCircle, XCircle, Settings2, ToggleLeft, ToggleRight, Edit3, Plus, X, Play, RotateCcw, Zap, ZapOff, BarChart3, DollarSign, Activity, BookOpen, GraduationCap, PenTool, Gavel, Layers, Sliders, Target } from 'lucide-react';
 
 interface FeatureConfig {
   id: string;
@@ -58,7 +58,7 @@ const FEATURE_CATEGORIES: CategoryDef[] = [
     label: '学习辅助',
     icon: GraduationCap,
     color: 'purple',
-    featureKeys: ['companion', 'generate-learning-path', 'analyze-submission-trend', 'recommend-similar'],
+    featureKeys: ['companion', 'generate-learning-path', 'analyze-submission-trend', 'recommend-similar', 'personalized-plan', 'personalized-recommendations'],
   },
   {
     key: 'exam',
@@ -101,6 +101,8 @@ const DEFAULT_PROMPT_TEMPLATES: Record<string, string> = {
   'parse-knowledge-tree': '从文本内容中解析生成知识树结构，提取知识点之间的层次关系。',
   'auto-compose': '从自然语言描述自动创建知识树题单，搜索匹配题目并组织结构。',
   'ai-judge': '预测代码能否通过测试用例，分析代码的正确性、边界处理和复杂度。',
+  'personalized-plan': '基于学生能力雷达、薄弱知识点和提交记录，生成个性化题单或考试，题目选择应针对薄弱环节，难度渐进。',
+  'personalized-recommendations': '分析学生的能力雷达和错误标签分布，给出优势、不足和下一步学习建议。',
 };
 
 const CATEGORY_COLOR_MAP: Record<string, { border: string; bg: string; text: string; badge: string }> = {
@@ -136,6 +138,15 @@ export function AdminAIConfigPage() {
   const [testingFeature, setTestingFeature] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ featureKey: string; success: boolean; message: string } | null>(null);
   const [showPromptPreview, setShowPromptPreview] = useState(false);
+
+  // 个性化推荐配置状态
+  const [personalizationConfig, setPersonalizationConfig] = useState({
+    minWeakPointScore: 30,
+    maxProblemsPerPlan: 10,
+    difficultyProgression: 'adaptive',
+    focusWeight: 70,
+  });
+  const [personalizationSaving, setPersonalizationSaving] = useState(false);
 
   const aiFeatures = [
     { id: 'explainCode', name: '代码解释', description: '学生可以对代码请求AI解释，了解代码逻辑', icon: Code, color: 'cyan', endpoint: 'POST /api/ai/explain-code' },
@@ -178,6 +189,7 @@ export function AdminAIConfigPage() {
     if (activeTab === 'management') {
       loadFeatureConfigs();
       loadUsageStats();
+      loadPersonalizationConfig();
     }
   }, [activeTab]);
 
@@ -370,6 +382,32 @@ export function AdminAIConfigPage() {
 
   const getCategoryForFeature = (featureKey: string): CategoryDef => {
     return FEATURE_CATEGORIES.find(cat => cat.featureKeys.includes(featureKey)) || FEATURE_CATEGORIES[0];
+  };
+
+  const loadPersonalizationConfig = async () => {
+    try {
+      const res = await enhancedAiAPI.getPersonalizationConfig();
+      if (res.success && res.data) {
+        setPersonalizationConfig(prev => ({ ...prev, ...res.data }));
+      }
+    } catch (error) {
+      console.error('加载个性化配置失败:', error);
+    }
+  };
+
+  const handleSavePersonalizationConfig = async () => {
+    setPersonalizationSaving(true);
+    try {
+      const res = await enhancedAiAPI.updatePersonalizationConfig(personalizationConfig);
+      if (res.success) {
+        setMessage('个性化推荐配置保存成功！');
+        setTimeout(() => setMessage(''), 3000);
+      }
+    } catch (error: any) {
+      setMessage(error.error?.message || '保存失败');
+    } finally {
+      setPersonalizationSaving(false);
+    }
   };
 
   if (loading) {
@@ -697,6 +735,152 @@ export function AdminAIConfigPage() {
                 })}
               </div>
             )}
+          </div>
+
+          {/* 个性化推荐配置 */}
+          <div className="mt-8 bg-slate-800 rounded-xl p-8 shadow-xl border border-purple-500/20">
+            <div className="flex items-center mb-6">
+              <Sliders className="h-8 w-8 text-purple-400 mr-3" />
+              <div>
+                <h2 className="text-xl font-semibold text-white">个性化推荐配置</h2>
+                <p className="text-slate-400 text-sm mt-1">控制 AI 个性化题单和推荐算法的参数</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* 薄弱点最低分数 */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  薄弱点最低分数
+                  <span className="text-slate-500 ml-2">低于此分数的知识点视为薄弱</span>
+                </label>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={personalizationConfig.minWeakPointScore}
+                    onChange={(e) => setPersonalizationConfig({
+                      ...personalizationConfig,
+                      minWeakPointScore: Number(e.target.value),
+                    })}
+                    className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                  />
+                  <span className="text-white font-semibold w-12 text-right">
+                    {personalizationConfig.minWeakPointScore}
+                  </span>
+                </div>
+              </div>
+
+              {/* 每个计划最大题目数 */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  每个计划最大题目数
+                  <span className="text-slate-500 ml-2">单次生成的题目上限</span>
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={personalizationConfig.maxProblemsPerPlan}
+                  onChange={(e) => setPersonalizationConfig({
+                    ...personalizationConfig,
+                    maxProblemsPerPlan: Number(e.target.value),
+                  })}
+                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              {/* 难度递进策略 */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  难度递进策略
+                  <span className="text-slate-500 ml-2">题目难度的排列方式</span>
+                </label>
+                <select
+                  value={personalizationConfig.difficultyProgression}
+                  onChange={(e) => setPersonalizationConfig({
+                    ...personalizationConfig,
+                    difficultyProgression: e.target.value,
+                  })}
+                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="linear">线性递进（均匀提升难度）</option>
+                  <option value="exponential">指数递进（前期慢后期快）</option>
+                  <option value="adaptive">自适应（根据掌握率动态调整）</option>
+                </select>
+              </div>
+
+              {/* 薄弱点权重 */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  薄弱点聚焦权重
+                  <span className="text-slate-500 ml-2">薄弱点 vs 新话题的平衡</span>
+                </label>
+                <div className="flex items-center gap-4">
+                  <span className="text-xs text-slate-500 w-16">新话题</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={personalizationConfig.focusWeight}
+                    onChange={(e) => setPersonalizationConfig({
+                      ...personalizationConfig,
+                      focusWeight: Number(e.target.value),
+                    })}
+                    className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                  />
+                  <span className="text-xs text-slate-500 w-16">薄弱点</span>
+                  <span className="text-white font-semibold w-12 text-right">
+                    {personalizationConfig.focusWeight}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 配置预览 */}
+            <div className="mt-6 p-4 bg-slate-700/50 rounded-lg">
+              <div className="flex items-center gap-2 mb-3">
+                <Target className="h-4 w-4 text-purple-400" />
+                <span className="text-sm font-medium text-slate-300">当前配置效果</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div className="p-2 bg-slate-700 rounded">
+                  <div className="text-slate-400">薄弱线</div>
+                  <div className="text-white font-medium">&lt; {personalizationConfig.minWeakPointScore}分</div>
+                </div>
+                <div className="p-2 bg-slate-700 rounded">
+                  <div className="text-slate-400">题量上限</div>
+                  <div className="text-white font-medium">{personalizationConfig.maxProblemsPerPlan}题</div>
+                </div>
+                <div className="p-2 bg-slate-700 rounded">
+                  <div className="text-slate-400">难度策略</div>
+                  <div className="text-white font-medium">
+                    {personalizationConfig.difficultyProgression === 'linear' ? '线性' :
+                     personalizationConfig.difficultyProgression === 'exponential' ? '指数' : '自适应'}
+                  </div>
+                </div>
+                <div className="p-2 bg-slate-700 rounded">
+                  <div className="text-slate-400">聚焦度</div>
+                  <div className="text-white font-medium">{personalizationConfig.focusWeight}% 薄弱</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={handleSavePersonalizationConfig}
+                disabled={personalizationSaving}
+                className="flex items-center px-6 py-2.5 bg-purple-500 hover:bg-purple-600 text-white font-semibold rounded-lg transition-colors disabled:opacity-50"
+              >
+                {personalizationSaving ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-2" />
+                )}
+                保存配置
+              </button>
+            </div>
           </div>
         </div>
       )}

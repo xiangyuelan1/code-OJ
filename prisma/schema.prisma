@@ -45,6 +45,7 @@ model User {
   replies          Reply[]
   discussionVotes  DiscussionVote[]
   dailyChallenges  UserDailyChallenge[]
+  planetProgresses UserPlanetProgress[]
 }
 
 model Session {
@@ -69,6 +70,7 @@ model KnowledgeTree {
   parent      KnowledgeTree?  @relation("KnowledgeTreeRelation", fields: [parentId], references: [id])
   children    KnowledgeTree[] @relation("KnowledgeTreeRelation")
   problems    Problem[]
+  starRegion  StarRegion?
 }
 
 model Problem {
@@ -560,4 +562,51 @@ model UserDailyChallenge {
   createdAt     DateTime @default(now())
 
   @@unique([userId, dailyChallengeId])
+}
+
+model StarRegion {
+  id              String       @id @default(uuid())
+  name            String
+  description     String       @default("")
+  icon            String       @default("⭐")
+  color           String       @default("#4FC3F7")
+  order           Int          @default(0)
+  knowledgeTreeId String?          @unique
+  knowledgeTree   KnowledgeTree? @relation(fields: [knowledgeTreeId], references: [id])
+  planets         StarPlanet[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model StarPlanet {
+  id          String              @id @default(uuid())
+  regionId    String
+  region      StarRegion          @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  name        String
+  description String              @default("")
+  difficulty  String              @default("MEDIUM")
+  tags        String              @default("[]")
+  order       Int                 @default(0)
+  posX        Float               @default(0)
+  posY        Float               @default(0)
+  problemIds  String              @default("[]")
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  progress    UserPlanetProgress[]
+}
+
+model UserPlanetProgress {
+  id          String     @id @default(uuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id])
+  planetId    String
+  planet      StarPlanet @relation(fields: [planetId], references: [id])
+  status      String     @default("UNEXPLORED")
+  score       Int        @default(0)
+  attempts    Int        @default(0)
+  lastVisitAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([userId, planetId])
 }

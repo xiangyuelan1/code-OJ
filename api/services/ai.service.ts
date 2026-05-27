@@ -2675,6 +2675,8 @@ ${params.code || ''}
     { featureKey: 'analyze-submission-trend', featureName: '提交趋势分析', description: '分析近期提交中的常见错误和改进方向' },
     { featureKey: 'smart-hint', featureName: '智能提示', description: '根据尝试次数提供渐进式提示' },
     { featureKey: 'auto-compose', featureName: 'AI自动组建题单', description: '从自然语言描述自动创建知识树题单' },
+    { featureKey: 'personalized-plan', featureName: '个性化题单与考试', description: '基于学生画像生成个性化题单和考试' },
+    { featureKey: 'personalized-recommendations', featureName: '个性化学习建议', description: '基于学生数据提供个性化学习建议和下一步方向' },
   ];
 
   /**
@@ -2749,6 +2751,455 @@ ${params.code || ''}
     });
 
     return { created: toCreate.length, total: existing.length + toCreate.length };
+  }
+
+  /**
+   * 生成个性化题单或考试：基于学生画像、提交记录和薄弱点，
+   * 由 AI 选择最合适的题目并给出推荐理由。
+   * AI 不可用时降级为基于规则的选题策略。
+   */
+  async generatePersonalizedPlan(params: {
+    userId: string;
+    type: 'PROBLEM_LIST' | 'EXAM';
+    options?: {
+      targetArea?: string;
+      difficulty?: string;
+      count?: number;
+      timeLimit?: number;
+    };
+  }): Promise<{
+    title: string;
+    description: string;
+    problems: Array<{ id: string; reason: string }>;
+    estimatedTime: string;
+    focusAreas: string[];
+  }> {
+    const { userId, type, options = {} } = params;
+    const count = options.count || (type === 'EXAM' ? 5 : 8);
+
+    const profile = await prisma.learnerProfile.findUnique({ where: { userId } });
+    const abilityRadar: Record<string, number> = profile?.abilityRadar
+      ? JSON.parse(profile.abilityRadar)
+      : {};
+    const weakPoints: Array<{ tag: string; errorCount: number }> = profile?.weakPoints
+      ? JSON.parse(profile.weakPoints)
+      : [];
+    const knowledgeMap: Record<string, number> = profile?.knowledgeMap
+      ? JSON.parse(profile.knowledgeMap)
+      : {};
+
+    const recentSubmissions = await prisma.submission.findMany({
+      where: { userId },
+      include: {
+        problem: {
+          select: { id: true, title: true, tags: true, difficulty: true, type: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    const wrongSubmissions = recentSubmissions.filter(s => s.status !== 'ACCEPTED');
+    const wrongTagMap: Record<string, number> = {};
+    for (const sub of wrongSubmissions) {
+      const tags: string[] = JSON.parse(sub.problem.tags || '[]');
+      for (const tag of tags) {
+        wrongTagMap[tag] = (wrongTagMap[tag] || 0) + 1;
+      }
+    }
+    const wrongTagsSorted = Object.entries(wrongTagMap)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 8)
+      .map(([tag, count]) => ({ tag, count }));
+
+    const submissionPattern = recentSubmissions.slice(0, 20).map(s => ({
+      title: s.problem.title,
+      status: s.status,
+      tags: JSON.parse(s.problem.tags || '[]'),
+      difficulty: s.problem.difficulty,
+    }));
+
+    const lowAcNodes = Object.entries(knowledgeMap)
+      .filter(([, rate]) => rate < 40)
+      .slice(0, 5)
+      .map(([nodeId, rate]) => ({ nodeId, acRate: rate }));
+
+    const solvedProblemIds = new Set(
+      recentSubmissions.filter(s => s.status === 'ACCEPTED').map(s => s.problemId)
+    );
+
+    const difficultyFilter = options.difficulty
+      ? { difficulty: options.difficulty }
+      : {};
+
+    const candidateProblems = await prisma.problem.findMany({
+      where: {
+        type: 'PROGRAMMING',
+        ...difficultyFilter,
+      },
+      select: {
+        id: true,
+        title: true,
+        difficulty: true,
+        tags: true,
+        type: true,
+      },
+      take: 100,
+    });
+
+    if (candidateProblems.length === 0) {
+      return {
+        title: type === 'EXAM' ? '个性化考试' : '个性化题单',
+        description: '系统中暂无可用题目',
+        problems: [],
+        estimatedTime: '0分钟',
+        focusAreas: [],
+      };
+    }
+
+    const aiEnabled = await this.isFeatureEnabled('personalized-plan');
+    const config = await this.getConfig();
+
+    if (aiEnabled && config?.apiKey) {
+      const problemList = candidateProblems.map(p => ({
+        id: p.id,
+        title: p.title,
+        difficulty: p.difficulty,
+        tags: JSON.parse(p.tags || '[]'),
+        solved: solvedProblemIds.has(p.id),
+      }));
+
+      const typeInstruction = type === 'EXAM'
+        ? `请组织一份考试试卷，要求：
+1. 难度分布合理（简单:中等:困难 ≈ 3:5:2）
+2. 题目之间知识点不重复
+3. 考试时间控制在 ${options.timeLimit || 60} 分钟内
+4. 优先考查学生的薄弱环节`
+        : `请组织一份练习题单，要求：
+1. 难度渐进：从学生薄弱但能上手的基础题开始，逐步提升
+2. 重点针对学生的薄弱标签安排更多练习
+3. 同一知识点的题目不超过2道
+4. 包含少量已掌握领域的综合题以巩固`;
+
+      const prompt = `你是一位专业的编程教育专家。请根据以下学生数据，${type === 'EXAM' ? '为其组织一份个性化考试' : '为其制定一份个性化练习题单'}。
+
+## 学生能力雷达
+${Object.entries(abilityRadar).map(([dim, val]) => `- ${dim}: ${val}%`).join('\n') || '- 暂无数据'}
+
+## 薄弱知识点（按错误频次排序）
+${weakPoints.map(wp => `- ${wp.tag}: 错误 ${wp.errorCount} 次`).join('\n') || '- 暂无数据'}
+
+## 错误标签分布
+${wrongTagsSorted.map(wt => `- ${wt.tag}: ${wt.count} 次`).join('\n') || '- 暂无数据'}
+
+## 近期提交模式
+${submissionPattern.map(sp => `- ${sp.title} (${sp.difficulty}) [${sp.tags.join(', ')}] → ${sp.status}`).join('\n') || '- 暂无数据'}
+
+## 知识地图薄弱节点（AC率 < 40%）
+${lowAcNodes.map(n => `- 节点 ${n.nodeId}: AC率 ${n.acRate}%`).join('\n') || '- 暂无数据'}
+
+${options.targetArea ? `## 目标领域\n${options.targetArea}\n` : ''}
+
+## 可选题目列表
+${JSON.stringify(problemList, null, 2)}
+
+${typeInstruction}
+
+请以JSON格式返回：
+{
+  "title": "题单/考试标题",
+  "description": "简要描述（1-2句话）",
+  "selectedProblems": [
+    { "id": "题目ID", "reason": "选择该题的理由" }
+  ],
+  "estimatedTime": "预计完成时间（如：45分钟）",
+  "focusAreas": ["重点关注的领域1", "领域2"]
+}
+
+请选择 ${count} 道题目。`;
+
+      try {
+        const response = await this.callAI(prompt, config, 'personalized-plan', userId);
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          const validIds = new Set(candidateProblems.map(p => p.id));
+          const problems = (parsed.selectedProblems || [])
+            .filter((p: any) => validIds.has(p.id))
+            .slice(0, count);
+          return {
+            title: parsed.title || (type === 'EXAM' ? '个性化考试' : '个性化题单'),
+            description: parsed.description || '',
+            problems,
+            estimatedTime: parsed.estimatedTime || `${count * 15}分钟`,
+            focusAreas: Array.isArray(parsed.focusAreas) ? parsed.focusAreas : [],
+          };
+        }
+      } catch (e) {
+        console.error('AI个性化计划生成失败，降级为规则选择:', e);
+      }
+    }
+
+    return this.fallbackGeneratePersonalizedPlan(
+      candidateProblems,
+      weakPoints,
+      solvedProblemIds,
+      type,
+      count,
+    );
+  }
+
+  /**
+   * 基于规则的个性化计划降级方案：
+   * 按薄弱标签匹配题目，按难度渐进排序。
+   */
+  private fallbackGeneratePersonalizedPlan(
+    candidates: Array<{ id: string; title: string; difficulty: string; tags: string; type: string }>,
+    weakPoints: Array<{ tag: string; errorCount: number }>,
+    solvedIds: Set<string>,
+    type: 'PROBLEM_LIST' | 'EXAM',
+    count: number,
+  ): {
+    title: string;
+    description: string;
+    problems: Array<{ id: string; reason: string }>;
+    estimatedTime: string;
+    focusAreas: string[];
+  } {
+    const weakTags = new Set(weakPoints.map(wp => wp.tag));
+    const difficultyOrder: Record<string, number> = { EASY: 0, MEDIUM: 1, HARD: 2 };
+
+    const scored = candidates.map(p => {
+      const tags: string[] = JSON.parse(p.tags || '[]');
+      const weakMatch = tags.filter(t => weakTags.has(t)).length;
+      const score = weakMatch * 10 + (difficultyOrder[p.difficulty] ?? 1);
+      return { ...p, parsedTags: tags, weakMatch, score };
+    });
+
+    if (type === 'PROBLEM_LIST') {
+      scored.sort((a, b) => {
+        if (a.weakMatch !== b.weakMatch) return b.weakMatch - a.weakMatch;
+        return (difficultyOrder[a.difficulty] ?? 1) - (difficultyOrder[b.difficulty] ?? 1);
+      });
+    } else {
+      scored.sort(() => Math.random() - 0.5);
+    }
+
+    const selected = scored.slice(0, count);
+    const focusAreas = [...weakTags].slice(0, 3);
+
+    return {
+      title: type === 'EXAM' ? '个性化考试' : '个性化练习题单',
+      description: `基于你的薄弱点${focusAreas.length > 0 ? `（${focusAreas.join('、')}）` : ''}，为你${type === 'EXAM' ? '组织了考试' : '精选了练习题'}`,
+      problems: selected.map(p => ({
+        id: p.id,
+        reason: p.weakMatch > 0
+          ? `针对薄弱点 ${p.parsedTags.filter(t => weakTags.has(t)).join('、')} 的练习`
+          : `${p.difficulty} 难度综合练习`,
+      })),
+      estimatedTime: `${count * 15}分钟`,
+      focusAreas,
+    };
+  }
+
+  /**
+   * 获取个性化学习建议：基于学生画像和提交记录，
+   * 由 AI 分析学生的优劣势并给出下一步学习方向。
+   * AI 不可用时降级为基于规则的建议。
+   */
+  async getPersonalizedRecommendations(params: {
+    userId: string;
+  }): Promise<{
+    summary: string;
+    strengths: string[];
+    weaknesses: string[];
+    nextSteps: Array<{ area: string; reason: string; problemIds: string[] }>;
+  }> {
+    const { userId } = params;
+
+    const profile = await prisma.learnerProfile.findUnique({ where: { userId } });
+    const abilityRadar: Record<string, number> = profile?.abilityRadar
+      ? JSON.parse(profile.abilityRadar)
+      : {};
+    const weakPoints: Array<{ tag: string; errorCount: number }> = profile?.weakPoints
+      ? JSON.parse(profile.weakPoints)
+      : [];
+
+    const wrongSubmissions = await prisma.submission.findMany({
+      where: { userId, status: { not: 'ACCEPTED' } },
+      include: {
+        problem: {
+          select: { id: true, title: true, tags: true, difficulty: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+    });
+
+    const wrongTagMap: Record<string, number> = {};
+    for (const sub of wrongSubmissions) {
+      const tags: string[] = JSON.parse(sub.problem.tags || '[]');
+      for (const tag of tags) {
+        wrongTagMap[tag] = (wrongTagMap[tag] || 0) + 1;
+      }
+    }
+
+    const aiEnabled = await this.isFeatureEnabled('personalized-recommendations');
+    const config = await this.getConfig();
+
+    if (aiEnabled && config?.apiKey) {
+      const prompt = `你是一位专业的编程教育分析师。请根据以下学生数据，分析其学习状况并给出个性化建议。
+
+## 学生能力雷达
+${Object.entries(abilityRadar).map(([dim, val]) => `- ${dim}: ${val}%`).join('\n') || '- 暂无数据'}
+
+## 薄弱知识点
+${weakPoints.map(wp => `- ${wp.tag}: 错误 ${wp.errorCount} 次`).join('\n') || '- 暂无数据'}
+
+## 错误标签分布
+${Object.entries(wrongTagMap)
+  .sort(([, a], [, b]) => b - a)
+  .slice(0, 8)
+  .map(([tag, count]) => `- ${tag}: ${count} 次`)
+  .join('\n') || '- 暂无数据'}
+
+请以JSON格式返回：
+{
+  "summary": "总体学习情况概述（2-3句话）",
+  "strengths": ["优势1", "优势2", ...],
+  "weaknesses": ["不足1", "不足2", ...],
+  "nextSteps": [
+    {
+      "area": "建议加强的领域",
+      "reason": "为什么建议加强这个领域",
+      "suggestedTags": ["相关标签1", "标签2"]
+    }
+  ]
+}
+
+要求：
+1. strengths 列出2-3个优势领域
+2. weaknesses 列出2-3个不足领域
+3. nextSteps 给出3-5个具体可执行的下一步学习方向`;
+
+      try {
+        const response = await this.callAI(prompt, config, 'personalized-recommendations', userId);
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          const nextSteps = await this.enrichNextStepsWithProblems(
+            Array.isArray(parsed.nextSteps) ? parsed.nextSteps : [],
+          );
+          return {
+            summary: parsed.summary || '暂无分析',
+            strengths: Array.isArray(parsed.strengths) ? parsed.strengths : [],
+            weaknesses: Array.isArray(parsed.weaknesses) ? parsed.weaknesses : [],
+            nextSteps,
+          };
+        }
+      } catch (e) {
+        console.error('AI个性化建议生成失败，降级为规则建议:', e);
+      }
+    }
+
+    return this.fallbackGetPersonalizedRecommendations(abilityRadar, weakPoints, wrongTagMap);
+  }
+
+  /**
+   * 将 AI 返回的 nextSteps 中的 suggestedTags 映射为实际题目 ID
+   */
+  private async enrichNextStepsWithProblems(
+    nextSteps: Array<{ area: string; reason: string; suggestedTags?: string[] }>,
+  ): Promise<Array<{ area: string; reason: string; problemIds: string[] }>> {
+    const enriched = [];
+    for (const step of nextSteps.slice(0, 5)) {
+      const tags = step.suggestedTags || [];
+      let problems: Array<{ id: string; tags: string }> = [];
+      if (tags.length > 0) {
+        problems = await prisma.problem.findMany({
+          where: { type: 'PROGRAMMING' },
+          select: { id: true, tags: true },
+          take: 30,
+        });
+        problems = problems.filter(p => {
+          const pTags: string[] = JSON.parse(p.tags || '[]');
+          return tags.some(t => pTags.some(pt => pt.includes(t) || t.includes(pt)));
+        });
+      }
+      if (problems.length === 0) {
+        const fallback = await prisma.problem.findMany({
+          where: { type: 'PROGRAMMING' },
+          select: { id: true },
+          take: 3,
+          orderBy: { createdAt: 'desc' },
+        });
+        problems = fallback.map(p => ({ id: p.id, tags: '[]' }));
+      }
+      enriched.push({
+        area: step.area,
+        reason: step.reason,
+        problemIds: problems.slice(0, 3).map(p => p.id),
+      });
+    }
+    return enriched;
+  }
+
+  /**
+   * 基于规则的个性化建议降级方案
+   */
+  private fallbackGetPersonalizedRecommendations(
+    abilityRadar: Record<string, number>,
+    weakPoints: Array<{ tag: string; errorCount: number }>,
+    wrongTagMap: Record<string, number>,
+  ): {
+    summary: string;
+    strengths: string[];
+    weaknesses: string[];
+    nextSteps: Array<{ area: string; reason: string; problemIds: string[] }>;
+  } {
+    const strengths: string[] = [];
+    const weaknesses: string[] = [];
+
+    for (const [dim, val] of Object.entries(abilityRadar)) {
+      if (val >= 60) strengths.push(`${dim}（掌握率 ${val}%）`);
+      else if (val < 40) weaknesses.push(`${dim}（掌握率 ${val}%）`);
+    }
+
+    if (strengths.length === 0) strengths.push('暂无突出优势，继续练习即可建立');
+    if (weaknesses.length === 0 && weakPoints.length > 0) {
+      weaknesses.push(...weakPoints.slice(0, 3).map(wp => `${wp.tag}（错误 ${wp.errorCount} 次）`));
+    }
+    if (weaknesses.length === 0) weaknesses.push('数据不足，暂无法判断薄弱点');
+
+    const topWeakTags = Object.entries(wrongTagMap)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([tag]) => tag);
+
+    const nextSteps: Array<{ area: string; reason: string; problemIds: string[] }> = [];
+    for (const tag of topWeakTags) {
+      nextSteps.push({
+        area: tag,
+        reason: `在${tag}相关题目上错误较多，建议加强练习`,
+        problemIds: [],
+      });
+    }
+
+    if (nextSteps.length === 0) {
+      nextSteps.push({
+        area: '基础练习',
+        reason: '建议从基础题目开始，逐步建立各领域能力',
+        problemIds: [],
+      });
+    }
+
+    const acceptedCount = Object.values(abilityRadar).filter(v => v >= 50).length;
+    const totalDims = Object.keys(abilityRadar).length || 5;
+    const summary = totalDims > 0
+      ? `你在 ${acceptedCount}/${totalDims} 个能力维度上达到及格水平。${weaknesses.length > 0 ? `需要重点关注：${weaknesses.slice(0, 2).join('、')}。` : '继续保持！'}`
+      : '暂无足够数据进行分析，建议多做题以积累学习画像。';
+
+    return { summary, strengths, weaknesses, nextSteps };
   }
 
   /**

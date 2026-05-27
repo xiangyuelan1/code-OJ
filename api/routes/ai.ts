@@ -357,6 +357,115 @@ router.post('/batch-classify', authMiddleware, roleMiddleware('ADMIN'), async (r
 });
 
 // ========================
+// 个性化题单与考试
+// ========================
+
+router.post('/personalized-plan', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { type, options } = req.body;
+
+    if (!type || !['PROBLEM_LIST', 'EXAM'].includes(type)) {
+      res.status(400).json({ success: false, error: { message: 'type 必须为 PROBLEM_LIST 或 EXAM' } });
+      return;
+    }
+
+    const result = await aiService.generatePersonalizedPlan({ userId, type, options });
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.get('/personalized-recommendations', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const result = await aiService.getPersonalizedRecommendations({ userId });
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
+// 个性化推荐配置（管理员）
+// ========================
+
+router.put('/personalization-config', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const { minWeakPointScore, maxProblemsPerPlan, difficultyProgression, focusWeight } = req.body;
+
+    const configData: Record<string, any> = {};
+    if (minWeakPointScore !== undefined) configData.minWeakPointScore = Number(minWeakPointScore);
+    if (maxProblemsPerPlan !== undefined) configData.maxProblemsPerPlan = Number(maxProblemsPerPlan);
+    if (difficultyProgression !== undefined) configData.difficultyProgression = String(difficultyProgression);
+    if (focusWeight !== undefined) configData.focusWeight = Number(focusWeight);
+
+    const existing = await prisma.aIFeatureConfig.findUnique({
+      where: { featureKey: 'personalization-config' },
+    });
+
+    if (existing) {
+      const currentConfig: Record<string, any> = existing.promptTemplate
+        ? JSON.parse(existing.promptTemplate)
+        : {};
+      const merged = { ...currentConfig, ...configData };
+      const updated = await prisma.aIFeatureConfig.update({
+        where: { featureKey: 'personalization-config' },
+        data: { promptTemplate: JSON.stringify(merged) },
+      });
+      res.json({ success: true, data: { ...merged, _meta: { updatedAt: updated.updatedAt } } });
+    } else {
+      const defaults = {
+        minWeakPointScore: 30,
+        maxProblemsPerPlan: 10,
+        difficultyProgression: 'adaptive',
+        focusWeight: 70,
+      };
+      const merged = { ...defaults, ...configData };
+      await prisma.aIFeatureConfig.create({
+        data: {
+          featureKey: 'personalization-config',
+          featureName: '个性化推荐配置',
+          description: '控制个性化题单和推荐的参数',
+          enabled: true,
+          promptTemplate: JSON.stringify(merged),
+          maxTokens: 0,
+          temperature: 0,
+        },
+      });
+      res.json({ success: true, data: merged });
+    }
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.get('/personalization-config', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const existing = await prisma.aIFeatureConfig.findUnique({
+      where: { featureKey: 'personalization-config' },
+    });
+
+    const defaults = {
+      minWeakPointScore: 30,
+      maxProblemsPerPlan: 10,
+      difficultyProgression: 'adaptive',
+      focusWeight: 70,
+    };
+
+    if (existing && existing.promptTemplate) {
+      const saved = JSON.parse(existing.promptTemplate);
+      res.json({ success: true, data: { ...defaults, ...saved } });
+    } else {
+      res.json({ success: true, data: defaults });
+    }
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
 // 新增 AI 功能路由
 // ========================
 

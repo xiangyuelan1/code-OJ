@@ -92,3 +92,86 @@ button, a, label {
 .prose-invert span:not([class]) {
   color: theme('colors.slate.300');
 }
+
+/* ── StarPath 星途模块动画 ── */
+
+.starfield-bg {
+  background: linear-gradient(135deg, #0a0a2e 0%, #1a1a4e 50%, #0d1033 100%);
+}
+
+.star-nebula::before {
+  content: '';
+  position: absolute;
+  top: -10%;
+  left: -10%;
+  width: 120%;
+  height: 120%;
+  background:
+    radial-gradient(ellipse at 20% 30%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, rgba(6, 182, 212, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(236, 72, 153, 0.04) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.planet-unexplored {
+  background: radial-gradient(circle, rgba(100, 116, 139, 0.5) 0%, rgba(51, 65, 85, 0.8) 100%);
+  box-shadow: 0 0 15px rgba(100, 116, 139, 0.2);
+  animation: planet-pulse-dim 3s ease-in-out infinite;
+}
+
+.planet-exploring {
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.6) 0%, rgba(59, 130, 246, 0.9) 100%);
+  box-shadow: 0 0 25px rgba(96, 165, 250, 0.4), 0 0 50px rgba(59, 130, 246, 0.2);
+  animation: planet-pulse-blue 2s ease-in-out infinite;
+}
+
+.planet-mastered {
+  background: radial-gradient(circle, rgba(250, 204, 21, 0.7) 0%, rgba(245, 158, 11, 1) 100%);
+  box-shadow: 0 0 30px rgba(250, 204, 21, 0.5), 0 0 60px rgba(245, 158, 11, 0.3);
+  animation: sparkle 1.5s ease-in-out infinite;
+}
+
+@keyframes planet-pulse-dim {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.03); }
+}
+
+@keyframes planet-pulse-blue {
+  0%, 100% { box-shadow: 0 0 25px rgba(96, 165, 250, 0.4), 0 0 50px rgba(59, 130, 246, 0.2); }
+  50% { box-shadow: 0 0 35px rgba(96, 165, 250, 0.6), 0 0 70px rgba(59, 130, 246, 0.35); }
+}
+
+.glass-card {
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.glass-card-hover:hover {
+  background: rgba(30, 41, 59, 0.75);
+  border-color: rgba(139, 92, 246, 0.25);
+  box-shadow: 0 0 30px rgba(139, 92, 246, 0.08);
+}
+
+.typing-cursor::after {
+  content: '|';
+  animation: blink-cursor 0.8s step-end infinite;
+  color: rgba(167, 139, 250, 0.8);
+  margin-left: 2px;
+}
+
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.star-trail-line {
+  stroke-dasharray: 6 4;
+  stroke-dashoffset: 0;
+  animation: trail-flow 3s linear infinite;
+}
+
+@keyframes trail-flow {
+  to { stroke-dashoffset: -40; }
+}
