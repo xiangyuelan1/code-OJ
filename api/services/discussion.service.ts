@@ -171,6 +171,103 @@ export class DiscussionService {
     await prisma.discussion.delete({ where: { id } });
     return { success: true };
   }
+
+  /**
+   * 获取热门讨论：按近7天内的投票数和回复数综合排序
+   */
+  async getHotDiscussions(limit: number = 5) {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const discussions = await prisma.discussion.findMany({
+      where: { createdAt: { gte: sevenDaysAgo } },
+      include: {
+        author: { select: AUTHOR_SELECT },
+        _count: { select: { replies: true, votes: true } },
+      },
+      orderBy: [
+        { upvotes: 'desc' },
+        { replyCount: 'desc' },
+        { createdAt: 'desc' },
+      ],
+      take: limit,
+    });
+
+    return discussions.map(d => ({
+      ...d,
+      tags: JSON.parse(d.tags || '[]'),
+    }));
+  }
+
+  /**
+   * 置顶/取消置顶讨论
+   */
+  async togglePinDiscussion(discussionId: string, pinned: boolean) {
+    const discussion = await prisma.discussion.findUnique({ where: { id: discussionId } });
+    if (!discussion) throw new Error('讨论不存在');
+
+    return await prisma.discussion.update({
+      where: { id: discussionId },
+      data: { isPinned: pinned },
+      include: { author: { select: AUTHOR_SELECT } },
+    });
+  }
+
+  /**
+   * 编辑讨论内容（仅作者可操作）
+   */
+  async updateDiscussion(discussionId: string, userId: string, data: { title?: string; content?: string; tags?: string[] }) {
+    const discussion = await prisma.discussion.findUnique({ where: { id: discussionId } });
+    if (!discussion) throw new Error('讨论不存在');
+    if (discussion.authorId !== userId) throw new Error('无权编辑此讨论');
+
+    const updateData: any = {};
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.content !== undefined) updateData.content = data.content;
+    if (data.tags !== undefined) updateData.tags = JSON.stringify(data.tags);
+
+    return await prisma.discussion.update({
+      where: { id: discussionId },
+      data: updateData,
+      include: { author: { select: AUTHOR_SELECT } },
+    });
+  }
+
+  /**
+   * 编辑回复内容（仅作者可操作）
+   */
+  async updateReply(replyId: string, userId: string, content: string) {
+    const reply = await prisma.reply.findUnique({ where: { id: replyId } });
+    if (!reply) throw new Error('回复不存在');
+    if (reply.authorId !== userId) throw new Error('无权编辑此回复');
+
+    return await prisma.reply.update({
+      where: { id: replyId },
+      data: { content },
+      include: { author: { select: AUTHOR_SELECT } },
+    });
+  }
+
+  /**
+   * 获取所有标签及其使用次数
+   */
+  async getDiscussionTags() {
+    const discussions = await prisma.discussion.findMany({
+      select: { tags: true },
+    });
+
+    const tagCountMap: Record<string, number> = {};
+    for (const d of discussions) {
+      const tags: string[] = JSON.parse(d.tags || '[]');
+      for (const tag of tags) {
+        tagCountMap[tag] = (tagCountMap[tag] || 0) + 1;
+      }
+    }
+
+    return Object.entries(tagCountMap)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+  }
 }
 
 export const discussionService = new DiscussionService();

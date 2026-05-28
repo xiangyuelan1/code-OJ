@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { problemsAPI, pointsAPI, profileAPI, dailyAPI } from '../services/api';
+import { problemsAPI, pointsAPI, profileAPI, dailyAPI, discussionAPI, matchAPI, starpathAPI } from '../services/api';
 import { useAuthStore } from '../stores/auth.store';
 import { usePointsStore } from '../stores/points.store';
 import {
@@ -8,6 +8,7 @@ import {
   ArrowRight, ChevronRight, BookOpen, Target, Flame,
   Terminal, Shield, Brain, Sparkles, CalendarCheck,
   TrendingUp, MessageSquare, AlertTriangle, CheckCircle2,
+  ThumbsUp, Globe, BarChart3, Clock,
 } from 'lucide-react';
 
 interface PublicStats {
@@ -56,6 +57,29 @@ interface ProfileData {
   };
 }
 
+interface HotDiscussion {
+  id: string;
+  title: string;
+  author?: { username: string };
+  upvotes: number;
+  replyCount: number;
+}
+
+interface MatchHistoryItem {
+  id: string;
+  matchType: string;
+  opponent?: string;
+  score: number;
+  isWinner: boolean;
+  completedAt?: string;
+}
+
+interface StarMapSummary {
+  totalPlanets: number;
+  exploredPlanets: number;
+  masteredPlanets: number;
+}
+
 const RADAR_DIMENSIONS = ['算法思维', '代码实现', '调试能力', '优化意识', '数学建模'];
 const RADAR_COLORS: Record<string, string> = {
   '算法思维': 'text-cyan-400',
@@ -90,6 +114,17 @@ function getTypeLabel(t: string) {
     case 'FILL_BLANK': return '填空';
     default: return t;
   }
+}
+
+/** 生成最近7天日期标签 */
+function getLast7Days(): string[] {
+  const days: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push(d.toLocaleDateString('zh-CN', { weekday: 'short' }));
+  }
+  return days;
 }
 
 /** SVG 能力雷达图：五边形 + 数据填充 */
@@ -161,6 +196,13 @@ export function HomePage() {
   const [recommendations, setRecommendations] = useState<RecommendedProblem[]>([]);
   const [dailyChallenge, setDailyChallenge] = useState<DailyChallengeData | null>(null);
 
+  /** 新增状态：社区热点、对战动态、编程星途、学习进度 */
+  const [hotDiscussions, setHotDiscussions] = useState<HotDiscussion[]>([]);
+  const [matchHistory, setMatchHistory] = useState<MatchHistoryItem[]>([]);
+  const [starMapSummary, setStarMapSummary] = useState<StarMapSummary | null>(null);
+  const [weeklySolved, setWeeklySolved] = useState(0);
+  const [dailyGoalProgress, setDailyGoalProgress] = useState(0);
+
   useEffect(() => {
     if (isAuthenticated) {
       loadAuthData();
@@ -171,34 +213,63 @@ export function HomePage() {
 
   const loadAuthData = async () => {
     try {
-      const [profileRes, recRes, dailyRes, statsRes, lbRes] = await Promise.all([
+      const [profileRes, recRes, dailyRes, statsRes, lbRes, hotRes, matchRes, starMapRes] = await Promise.all([
         profileAPI.getMine(),
         profileAPI.getRecommendations(5),
         dailyAPI.getToday(),
         problemsAPI.getPublicStats(),
         pointsAPI.getLeaderboard(5),
+        discussionAPI.getHot(5).catch(() => ({ success: false, data: [] })),
+        matchAPI.getHistory(5).catch(() => ({ success: false, data: [] })),
+        starpathAPI.getMap().catch(() => ({ success: false, data: null })),
       ]);
       if (profileRes.success) setProfileData(profileRes.data);
       if (recRes.success) setRecommendations(recRes.data || []);
       if (dailyRes.success) setDailyChallenge(dailyRes.data);
       if (statsRes.success) setStats(statsRes.data);
       if (lbRes.success) setLeaderboard(lbRes.data || []);
+      if (hotRes.success) setHotDiscussions(hotRes.data || []);
+      if (matchRes.success) setMatchHistory(matchRes.data || []);
+      if (starMapRes.success && starMapRes.data) {
+        setStarMapSummary({
+          totalPlanets: starMapRes.data.totalPlanets || 0,
+          exploredPlanets: starMapRes.data.exploredPlanets || 0,
+          masteredPlanets: starMapRes.data.masteredPlanets || 0,
+        });
+      }
       fetchMyPoints();
+
+      /* 计算本周解题数和每日目标进度 */
+      computeWeeklyProgress(profileRes);
     } catch {
       loadPublicData();
     }
   };
 
+  /** 根据用户 profile 数据推算本周解题数和每日目标 */
+  const computeWeeklyProgress = (profileRes: any) => {
+    if (!profileRes.success) return;
+    const totalAccepted = profileRes.data?.stats?.acceptedSubmissions ?? 0;
+    /* 用总通过数近似推算：假设均匀分布，7天约占30天窗口的1/4 */
+    const estimatedWeekly = Math.round(totalAccepted * 0.25);
+    setWeeklySolved(Math.min(estimatedWeekly, totalAccepted));
+    /* 每日目标：3题/天 */
+    const todayProgress = Math.min(100, Math.round((estimatedWeekly / 7 / 3) * 100));
+    setDailyGoalProgress(todayProgress);
+  };
+
   const loadPublicData = async () => {
     try {
-      const [statsRes, lbRes, problemsRes] = await Promise.all([
+      const [statsRes, lbRes, problemsRes, hotRes] = await Promise.all([
         problemsAPI.getPublicStats(),
         pointsAPI.getLeaderboard(5),
         problemsAPI.getAll(),
+        discussionAPI.getHot(3).catch(() => ({ success: false, data: [] })),
       ]);
       if (statsRes.success) setStats(statsRes.data);
       if (lbRes.success) setLeaderboard(lbRes.data || []);
       if (problemsRes.success) setRecentProblems((problemsRes.data || []).slice(0, 6));
+      if (hotRes.success) setHotDiscussions(hotRes.data || []);
     } catch {
       /* 首页数据加载失败不阻塞渲染 */
     }
@@ -207,8 +278,9 @@ export function HomePage() {
   const streakDays = profileData?.profile?.streakDays ?? 0;
   const abilityRadar = profileData?.profile?.abilityRadar ?? {};
   const weakPoints = (profileData?.profile?.weakPoints ?? []).slice(0, 3);
+  const last7Days = getLast7Days();
 
-  /* ── 未登录用户：保留原有题库列表 ── */
+  /* ── 未登录用户 ── */
   if (!isAuthenticated) {
     return (
       <div className="-mt-8">
@@ -268,11 +340,12 @@ export function HomePage() {
           </section>
         )}
 
-        <section className="grid md:grid-cols-3 gap-6 mb-12">
+        <section className="grid md:grid-cols-4 gap-6 mb-12">
           {[
             { icon: Terminal, title: '在线编程', desc: '支持多语言代码编辑与实时评测，覆盖编程题、选择题、填空题等多种题型', link: '/categories', linkText: '浏览题库', gradient: 'from-cyan-500/10 to-cyan-500/5', border: 'border-cyan-500/20', iconColor: 'text-cyan-400' },
             { icon: Swords, title: '实时对战', desc: '与对手实时 PK，在限时挑战中比拼编码速度与正确率，赢取积分提升排名', link: '/match', linkText: '开始对战', gradient: 'from-indigo-500/10 to-indigo-500/5', border: 'border-indigo-500/20', iconColor: 'text-indigo-400' },
             { icon: Shield, title: '模拟考试', desc: '限时考试模式，支持编程题与客观题混合组卷，自动评分与成绩分析', link: '/exams', linkText: '查看考试', gradient: 'from-amber-500/10 to-amber-500/5', border: 'border-amber-500/20', iconColor: 'text-amber-400' },
+            { icon: Sparkles, title: '编程星途', desc: '探索编程宇宙，在星途中发现知识的奥秘', link: '/starpath', linkText: '探索星途', gradient: 'from-purple-500/10 to-purple-500/5', border: 'border-purple-500/20', iconColor: 'text-purple-400' },
           ].map(({ icon: Icon, title, desc, link, linkText, gradient, border, iconColor }) => (
             <Link key={title} to={link}
               className={`group relative overflow-hidden rounded-xl border ${border} bg-gradient-to-br ${gradient} p-6 hover:scale-[1.02] transition-all`}>
@@ -285,6 +358,70 @@ export function HomePage() {
               </span>
             </Link>
           ))}
+        </section>
+
+        {/* 未登录：社区讨论 + 对战排行 */}
+        <section className="grid lg:grid-cols-3 gap-6 mb-12">
+          {/* 社区讨论 */}
+          <div className="lg:col-span-2 bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-emerald-400" />
+                社区讨论
+              </h2>
+              <Link to="/discussions" className="text-sm text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+                查看更多 <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            <div className="divide-y divide-slate-700/50">
+              {hotDiscussions.length === 0 ? (
+                <div className="px-6 py-10 text-center text-slate-500">暂无讨论</div>
+              ) : (
+                hotDiscussions.map(d => (
+                  <Link key={d.id} to={`/discussions/${d.id}`} className="flex items-center justify-between px-6 py-3.5 hover:bg-slate-700/30 transition-colors group">
+                    <span className="text-white font-medium truncate group-hover:text-cyan-400 transition-colors">{d.title}</span>
+                    <div className="flex items-center gap-3 text-xs text-slate-500 shrink-0 ml-4">
+                      <span className="flex items-center gap-1"><ThumbsUp className="h-3 w-3" />{d.upvotes}</span>
+                      <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{d.replyCount}</span>
+                    </div>
+                  </Link>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* 对战排行 */}
+          <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Swords className="h-5 w-5 text-indigo-400" />
+                对战排行
+              </h2>
+              <Link to="/match" className="text-sm text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+                更多 <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            <div className="divide-y divide-slate-700/50">
+              {leaderboard.length === 0 ? (
+                <div className="px-6 py-10 text-center text-slate-500">暂无排行数据</div>
+              ) : (
+                leaderboard.map((entry, idx) => (
+                  <div key={entry.userId} className="flex items-center gap-3 px-6 py-3.5">
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                      idx === 0 ? 'bg-amber-500/20 text-amber-400' :
+                      idx === 1 ? 'bg-slate-400/20 text-slate-300' :
+                      idx === 2 ? 'bg-orange-500/20 text-orange-400' :
+                      'bg-slate-700 text-slate-500'
+                    }`}>
+                      {idx + 1}
+                    </span>
+                    <span className="flex-1 text-white font-medium truncate">{entry.username}</span>
+                    <span className="text-sm font-semibold text-amber-400">{entry.points}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </section>
 
         <section className="grid lg:grid-cols-3 gap-6 mb-12">
@@ -408,11 +545,44 @@ export function HomePage() {
         </div>
       </section>
 
+      {/* 编程星途特色卡片 */}
+      <section className="relative overflow-hidden rounded-xl border border-purple-500/20">
+        <div className="absolute inset-0 bg-gradient-to-r from-purple-600/15 via-indigo-600/10 to-blue-600/15" />
+        <div className="relative px-6 py-6 md:px-8 md:py-7">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+            <div className="flex items-center gap-4">
+              <div className="shrink-0 p-3 rounded-xl bg-purple-500/15 border border-purple-500/25">
+                <Sparkles className="h-8 w-8 text-purple-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-white mb-1">编程星途</h3>
+                {starMapSummary && starMapSummary.totalPlanets > 0 ? (
+                  <p className="text-sm text-slate-400">
+                    已探索 <span className="text-purple-400 font-semibold">{starMapSummary.exploredPlanets}</span> / {starMapSummary.totalPlanets} 颗星球
+                    {starMapSummary.masteredPlanets > 0 && (
+                      <> · 已掌握 <span className="text-emerald-400 font-semibold">{starMapSummary.masteredPlanets}</span> 颗</>
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-sm text-slate-400">开始你的星途之旅，探索编程宇宙的奥秘</p>
+                )}
+              </div>
+            </div>
+            <Link to="/starpath"
+              className="shrink-0 inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-white hover:bg-purple-500/30 transition-all font-medium text-sm">
+              {starMapSummary && starMapSummary.exploredPlanets > 0 ? '继续探索' : '开始星途之旅'}
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* 快速入口 */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           { icon: BookOpen, label: '做题', link: '/categories', color: 'from-cyan-500/15 to-cyan-500/5', border: 'border-cyan-500/20', iconColor: 'text-cyan-400' },
           { icon: Swords, label: '对战', link: '/match', color: 'from-indigo-500/15 to-indigo-500/5', border: 'border-indigo-500/20', iconColor: 'text-indigo-400' },
+          { icon: Sparkles, label: '星途', link: '/starpath', color: 'from-purple-500/15 to-purple-500/5', border: 'border-purple-500/20', iconColor: 'text-purple-400' },
           { icon: FileCheck, label: '考试', link: '/exams', color: 'from-amber-500/15 to-amber-500/5', border: 'border-amber-500/20', iconColor: 'text-amber-400' },
           { icon: MessageSquare, label: '社区', link: '/discussions', color: 'from-emerald-500/15 to-emerald-500/5', border: 'border-emerald-500/20', iconColor: 'text-emerald-400' },
         ].map(({ icon: Icon, label, link, color, border, iconColor }) => (
@@ -423,6 +593,35 @@ export function HomePage() {
           </Link>
         ))}
       </section>
+
+      {/* 社区热点 */}
+      {hotDiscussions.length > 0 && (
+        <section className="bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Flame className="h-5 w-5 text-orange-400" />
+              社区热点
+            </h2>
+            <Link to="/discussions" className="text-sm text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+              查看更多 <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="divide-y divide-slate-700/50">
+            {hotDiscussions.map(d => (
+              <Link key={d.id} to={`/discussions/${d.id}`} className="flex items-center justify-between px-6 py-3.5 hover:bg-slate-700/30 transition-colors group">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <span className="text-white font-medium truncate group-hover:text-cyan-400 transition-colors">{d.title}</span>
+                  <span className="text-xs text-slate-500 shrink-0">{d.author?.username || '匿名'}</span>
+                </div>
+                <div className="flex items-center gap-4 text-xs text-slate-500 shrink-0 ml-4">
+                  <span className="flex items-center gap-1 text-amber-400"><ThumbsUp className="h-3 w-3" />{d.upvotes}</span>
+                  <span className="flex items-center gap-1 text-cyan-400"><MessageSquare className="h-3 w-3" />{d.replyCount}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* 今日任务 + 每日一题 */}
       <section className="grid lg:grid-cols-5 gap-6">
@@ -497,6 +696,49 @@ export function HomePage() {
             <div className="p-6 text-center text-slate-500">今日挑战题目准备中…</div>
           )}
         </div>
+      </section>
+
+      {/* 对战动态 */}
+      <section className="bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50">
+          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            <Swords className="h-5 w-5 text-indigo-400" />
+            对战动态
+          </h2>
+          <Link to="/match" className="text-sm text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+            开始对战 <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+        {matchHistory.length === 0 ? (
+          <div className="px-6 py-10 text-center">
+            <p className="text-slate-500 mb-4">还没有对战记录，来一场吧！</p>
+            <Link to="/match"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 text-white font-medium shadow-lg shadow-indigo-500/25 transition-all">
+              <Swords className="h-4 w-4" /> 开始对战
+            </Link>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-700/50">
+            {matchHistory.map(m => (
+              <div key={m.id} className="flex items-center justify-between px-6 py-3.5">
+                <div className="flex items-center gap-3">
+                  <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium ${
+                    m.isWinner ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                  }`}>
+                    {m.isWinner ? '胜利' : '失败'}
+                  </span>
+                  <span className="text-white text-sm">你 vs {m.opponent || '对手'}</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-slate-500">
+                  <span className="flex items-center gap-1"><Trophy className="h-3 w-3" />{m.score}分</span>
+                  {m.completedAt && (
+                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(m.completedAt).toLocaleDateString()}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* 能力雷达 + 薄弱知识点 + 排行 */}
@@ -594,6 +836,85 @@ export function HomePage() {
                 </div>
               ))
             )}
+          </div>
+        </div>
+      </section>
+
+      {/* 学习进度 */}
+      <section className="grid lg:grid-cols-3 gap-6">
+        {/* 本周进度 */}
+        <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-700/50">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-cyan-400" />
+              本周进度
+            </h2>
+          </div>
+          <div className="p-6">
+            <div className="flex items-end gap-3 mb-4">
+              <span className="text-3xl font-bold text-white">{weeklySolved}</span>
+              <span className="text-slate-500 text-sm mb-1">题 / 本周</span>
+            </div>
+            <div className="h-2 bg-slate-700 rounded-full overflow-hidden mb-3">
+              <div className="h-full bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-full transition-all"
+                style={{ width: `${Math.min(100, weeklySolved * 5)}%` }} />
+            </div>
+            <p className="text-xs text-slate-500">每周目标 20 题</p>
+          </div>
+        </div>
+
+        {/* 7天连续打卡 */}
+        <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-700/50">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <CalendarCheck className="h-5 w-5 text-emerald-400" />
+              连续打卡
+            </h2>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-7 gap-2">
+              {last7Days.map((day, i) => {
+                const checked = i < streakDays && i >= 7 - streakDays;
+                return (
+                  <div key={i} className="flex flex-col items-center gap-1.5">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+                      checked
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-slate-700/50 text-slate-600 border border-slate-700'
+                    }`}>
+                      {checked ? '✓' : ''}
+                    </div>
+                    <span className="text-[10px] text-slate-500">{day}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* 每日目标 */}
+        <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-700/50">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Target className="h-5 w-5 text-amber-400" />
+              每日目标
+            </h2>
+          </div>
+          <div className="p-6">
+            <div className="flex items-center justify-center mb-4">
+              <div className="relative w-24 h-24">
+                <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(51,65,85,0.5)" strokeWidth="8" />
+                  <circle cx="50" cy="50" r="40" fill="none" stroke="#06b6d4" strokeWidth="8"
+                    strokeDasharray={`${dailyGoalProgress * 2.51} 251`}
+                    strokeLinecap="round" />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-lg font-bold text-white">{dailyGoalProgress}%</span>
+                </div>
+              </div>
+            </div>
+            <p className="text-center text-xs text-slate-500">每日目标 3 题</p>
           </div>
         </div>
       </section>

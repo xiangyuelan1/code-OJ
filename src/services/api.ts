@@ -185,6 +185,18 @@ export const enhancedAiAPI = {
   updatePersonalizationConfig: (data: { minWeakPointScore?: number; maxProblemsPerPlan?: number; difficultyProgression?: string; focusWeight?: number }) =>
     api.put('/api/ai/personalization-config', data),
   getPersonalizationConfig: () => api.get('/api/ai/personalization-config'),
+  simulateInterview: (data: { role: string; difficulty: string }) =>
+    api.post('/api/ai/interview/simulate', data),
+  evaluateInterviewAnswer: (data: { questionId: string; code: string; language: string }) =>
+    api.post('/api/ai/interview/evaluate', data),
+  generateBuggyCode: (data: { topic: string; difficulty: string }) =>
+    api.post('/api/ai/bug-hunter/generate', data),
+  verifyBugFix: (data: { buggyCodeId: string; fixedCode: string }) =>
+    api.post('/api/ai/bug-hunter/verify', data),
+  generateLearningDiary: (data: { from: string; to: string }) =>
+    api.post('/api/ai/learning-diary', data),
+  generateCodeCommentary: (data: { code: string; language: string; problemTitle: string }) =>
+    api.post('/api/ai/code-commentary', data),
 };
 
 export const uploadAPI = {
@@ -329,13 +341,128 @@ export const discussionAPI = {
   createReply: (id: string, content: string) => api.post(`/api/discussions/${id}/replies`, { content }),
   vote: (id: string, isUpvote: boolean) => api.post(`/api/discussions/${id}/vote`, { isUpvote }),
   delete: (id: string) => api.delete(`/api/discussions/${id}`),
+  getHot: (limit?: number) => api.get('/api/discussions/hot', { params: { limit } }),
+  togglePin: (id: string, pinned: boolean) => api.put(`/api/discussions/${id}/pin`, { pinned }),
+  updateDiscussion: (id: string, data: any) => api.put(`/api/discussions/${id}`, data),
+  updateReply: (replyId: string, content: string) => api.put(`/api/discussions/reply/${replyId}`, { content }),
+  getTags: () => api.get('/api/discussions/tags'),
 };
+
+/* ── StarPath 类型定义 ── */
+
+export type PlanetStatus = 'UNEXPLORED' | 'EXPLORING' | 'MASTERED';
+export type ProblemType = 'CHOICE' | 'FILL_BLANK' | 'PROGRAMMING';
+
+export interface StarMapPlanet {
+  id: string;
+  name: string;
+  description: string;
+  difficulty: string;
+  status: PlanetStatus;
+  score: number;
+  posX: number;
+  posY: number;
+  tags: string[];
+}
+
+export interface StarMapRegion {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  order: number;
+  totalPlanets: number;
+  exploredPlanets: number;
+  masteredPlanets: number;
+  planets: StarMapPlanet[];
+}
+
+export interface StarMapStats {
+  totalPlanets: number;
+  exploredPlanets: number;
+  masteredPlanets: number;
+  streakDays: number;
+}
+
+export interface StarMapData {
+  regions: StarMapRegion[];
+  stats: StarMapStats;
+}
+
+export interface RegionDetailData {
+  region: {
+    id: string;
+    name: string;
+    description: string;
+    icon: string;
+    color: string;
+  };
+  planets: StarMapPlanet[];
+  totalPlanets: number;
+  exploredPlanets: number;
+  masteredPlanets: number;
+}
+
+export interface ProblemChoice {
+  key: string;
+  text: string;
+}
+
+export interface PlanetProblem {
+  id: string;
+  title: string;
+  description: string;
+  type: ProblemType;
+  difficulty: string;
+  tags: string;
+  choices: string;
+  timeLimit: number;
+  memoryLimit: number;
+}
+
+export interface PlanetDetailData {
+  planet: {
+    id: string;
+    name: string;
+    description: string;
+    difficulty: string;
+    tags: string[];
+    region: { id: string; name: string };
+  };
+  problems: PlanetProblem[];
+  progress: {
+    status: PlanetStatus;
+    score: number;
+    attempts: number;
+    lastVisitAt: string | null;
+  };
+  recommendedOrder: string[];
+}
+
+export interface SubmitResult {
+  correct: boolean;
+  score: number;
+  newStatus: PlanetStatus;
+  pointsEarned: number;
+  maxScore: number;
+  pending?: boolean;
+  submissionId?: string;
+  alreadyCorrect?: boolean;
+}
+
+export interface GuideChatResult {
+  response: string;
+  suggestions: string[];
+}
 
 export const starpathAPI = {
   getMap: () => api.get('/api/starpath/map'),
+  getRegion: (id: string) => api.get('/api/starpath/region/' + id),
   getPlanet: (id: string) => api.get('/api/starpath/planet/' + id),
-  submitChallenge: (planetId: string, data: any) => api.post('/api/starpath/planet/' + planetId + '/submit', data),
-  guideChat: (data: { planetId?: string; message: string }) => api.post('/api/starpath/guide', data),
+  submitChallenge: (planetId: string, data: { problemId: string; answer: string; challengeType?: string }) =>
+    api.post('/api/starpath/planet/' + planetId + '/submit', data),
+  guideChat: (data: { planetId?: string; regionId?: string; message: string }) => api.post('/api/starpath/guide', data),
   initialize: () => api.post('/api/starpath/initialize'),
 };
 
@@ -343,6 +470,29 @@ export const dailyAPI = {
   getToday: () => api.get('/api/daily-challenge/today'),
   submit: (data: any) => api.post('/api/daily-challenge/submit', data),
   getStats: () => api.get('/api/daily-challenge/stats'),
+};
+
+export const learningAdminAPI = {
+  getStats: () => api.get('/api/learning-admin/stats'),
+  manageRegion: (data: any) => api.post('/api/learning-admin/region', data),
+  deleteRegion: (id: string) => api.delete(`/api/learning-admin/region/${id}`),
+  managePlanet: (data: any) => api.post('/api/learning-admin/planet', data),
+  deletePlanet: (id: string) => api.delete(`/api/learning-admin/planet/${id}`),
+  assignProblems: (planetId: string, problemIds: string[]) =>
+    api.post(`/api/learning-admin/planet/${planetId}/problems`, { problemIds }),
+  getInterviewTemplates: () => api.get('/api/learning-admin/interview-templates'),
+  createInterviewTemplate: (data: any) => api.post('/api/learning-admin/interview-template', data),
+  deleteInterviewTemplate: (id: string) => api.delete(`/api/learning-admin/interview-template/${id}`),
+  getBugScenarios: () => api.get('/api/learning-admin/bug-scenarios'),
+  createBugScenario: (data: any) => api.post('/api/learning-admin/bug-scenario', data),
+  deleteBugScenario: (id: string) => api.delete(`/api/learning-admin/bug-scenario/${id}`),
+};
+
+export const featureAPI = {
+  getAll: () => api.get('/api/features'),
+  update: (featureKey: string, data: any) => api.put(`/api/features/${featureKey}`, data),
+  initialize: () => api.post('/api/features/initialize'),
+  getPublic: () => api.get('/api/features/public'),
 };
 
 export const streamAPI = {

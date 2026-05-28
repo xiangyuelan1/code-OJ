@@ -8,14 +8,10 @@ if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath });
 }
 
-if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('file:')) {
-  const dbFilePath = process.env.DATABASE_URL.replace('file:', '');
-  if (!path.isAbsolute(dbFilePath)) {
-    const absPath = path.resolve(process.cwd(), dbFilePath).replace(/\\/g, '/');
-    process.env.DATABASE_URL = `file:${absPath}`;
-  }
-}
+const originalDatabaseUrl = process.env.DATABASE_URL;
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasourceUrl: originalDatabaseUrl,
+});
 
 export default prisma;

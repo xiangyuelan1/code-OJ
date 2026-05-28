@@ -2,9 +2,16 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.store';
 import { usePointsStore } from '../../stores/points.store';
 import { useSocketStore } from '../../services/socket';
-import { classAPI } from '../../services/api';
-import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone, LayoutDashboard } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { classAPI, featureAPI } from '../../services/api';
+import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone, LayoutDashboard, Sparkles } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+
+interface VisibleFeature {
+  featureKey: string;
+  featureName: string;
+  category: string;
+  order: number;
+}
 
 export function Navbar() {
   const { user, isAuthenticated, logout } = useAuthStore();
@@ -13,12 +20,34 @@ export function Navbar() {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [visibleFeatures, setVisibleFeatures] = useState<string[]>([]);
+
+  const isVisible = useCallback((featureKey: string) => {
+    return visibleFeatures.length === 0 || visibleFeatures.includes(featureKey);
+  }, [visibleFeatures]);
 
   useEffect(() => {
     if (isAuthenticated) {
       fetchMyPoints();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadVisibleFeatures() {
+      try {
+        const res = await featureAPI.getPublic();
+        if (isMounted && res.success && res.data) {
+          const keys = (res.data as VisibleFeature[]).map(f => f.featureKey);
+          setVisibleFeatures(keys);
+        }
+      } catch {
+        /* 功能开关不可用时，所有功能默认可见 */
+      }
+    }
+    loadVisibleFeatures();
+    return () => { isMounted = false; };
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated && (user?.role === 'ADMIN' || user?.role === 'TEACHER')) {
@@ -56,18 +85,26 @@ export function Navbar() {
           </div>
 
           <div className="hidden md:flex items-center space-x-6">
-            <Link to="/" className="hover:text-cyan-400 transition-colors">
-              题目
-            </Link>
+            {isVisible('problems') && (
+              <Link to="/" className="hover:text-cyan-400 transition-colors">
+                题目
+              </Link>
+            )}
             <Link to="/categories" className="hover:text-cyan-400 transition-colors">
               题单
             </Link>
-            {isAuthenticated && (
+            {isAuthenticated && isVisible('match') && (
               <Link to="/match" className="hover:text-cyan-400 transition-colors">
                 对战
               </Link>
             )}
-            {isAuthenticated && (
+            {isAuthenticated && isVisible('learning') && (
+              <Link to="/learning" className="flex items-center space-x-1 transition-colors">
+                <Sparkles className="h-4 w-4" />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 font-medium">多元学习</span>
+              </Link>
+            )}
+            {isAuthenticated && isVisible('exams') && (
               <Link to="/exams" className="hover:text-cyan-400 transition-colors">
                 考试
               </Link>
@@ -76,6 +113,11 @@ export function Navbar() {
               <Smartphone className="h-4 w-4" />
               <span>下载App</span>
             </Link>
+            {isAuthenticated && (user?.role === 'STUDENT' || user?.role === 'TEACHER') && isVisible('discussions') && (
+              <Link to="/discussions" className="hover:text-cyan-400 transition-colors">
+                社区
+              </Link>
+            )}
             {isAuthenticated && (user?.role === 'STUDENT' || user?.role === 'TEACHER') && (
               <Link to="/submissions" className="hover:text-cyan-400 transition-colors">
                 我的提交
@@ -179,13 +221,15 @@ export function Navbar() {
 
         {mobileMenuOpen && (
           <div className="md:hidden py-4 space-y-3">
-            <Link
-              to="/"
-              className="block hover:text-cyan-400"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              题目列表
-            </Link>
+            {isVisible('problems') && (
+              <Link
+                to="/"
+                className="block hover:text-cyan-400"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                题目列表
+              </Link>
+            )}
             <Link
               to="/categories"
               className="block hover:text-cyan-400"
@@ -193,7 +237,7 @@ export function Navbar() {
             >
               题单
             </Link>
-            {isAuthenticated && (
+            {isAuthenticated && isVisible('match') && (
               <Link
                 to="/match"
                 className="block hover:text-cyan-400"
@@ -202,7 +246,17 @@ export function Navbar() {
                 对战
               </Link>
             )}
-            {isAuthenticated && (
+            {isAuthenticated && isVisible('learning') && (
+              <Link
+                to="/learning"
+                className="flex items-center space-x-1 hover:text-cyan-400"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <Sparkles className="h-4 w-4" />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 font-medium">多元学习</span>
+              </Link>
+            )}
+            {isAuthenticated && isVisible('exams') && (
               <Link
                 to="/exams"
                 className="block hover:text-cyan-400"
@@ -221,6 +275,15 @@ export function Navbar() {
             </Link>
             {isAuthenticated ? (
               <>
+                {(user?.role === 'STUDENT' || user?.role === 'TEACHER') && isVisible('discussions') && (
+                  <Link
+                    to="/discussions"
+                    className="block hover:text-cyan-400"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    社区
+                  </Link>
+                )}
                 {(user?.role === 'STUDENT' || user?.role === 'TEACHER') && (
                   <Link
                     to="/submissions"

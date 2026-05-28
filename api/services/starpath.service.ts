@@ -51,22 +51,32 @@ export class StarPathService {
 
     const progressMap = new Map(progresses.map(p => [p.planetId, p]));
 
+    /* 获取用户学习画像中的连续学习天数 */
+    const profile = await prisma.learnerProfile.findUnique({ where: { userId } });
+    const streakDays = profile?.streakDays ?? 0;
+
     let totalPlanets = 0;
     let exploredPlanets = 0;
     let masteredPlanets = 0;
 
-    const regionsData = regions.map(region => ({
-      id: region.id,
-      name: region.name,
-      description: region.description,
-      icon: region.icon,
-      color: region.color,
-      planets: region.planets.map(planet => {
+    const regionsData = regions.map(region => {
+      let regionTotal = 0;
+      let regionExplored = 0;
+      let regionMastered = 0;
+
+      const planetsData = region.planets.map(planet => {
+        regionTotal++;
         totalPlanets++;
         const progress = progressMap.get(planet.id);
         const status = progress?.status || PLANET_STATUS.UNEXPLORED;
-        if (status !== PLANET_STATUS.UNEXPLORED) exploredPlanets++;
-        if (status === PLANET_STATUS.MASTERED) masteredPlanets++;
+        if (status !== PLANET_STATUS.UNEXPLORED) {
+          regionExplored++;
+          exploredPlanets++;
+        }
+        if (status === PLANET_STATUS.MASTERED) {
+          regionMastered++;
+          masteredPlanets++;
+        }
 
         return {
           id: planet.id,
@@ -77,12 +87,94 @@ export class StarPathService {
           score: progress?.score || 0,
           posX: planet.posX,
           posY: planet.posY,
+          tags: safeJsonParse(planet.tags, []),
         };
-      }),
-    }));
+      });
+
+      return {
+        id: region.id,
+        name: region.name,
+        description: region.description,
+        icon: region.icon,
+        color: region.color,
+        order: region.order,
+        totalPlanets: regionTotal,
+        exploredPlanets: regionExplored,
+        masteredPlanets: regionMastered,
+        planets: planetsData,
+      };
+    });
 
     return {
       regions: regionsData,
+      stats: {
+        totalPlanets,
+        exploredPlanets,
+        masteredPlanets,
+        streakDays,
+      },
+    };
+  }
+
+  /**
+   * 获取星域详情：包含星域基本信息、所有星球及当前用户的探索进度
+   * 用于星域详情页，避免前端加载完整星图再过滤
+   */
+  async getRegionDetail(regionId: string, userId: string) {
+    const region = await prisma.starRegion.findUnique({
+      where: { id: regionId },
+      include: {
+        planets: {
+          orderBy: { order: 'asc' },
+        },
+      },
+    });
+
+    if (!region) {
+      throw new Error('星域不存在');
+    }
+
+    const planetIds = region.planets.map(p => p.id);
+
+    const progresses = await prisma.userPlanetProgress.findMany({
+      where: { userId, planetId: { in: planetIds } },
+    });
+
+    const progressMap = new Map(progresses.map(p => [p.planetId, p]));
+
+    let totalPlanets = 0;
+    let exploredPlanets = 0;
+    let masteredPlanets = 0;
+
+    const planetsData = region.planets.map(planet => {
+      totalPlanets++;
+      const progress = progressMap.get(planet.id);
+      const status = progress?.status || PLANET_STATUS.UNEXPLORED;
+      if (status !== PLANET_STATUS.UNEXPLORED) exploredPlanets++;
+      if (status === PLANET_STATUS.MASTERED) masteredPlanets++;
+
+      return {
+        id: planet.id,
+        name: planet.name,
+        description: planet.description,
+        difficulty: planet.difficulty,
+        status,
+        score: progress?.score || 0,
+        posX: planet.posX,
+        posY: planet.posY,
+        tags: safeJsonParse(planet.tags, []),
+      };
+    });
+
+    return {
+      region: {
+        id: region.id,
+        name: region.name,
+        description: region.description,
+        icon: region.icon,
+        color: region.color,
+      },
+      planets: planetsData,
       totalPlanets,
       exploredPlanets,
       masteredPlanets,
@@ -183,16 +275,17 @@ export class StarPathService {
   }
 
   /**
-   * 提交星球挑战：根据题目类型判题，更新进度状态和积分
-   * - PROGRAMMING 类型：需要代码提交，此处仅记录答案并标记为探索中
+   * 提交星球挑战：根据题目类型自动判题，更新进度状态和积分
+   * - PROGRAMMING 类型：创建 Submission 记录，返回 pending 状态供前端轮询
    * - CHOICE 类型：对比正确答案
    * - FILL_BLANK 类型：对比填空答案
+   * - 幂等性：同一用户对同一星球上的同一题目，正确作答只计分一次
    * 进度状态流转：UNEXPLORED → EXPLORING → MASTERED
    */
   async submitPlanetChallenge(
     planetId: string,
     userId: string,
-    data: { problemId: string; answer: string; challengeType: string },
+    data: { problemId: string; answer: string; challengeType?: string },
   ) {
     const planet = await prisma.starPlanet.findUnique({ where: { id: planetId } });
     if (!planet) {
@@ -209,10 +302,32 @@ export class StarPathService {
       throw new Error('题目不存在');
     }
 
+    /* 从题目类型自动推断挑战类型，忽略前端传入的 challengeType */
+    const challengeType = problem.type as string;
+
+    /* 幂等性检查：如果用户已经正确回答过该题目，直接返回已有结果 */
+    const existingCorrectSubmission = await prisma.submission.findFirst({
+      where: { userId, problemId: data.problemId, status: 'ACCEPTED' },
+    });
+    if (existingCorrectSubmission) {
+      const progress = await prisma.userPlanetProgress.findUnique({
+        where: { userId_planetId: { userId, planetId } },
+      });
+      return {
+        correct: true,
+        score: 0,
+        newStatus: progress?.status || PLANET_STATUS.EXPLORING,
+        pointsEarned: 0,
+        maxScore: problemIds.length * 10,
+        alreadyCorrect: true,
+      };
+    }
+
     let correct = false;
     let score = 0;
+    let pendingSubmissionId: string | null = null;
 
-    switch (data.challengeType) {
+    switch (challengeType) {
       case 'CHOICE': {
         const correctAnswer = problem.correctAnswer?.trim().toUpperCase();
         const userAnswer = data.answer.trim().toUpperCase();
@@ -234,17 +349,30 @@ export class StarPathService {
         break;
       }
       case 'PROGRAMMING': {
-        /* 编程题需要实际运行判题，此处先记录提交，通过 Submission 系统异步判题 */
-        const lastSubmission = await prisma.submission.findFirst({
-          where: { userId, problemId: data.problemId },
-          orderBy: { createdAt: 'desc' },
+        /* 编程题：创建 Submission 记录，由判题系统异步处理 */
+        const submission = await prisma.submission.create({
+          data: {
+            userId,
+            problemId: data.problemId,
+            type: 'STARPATH',
+            code: data.answer,
+            status: 'PENDING',
+          },
         });
-        correct = lastSubmission?.status === 'ACCEPTED';
-        score = correct ? 10 : (lastSubmission?.score ?? 0);
-        break;
+        pendingSubmissionId = submission.id;
+        /* 编程题提交后不立即判定对错，返回 pending 状态 */
+        return {
+          correct: false,
+          score: 0,
+          newStatus: PLANET_STATUS.EXPLORING,
+          pointsEarned: 0,
+          maxScore: problemIds.length * 10,
+          pending: true,
+          submissionId: pendingSubmissionId,
+        };
       }
       default:
-        throw new Error(`不支持的挑战类型: ${data.challengeType}`);
+        throw new Error(`不支持的挑战类型: ${challengeType}`);
     }
 
     /* 更新用户进度 */
@@ -267,7 +395,6 @@ export class StarPathService {
       const newAttempts = progress.attempts + 1;
       const newScore = Math.max(progress.score, score);
 
-      /* 根据星球内所有题目的总得分率判断掌握状态 */
       const totalProblems = problemIds.length;
       const maxScore = totalProblems * 10;
       let newStatus = progress.status;
@@ -293,7 +420,7 @@ export class StarPathService {
       });
     }
 
-    /* 答对时奖励积分 */
+    /* 答对时奖励积分（幂等性已在前方检查保证不重复） */
     let pointsEarned = 0;
     if (correct) {
       const difficultyPoints: Record<string, number> = { EASY: 5, MEDIUM: 10, HARD: 20 };
@@ -318,17 +445,19 @@ export class StarPathService {
       score,
       newStatus: progress.status,
       pointsEarned,
+      maxScore: problemIds.length * 10,
     };
   }
 
   /**
-   * AI 导师对话：基于用户画像、当前星球和近期提交构建上下文，
+   * AI 导师对话：基于用户画像、当前星球/星域和近期提交构建上下文，
    * 调用 aiService.companionChat 获取知识关联型回复
    */
   async getGuideConversation(
     userId: string,
     planetId: string | undefined,
     message: string,
+    regionId?: string,
   ) {
     /* 收集用户画像信息 */
     const profile = await prisma.learnerProfile.findUnique({ where: { userId } });
@@ -355,6 +484,22 @@ export class StarPathService {
           difficulty: planet.difficulty,
           tags: safeJsonParse(planet.tags, []),
           problems,
+        };
+      }
+    } else if (regionId) {
+      /* 当没有 planetId 但有 regionId 时，使用星域上下文 */
+      const region = await prisma.starRegion.findUnique({ where: { id: regionId } });
+      if (region) {
+        const planets = await prisma.starPlanet.findMany({
+          where: { regionId },
+          select: { id: true, name: true, difficulty: true, tags: true },
+        });
+        planetContext = {
+          name: region.name,
+          region: region.name,
+          difficulty: 'MIXED',
+          tags: [],
+          problems: planets.map(p => ({ id: p.id, title: p.name, difficulty: p.difficulty, tags: safeJsonParse(p.tags, []) })),
         };
       }
     }
@@ -406,8 +551,11 @@ export class StarPathService {
       suggestions.push('继续探索新的星球，拓展知识版图！');
     }
 
+    /* 确保 response 字段始终有值 */
+    const responseText = companionResult?.content || '让我想想这个问题，稍后再试。';
+
     return {
-      response: companionResult.content,
+      response: responseText,
       suggestions,
     };
   }

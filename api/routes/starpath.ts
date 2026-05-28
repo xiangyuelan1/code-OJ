@@ -16,6 +16,18 @@ router.get('/map', authMiddleware, async (req: Request, res: any): Promise<void>
   }
 });
 
+/** 获取星域详情（含星球列表和用户进度） */
+router.get('/region/:id', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const data = await starPathService.getRegionDetail(req.params.id, userId);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    const status = error.message === '星域不存在' ? 404 : 500;
+    res.status(status).json({ success: false, error: { message: error.message } });
+  }
+});
+
 /** 获取星球详情（含题目列表和用户进度） */
 router.get('/planet/:id', authMiddleware, async (req: Request, res: any): Promise<void> => {
   try {
@@ -34,10 +46,10 @@ router.post('/planet/:id/submit', authMiddleware, async (req: Request, res: any)
     const userId = (req as any).user.userId;
     const { problemId, answer, challengeType } = req.body;
 
-    if (!problemId || !answer || !challengeType) {
+    if (!problemId || !answer) {
       res.status(400).json({
         success: false,
-        error: { message: '缺少必要参数: problemId, answer, challengeType' },
+        error: { message: '缺少必要参数: problemId, answer' },
       });
       return;
     }
@@ -58,7 +70,7 @@ router.post('/planet/:id/submit', authMiddleware, async (req: Request, res: any)
 router.post('/guide', authMiddleware, async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
-    const { planetId, message } = req.body;
+    const { planetId, regionId, message } = req.body;
 
     if (!message) {
       res.status(400).json({
@@ -68,7 +80,9 @@ router.post('/guide', authMiddleware, async (req: Request, res: any): Promise<vo
       return;
     }
 
-    const data = await starPathService.getGuideConversation(userId, planetId, message);
+    /* 优先使用 planetId，其次使用 regionId 作为上下文 */
+    const contextPlanetId = planetId || undefined;
+    const data = await starPathService.getGuideConversation(userId, contextPlanetId, message, regionId);
     res.json({ success: true, data });
   } catch (error: any) {
     res.status(500).json({ success: false, error: { message: error.message } });

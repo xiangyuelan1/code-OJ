@@ -1,49 +1,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { starpathAPI } from '../services/api';
+import { starpathAPI, type RegionDetailData, type StarMapPlanet, type PlanetStatus } from '../services/api';
 import {
-  ArrowLeft, MessageSquare, Star, Loader2,
+  ArrowLeft, MessageSquare, Loader2,
 } from 'lucide-react';
-
-/* ── 类型定义 ── */
-
-type PlanetStatus = 'UNEXPLORED' | 'EXPLORING' | 'MASTERED';
-type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
-
-interface Planet {
-  id: string;
-  name: string;
-  status: PlanetStatus;
-  difficulty: Difficulty;
-  order: number;
-  score: number;
-  maxScore: number;
-}
-
-interface RegionDetail {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  color: string;
-  planets: Planet[];
-  totalPlanets: number;
-  exploredPlanets: number;
-  masteredPlanets: number;
-}
-
-/* ── 区域背景色调 ── */
-
-const REGION_BG: Record<string, string> = {
-  foundation: 'linear-gradient(135deg, #0a0a2e 0%, #0d1b3e 50%, #0a0a2e 100%)',
-  algorithm: 'linear-gradient(135deg, #0a0a2e 0%, #1a0d3e 50%, #0a0a2e 100%)',
-  datastructure: 'linear-gradient(135deg, #0a0a2e 0%, #0d2e1b 50%, #0a0a2e 100%)',
-  database: 'linear-gradient(135deg, #0a0a2e 0%, #2e1b0d 50%, #0a0a2e 100%)',
-  network: 'linear-gradient(135deg, #0a0a2e 0%, #0d1b3e 50%, #0a0a2e 100%)',
-  security: 'linear-gradient(135deg, #0a0a2e 0%, #2e0d1b 50%, #0a0a2e 100%)',
-  design: 'linear-gradient(135deg, #0a0a2e 0%, #2e0d2e 50%, #0a0a2e 100%)',
-  system: 'linear-gradient(135deg, #0a0a2e 0%, #2e1b0d 50%, #0a0a2e 100%)',
-};
+import { GuideChatPanel } from '../components/GuideChatPanel';
 
 /* ── 闪烁星星背景 ── */
 
@@ -86,7 +47,7 @@ function TwinklingStars({ count = 60 }: { count?: number }) {
 
 /* ── 星球轨道连线 ── */
 
-function StarTrails({ planets, containerWidth }: { planets: Planet[]; containerWidth: number }) {
+function StarTrails({ planets, containerWidth }: { planets: StarMapPlanet[]; containerWidth: number }) {
   if (planets.length < 2 || containerWidth === 0) return null;
 
   const cols = containerWidth >= 768 ? 3 : 2;
@@ -134,7 +95,7 @@ function getPlanetStatusClass(status: PlanetStatus): string {
   }
 }
 
-function getDifficultyDots(difficulty: Difficulty): number {
+function getDifficultyDots(difficulty: string): number {
   switch (difficulty) {
     case 'EASY': return 1;
     case 'MEDIUM': return 2;
@@ -143,17 +104,19 @@ function getDifficultyDots(difficulty: Difficulty): number {
   }
 }
 
+/** 根据后端返回的 region.color 生成背景渐变 */
+function getRegionBg(color: string): string {
+  return `linear-gradient(135deg, #0a0a2e 0%, ${color}22 50%, #0a0a2e 100%)`;
+}
+
 /* ── 主页面 ── */
 
 export function StarRegionPage() {
   const { id: regionId } = useParams<{ id: string }>();
-  const [region, setRegion] = useState<RegionDetail | null>(null);
+  const [regionData, setRegionData] = useState<RegionDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [containerWidth, setContainerWidth] = useState(0);
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<Array<{ role: string; content: string }>>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
 
   const gridRef = (el: HTMLDivElement | null) => {
     if (el) setContainerWidth(el.offsetWidth);
@@ -162,13 +125,9 @@ export function StarRegionPage() {
   const loadRegion = useCallback(async () => {
     if (!regionId) return;
     try {
-      const res = await starpathAPI.getMap();
+      const res = await starpathAPI.getRegion(regionId);
       if (res.success && res.data) {
-        const data = res.data as { regions?: Array<{ id: string }> };
-        const found = (data.regions || []).find((r) => r.id === regionId);
-        if (found) {
-          setRegion(found as RegionDetail);
-        }
+        setRegionData(res.data as RegionDetailData);
       }
     } catch {
       /* 区域数据加载失败不阻塞渲染 */
@@ -181,30 +140,18 @@ export function StarRegionPage() {
     if (regionId) loadRegion();
   }, [regionId, loadRegion]);
 
-  const handleGuideChat = async () => {
-    const msg = chatInput.trim();
-    if (!msg || chatLoading) return;
-    setChatMessages((prev) => [...prev, { role: 'user', content: msg }]);
-    setChatInput('');
-    setChatLoading(true);
-    try {
-      const res = await starpathAPI.guideChat({ planetId: regionId, message: msg });
-      if (res.success && res.data) {
-        const content = (res.data as Record<string, string>).message || (res.data as Record<string, string>).content || '让我想想...';
-        setChatMessages((prev) => [...prev, { role: 'guide', content }]);
-      }
-    } catch {
-      setChatMessages((prev) => [...prev, { role: 'guide', content: '抱歉，暂时无法回应。' }]);
-    } finally {
-      setChatLoading(false);
-    }
-  };
+  const region = regionData?.region;
+  const planets = regionData?.planets ?? [];
+  const totalPlanets = regionData?.totalPlanets ?? 0;
+  const exploredPlanets = regionData?.exploredPlanets ?? 0;
+  const masteredPlanets = regionData?.masteredPlanets ?? 0;
 
-  const bgStyle = { background: REGION_BG[regionId ?? ''] ?? REGION_BG.foundation };
-  const progress = region
-    ? region.totalPlanets > 0
-      ? Math.round((region.exploredPlanets / region.totalPlanets) * 100)
-      : 0
+  const bgStyle = region
+    ? { background: getRegionBg(region.color) }
+    : { background: 'linear-gradient(135deg, #0a0a2e 0%, #0d1b3e 50%, #0a0a2e 100%)' };
+
+  const progress = totalPlanets > 0
+    ? Math.round((exploredPlanets / totalPlanets) * 100)
     : 0;
 
   if (loading) {
@@ -247,7 +194,10 @@ export function StarRegionPage() {
 
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">{region.name}</h1>
+            <div className="flex items-center gap-3 mb-1">
+              <span className="text-2xl">{region.icon}</span>
+              <h1 className="text-2xl md:text-3xl font-bold text-white">{region.name}</h1>
+            </div>
             <p className="text-slate-400 text-sm max-w-lg">{region.description}</p>
           </div>
           <div className="glass-card rounded-xl px-4 py-2.5 text-center shrink-0 ml-4">
@@ -265,17 +215,17 @@ export function StarRegionPage() {
         </div>
 
         <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
-          <span>已探索 {region.exploredPlanets}/{region.totalPlanets}</span>
-          <span>已精通 {region.masteredPlanets}</span>
+          <span>已探索 {exploredPlanets}/{totalPlanets}</span>
+          <span>已精通 {masteredPlanets}</span>
         </div>
       </div>
 
       {/* 星球网格 + 连线 */}
       <div className="relative z-10" ref={gridRef}>
-        <StarTrails planets={region.planets} containerWidth={containerWidth} />
+        <StarTrails planets={planets} containerWidth={containerWidth} />
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-6 md:gap-8 relative z-10">
-          {region.planets.map((planet, idx) => (
+          {planets.map((planet, idx) => (
             <Link
               key={planet.id}
               to={`/starpath/planet/${planet.id}`}
@@ -287,7 +237,6 @@ export function StarRegionPage() {
                 <div
                   className={`w-20 h-20 md:w-24 md:h-24 rounded-full ${getPlanetStatusClass(planet.status)} flex items-center justify-center transition-transform group-hover:scale-110 cursor-pointer`}
                 >
-                  {/* 星球内部光晕 */}
                   <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 flex items-center justify-center">
                     <span className="text-lg md:text-xl">
                       {planet.status === 'MASTERED' ? '⭐' : planet.status === 'EXPLORING' ? '🔵' : '🌑'}
@@ -336,7 +285,7 @@ export function StarRegionPage() {
               {/* 分数 */}
               {planet.status !== 'UNEXPLORED' && (
                 <span className="text-xs text-slate-500 mt-0.5">
-                  {planet.score}/{planet.maxScore}
+                  {planet.score}
                 </span>
               )}
             </Link>
@@ -353,89 +302,12 @@ export function StarRegionPage() {
       </button>
 
       {/* AI 向导聊天面板 */}
-      {chatOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setChatOpen(false)} />
-          <div className="relative w-full max-w-md h-full animate-slide-in-right flex flex-col starfield-bg star-nebula">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-violet-500/20 border border-violet-400/30 flex items-center justify-center">
-                  <Star className="h-4 w-4 text-violet-400" />
-                </div>
-                <div>
-                  <h3 className="text-white font-semibold text-sm">AI 星际向导</h3>
-                  <p className="text-xs text-slate-400">{region.name} 星域</p>
-                </div>
-              </div>
-              <button onClick={() => setChatOpen(false)} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-slate-400">
-                ✕
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-              {chatMessages.length === 0 && (
-                <div className="text-center py-10">
-                  <p className="text-slate-400 text-sm mb-4">有什么关于「{region.name}」的问题吗？</p>
-                  <button
-                    onClick={() => {
-                      setChatMessages([{ role: 'user', content: `给我介绍一下${region.name}星域` }]);
-                    }}
-                    className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm hover:bg-violet-500/15 transition-all"
-                  >
-                    介绍这个星域
-                  </button>
-                </div>
-              )}
-              {chatMessages.map((msg, idx) => (
-                <div key={idx} className={`flex gap-2.5 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                  {msg.role === 'guide' && (
-                    <div className="shrink-0 w-7 h-7 rounded-full bg-violet-500/20 border border-violet-400/30 flex items-center justify-center mt-1">
-                      <Star className="h-3.5 w-3.5 text-violet-400" />
-                    </div>
-                  )}
-                  <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                    msg.role === 'user'
-                      ? 'bg-violet-500/20 border border-violet-400/20 text-violet-100 rounded-tr-md'
-                      : 'bg-white/5 border border-white/10 text-slate-200 rounded-tl-md'
-                  }`}>
-                    {msg.content}
-                  </div>
-                </div>
-              ))}
-              {chatLoading && (
-                <div className="flex gap-2.5">
-                  <div className="shrink-0 w-7 h-7 rounded-full bg-violet-500/20 border border-violet-400/30 flex items-center justify-center mt-1">
-                    <Star className="h-3.5 w-3.5 text-violet-400" />
-                  </div>
-                  <div className="px-4 py-2.5 rounded-2xl rounded-tl-md bg-white/5 border border-white/10 text-slate-400 text-sm">
-                    <span className="typing-cursor">思考中</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="px-5 py-4 border-t border-white/10">
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 focus-within:border-violet-400/40 transition-colors">
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGuideChat(); } }}
-                  placeholder="向星际向导提问..."
-                  className="flex-1 bg-transparent text-white text-sm placeholder-slate-500 outline-none"
-                />
-                <button
-                  onClick={handleGuideChat}
-                  disabled={!chatInput.trim() || chatLoading}
-                  className="p-1.5 rounded-lg bg-violet-500/20 text-violet-400 hover:bg-violet-500/30 disabled:opacity-30 transition-all"
-                >
-                  <MessageSquare className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <GuideChatPanel
+        isOpen={chatOpen}
+        onClose={() => setChatOpen(false)}
+        context={{ regionId }}
+        subtitle={`${region.name} 星域`}
+      />
     </div>
   );
 }

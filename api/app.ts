@@ -27,6 +27,8 @@ import profileRoutes from './routes/profile.js';
 import dailyRoutes from './routes/daily.js';
 import dailyChallengeRoutes from './routes/daily-challenge';
 import starpathRoutes from './routes/starpath';
+import learningAdminRoutes from './routes/learning-admin';
+import featureToggleRoutes from './routes/feature-toggle';
 
 dotenv.config();
 
@@ -68,6 +70,8 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/daily', dailyRoutes);
 app.use('/api/daily-challenge', dailyChallengeRoutes);
 app.use('/api/starpath', starpathRoutes);
+app.use('/api/learning-admin', learningAdminRoutes);
+app.use('/api/features', featureToggleRoutes);
 
 app.use(
   '/api/health',

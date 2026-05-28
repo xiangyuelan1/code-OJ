@@ -2677,6 +2677,10 @@ ${params.code || ''}
     { featureKey: 'auto-compose', featureName: 'AI自动组建题单', description: '从自然语言描述自动创建知识树题单' },
     { featureKey: 'personalized-plan', featureName: '个性化题单与考试', description: '基于学生画像生成个性化题单和考试' },
     { featureKey: 'personalized-recommendations', featureName: '个性化学习建议', description: '基于学生数据提供个性化学习建议和下一步方向' },
+    { featureKey: 'interview-simulator', featureName: 'AI面试模拟器', description: '模拟技术面试，AI出题并评估代码回答' },
+    { featureKey: 'bug-hunter', featureName: 'AI Bug猎手', description: '生成含bug代码让学生找bug并修复' },
+    { featureKey: 'learning-diary', featureName: 'AI学习日记', description: '基于学习数据生成温暖鼓励的学习日记' },
+    { featureKey: 'code-commentary', featureName: 'AI代码解说员', description: '用电竞解说风格实时解说学生代码' },
   ];
 
   /**
@@ -2770,7 +2774,7 @@ ${params.code || ''}
   }): Promise<{
     title: string;
     description: string;
-    problems: Array<{ id: string; reason: string }>;
+    problems: Array<{ id: string; title: string; difficulty: string; type: string; reason: string }>;
     estimatedTime: string;
     focusAreas: string[];
   }> {
@@ -2924,9 +2928,29 @@ ${typeInstruction}
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
           const validIds = new Set(candidateProblems.map(p => p.id));
-          const problems = (parsed.selectedProblems || [])
+          const selectedIds = (parsed.selectedProblems || [])
             .filter((p: any) => validIds.has(p.id))
-            .slice(0, count);
+            .slice(0, count)
+            .map((p: any) => p.id);
+          const reasonMap = new Map<string, string>();
+          for (const p of (parsed.selectedProblems || [])) {
+            if (validIds.has(p.id)) reasonMap.set(p.id, p.reason || '');
+          }
+          const problemDetails = await prisma.problem.findMany({
+            where: { id: { in: selectedIds } },
+            select: { id: true, title: true, difficulty: true, type: true },
+          });
+          const detailMap = new Map(problemDetails.map(p => [p.id, p]));
+          const problems = selectedIds.map(id => {
+            const detail = detailMap.get(id);
+            return {
+              id,
+              title: detail?.title || '',
+              difficulty: detail?.difficulty || 'MEDIUM',
+              type: detail?.type || 'PROGRAMMING',
+              reason: reasonMap.get(id) || '',
+            };
+          });
           return {
             title: parsed.title || (type === 'EXAM' ? '个性化考试' : '个性化题单'),
             description: parsed.description || '',
@@ -2962,7 +2986,7 @@ ${typeInstruction}
   ): {
     title: string;
     description: string;
-    problems: Array<{ id: string; reason: string }>;
+    problems: Array<{ id: string; title: string; difficulty: string; type: string; reason: string }>;
     estimatedTime: string;
     focusAreas: string[];
   } {
@@ -2993,6 +3017,9 @@ ${typeInstruction}
       description: `基于你的薄弱点${focusAreas.length > 0 ? `（${focusAreas.join('、')}）` : ''}，为你${type === 'EXAM' ? '组织了考试' : '精选了练习题'}`,
       problems: selected.map(p => ({
         id: p.id,
+        title: p.title,
+        difficulty: p.difficulty,
+        type: p.type,
         reason: p.weakMatch > 0
           ? `针对薄弱点 ${p.parsedTags.filter(t => weakTags.has(t)).join('、')} 的练习`
           : `${p.difficulty} 难度综合练习`,
@@ -3200,6 +3227,966 @@ ${Object.entries(wrongTagMap)
       : '暂无足够数据进行分析，建议多做题以积累学习画像。';
 
     return { summary, strengths, weaknesses, nextSteps };
+  }
+
+  // ========================
+  // Feature 1: AI 面试模拟器
+  // ========================
+
+  async simulateInterview(
+    userId: string,
+    options: { role: string; difficulty: string },
+  ): Promise<{ question: string; hints: string[]; expectedTopics: string[]; difficulty: string; source: 'ai' | 'fallback' }> {
+    const aiEnabled = await this.isFeatureEnabled('interview-simulator');
+    const config = await this.getConfig();
+
+    if (!aiEnabled || !config?.apiKey) {
+      return this.fallbackSimulateInterview(options);
+    }
+
+    const userProfile = await prisma.learnerProfile.findUnique({ where: { userId } });
+    const weakPoints: string[] = userProfile?.weakPoints
+      ? (typeof userProfile.weakPoints === 'string'
+          ? JSON.parse(userProfile.weakPoints as string)
+          : userProfile.weakPoints) as string[]
+      : [];
+
+    const roleMap: Record<string, string> = {
+      frontend: '前端开发',
+      backend: '后端开发',
+      fullstack: '全栈开发',
+      algorithm: '算法工程师',
+    };
+    const difficultyMap: Record<string, string> = {
+      easy: '初级',
+      medium: '中级',
+      hard: '高级',
+    };
+    const roleName = roleMap[options.role] || options.role;
+    const difficultyName = difficultyMap[options.difficulty] || options.difficulty;
+
+    const prompt = `你是一位技术面试官，正在为${roleName}岗位面试候选人。难度等级：${difficultyName}。
+
+${weakPoints.length > 0 ? `候选人的薄弱领域：${weakPoints.join('、')}。请围绕这些薄弱领域出题。` : '请出一道综合性编程题。'}
+
+请以JSON格式返回，包含以下字段：
+- question: 面试题目描述（包含题目背景、要求、示例）
+- hints: 提示数组（3个渐进式提示，从方向性到具体）
+- expectedTopics: 考察知识点数组
+- difficulty: 难度等级
+
+只返回JSON，不要其他内容。`;
+
+    const response = await this.callAI(prompt, config, 'interview-simulator', userId);
+
+    try {
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      return {
+        question: parsed.question || '',
+        hints: Array.isArray(parsed.hints) ? parsed.hints : [],
+        expectedTopics: Array.isArray(parsed.expectedTopics) ? parsed.expectedTopics : [],
+        difficulty: parsed.difficulty || options.difficulty,
+        source: 'ai',
+      };
+    } catch {
+      return {
+        question: response,
+        hints: ['尝试从暴力解法开始', '考虑时间复杂度优化', '思考边界条件'],
+        expectedTopics: ['编程基础'],
+        difficulty: options.difficulty,
+        source: 'ai',
+      };
+    }
+  }
+
+  /**
+   * 面试模拟的降级方案：根据岗位和难度返回预置面试题
+   */
+  private fallbackSimulateInterview(
+    options: { role: string; difficulty: string },
+  ): { question: string; hints: string[]; expectedTopics: string[]; difficulty: string; source: 'ai' | 'fallback' } {
+    const questionBank: Record<string, Record<string, {
+      question: string; hints: string[]; expectedTopics: string[];
+    }>> = {
+      frontend: {
+        easy: {
+          question: `请实现一个函数 debounce(fn, delay)，使得 fn 在最后一次调用后延迟 delay 毫秒才执行。
+
+示例：
+\`\`\`js
+const log = debounce(console.log, 300);
+log('a');
+log('b');
+log('c');
+// 300ms 后只输出 'c'
+\`\`\`
+
+要求：
+1. 返回一个新函数
+2. 在延迟期间再次调用时重新计时
+3. 保持 this 和参数正确传递`,
+          hints: ['使用 setTimeout 和 clearTimeout', '闭包保存 timer 引用', '用 apply/call 保持 this 上下文'],
+          expectedTopics: ['闭包', 'setTimeout', 'this绑定'],
+        },
+        medium: {
+          question: `请实现一个虚拟列表（Virtual List）组件的核心逻辑。
+
+给定一个包含 10000 条数据的列表，每项高度 30px，容器高度 600px。
+要求：
+1. 只渲染可视区域内的 DOM 节点
+2. 滚动时动态更新渲染内容
+3. 保持滚动条位置正确
+
+请写出核心计算逻辑（不需要完整组件代码）。`,
+          hints: ['计算可视区域的起止索引', '用 transform/padding 模拟完整高度', '监听 scroll 事件计算偏移'],
+          expectedTopics: ['虚拟滚动', 'DOM优化', '性能优化'],
+        },
+        hard: {
+          question: `请设计并实现一个简易的响应式系统，包含以下功能：
+
+1. reactive(obj) - 将对象变为响应式
+2. effect(fn) - 注册副作用函数，当响应式数据变化时自动重新执行
+3. computed(getter) - 创建计算属性，惰性求值且缓存结果
+
+示例：
+\`\`\`js
+const state = reactive({ count: 0, name: 'hello' });
+let dummy;
+effect(() => { dummy = state.count + state.name.length; });
+console.log(dummy); // 5
+state.count++;
+console.log(dummy); // 6
+\`\`\``,
+          hints: ['使用 Proxy 拦截 get/set', '在 get 时收集依赖，set 时触发更新', 'computed 需要标记 dirty 实现惰性求值'],
+          expectedTopics: ['Proxy', '响应式原理', '依赖收集', '发布订阅'],
+        },
+      },
+      backend: {
+        easy: {
+          question: `请实现一个线程安全的单例模式数据库连接类。
+
+要求：
+1. 构造函数私有
+2. 提供全局访问点
+3. 多线程环境下只创建一个实例
+
+请用你熟悉的语言实现。`,
+          hints: ['使用类静态方法控制实例创建', '加锁保证线程安全', '双重检查锁定优化性能'],
+          expectedTopics: ['设计模式', '单例模式', '线程安全'],
+        },
+        medium: {
+          question: `请设计一个短链接（Short URL）系统的核心架构。
+
+要求：
+1. 给定长 URL 生成唯一的短链接
+2. 访问短链接时重定向到原始 URL
+3. 支持千万级日活量
+4. 短链接长度不超过 7 个字符
+
+请说明：
+- 短链接生成算法
+- 存储方案
+- 缓存策略
+- 高可用设计`,
+          hints: ['考虑用哈希+自增ID的方式生成', '使用布隆过滤器判断短链是否已存在', '多级缓存：本地缓存 → Redis → 数据库'],
+          expectedTopics: ['系统设计', '哈希算法', '缓存策略', '高并发'],
+        },
+        hard: {
+          question: `请设计一个分布式限流器，支持以下功能：
+
+1. 令牌桶算法：允许突发流量，平均速率受限
+2. 滑动窗口算法：精确控制时间窗口内的请求数
+3. 分布式环境：多个服务实例共享限流状态
+4. 配置热更新：不重启服务即可调整限流规则
+
+请给出核心数据结构和关键算法的伪代码。`,
+          hints: ['Redis + Lua 脚本保证原子性', '令牌桶用队列模拟令牌补充', '滑动窗口用 Sorted Set 按时间戳存储请求'],
+          expectedTopics: ['限流算法', '分布式系统', 'Redis', 'Lua脚本'],
+        },
+      },
+      fullstack: {
+        easy: {
+          question: `请实现一个简易的 Express 中间件系统。
+
+要求：
+1. 支持 app.use(middleware) 注册中间件
+2. 中间件接收 (req, res, next) 参数
+3. 调用 next() 将控制权传递给下一个中间件
+4. 支持错误处理中间件
+
+请写出核心实现代码。`,
+          hints: ['用数组维护中间件队列', 'next() 递归调用下一个中间件', '错误处理中间件有4个参数'],
+          expectedTopics: ['中间件模式', 'Node.js', 'Express'],
+        },
+        medium: {
+          question: `请设计一个实时协作编辑器的核心数据结构（类似 OT 或 CRDT）。
+
+场景：多个用户同时编辑同一份文档。
+要求：
+1. 处理并发编辑冲突
+2. 保证最终一致性
+3. 支持离线编辑后同步
+
+请选择 OT 或 CRDT 方案，说明核心算法。`,
+          hints: ['OT：转换操作以解决冲突', 'CRDT：数据结构本身满足交换律和结合律', '考虑使用向量时钟或 Lamport 时间戳'],
+          expectedTopics: ['CRDT', 'OT算法', '分布式一致性', '实时协作'],
+        },
+        hard: {
+          question: `请设计一个支持百万用户同时在线的即时通讯系统的后端架构。
+
+要求：
+1. 单聊和群聊消息
+2. 消息已读回执
+3. 离线消息推送
+4. 消息搜索
+5. 端到端加密（可选）
+
+请给出：
+- 协议选型（WebSocket/长轮询等）
+- 消息存储方案
+- 在线状态管理
+- 水平扩展策略`,
+          hints: ['WebSocket 长连接 + 心跳保活', '消息按时间线分区存储', '一致性哈希分配连接到不同节点'],
+          expectedTopics: ['WebSocket', '消息队列', '分布式架构', '数据分片'],
+        },
+      },
+      algorithm: {
+        easy: {
+          question: `给定一个整数数组 nums 和一个目标值 target，请找出数组中两个数的下标，使得它们的和等于 target。
+
+假设每种输入只对应一个答案，且同一元素不能使用两次。
+
+示例：
+输入：nums = [2, 7, 11, 15], target = 9
+输出：[0, 1]
+
+请分析时间复杂度和空间复杂度。`,
+          hints: ['暴力法 O(n²) 可以作为起点', '用哈希表将查找降到 O(1)', '遍历时将已见数字存入哈希表'],
+          expectedTopics: ['哈希表', '数组', '时间复杂度'],
+        },
+        medium: {
+          question: `给定一个无向图，实现 Dijkstra 最短路径算法。
+
+输入：图的邻接表表示，起点 source
+输出：从 source 到所有其他节点的最短距离
+
+要求：
+1. 处理有权图（权重为正）
+2. 时间复杂度 O((V+E)logV)
+3. 输出最短路径本身（不只是距离）
+
+请写出完整实现。`,
+          hints: ['使用优先队列（最小堆）优化', '维护 dist 数组和 prev 数组', '通过 prev 数组回溯路径'],
+          expectedTopics: ['图论', 'Dijkstra', '优先队列', '最短路径'],
+        },
+        hard: {
+          question: `请实现一个支持以下操作的数据结构：
+
+1. insert(val) - 插入一个值，O(log n)
+2. delete(val) - 删除一个值，O(log n)
+3. getRandom() - 等概率随机返回一个元素，O(1)
+4. getMedian() - 返回中位数，O(1)
+
+所有操作都需要达到上述时间复杂度要求。
+请说明数据结构设计思路并实现。`,
+          hints: ['getRandom O(1) 需要数组+哈希表的组合', 'getMedian O(1) 需要两个堆维护', 'insert/delete 需要同时维护数组和堆'],
+          expectedTopics: ['数据结构设计', '堆', '哈希表', '随机化'],
+        },
+      },
+    };
+
+    const roleQuestions = questionBank[options.role] || questionBank.algorithm;
+    const question = roleQuestions[options.difficulty] || roleQuestions.medium;
+
+    return {
+      question: question.question,
+      hints: question.hints,
+      expectedTopics: question.expectedTopics,
+      difficulty: options.difficulty,
+      source: 'fallback',
+    };
+  }
+
+  async evaluateInterviewAnswer(
+    userId: string,
+    questionId: string,
+    code: string,
+    language: string,
+  ): Promise<{ score: number; feedback: string; followUpQuestion: string; passed: boolean; source: 'ai' | 'fallback' }> {
+    const aiEnabled = await this.isFeatureEnabled('interview-simulator');
+    const config = await this.getConfig();
+
+    if (!aiEnabled || !config?.apiKey) {
+      return this.fallbackEvaluateInterviewAnswer(code, language);
+    }
+
+    const prompt = `你是一位技术面试官，正在评估候选人的代码回答。
+
+面试题目ID：${questionId}
+编程语言：${language}
+
+候选人提交的代码：
+\`\`\`${language}
+${code}
+\`\`\`
+
+请从以下维度评估，以JSON格式返回：
+- score: 分数（0-100）
+- feedback: 详细反馈（包含正确性、代码质量、时间/空间复杂度、沟通表达方面的评价）
+- followUpQuestion: 追问（基于候选人的回答提出一个深入问题，如果没有追问则为空字符串）
+- passed: 是否通过（score >= 60 为通过）
+
+只返回JSON，不要其他内容。`;
+
+    const response = await this.callAI(prompt, config, 'interview-simulator', userId);
+
+    try {
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      return {
+        score: typeof parsed.score === 'number' ? parsed.score : 0,
+        feedback: parsed.feedback || '',
+        followUpQuestion: parsed.followUpQuestion || '',
+        passed: parsed.passed ?? (parsed.score ?? 0) >= 60,
+        source: 'ai',
+      };
+    } catch {
+      return {
+        score: 0,
+        feedback: response,
+        followUpQuestion: '',
+        passed: false,
+        source: 'ai',
+      };
+    }
+  }
+
+  /**
+   * 面试评估的降级方案：基于关键词匹配和代码结构分析评估代码
+   */
+  private fallbackEvaluateInterviewAnswer(
+    code: string,
+    language: string,
+  ): { score: number; feedback: string; followUpQuestion: string; passed: boolean; source: 'ai' | 'fallback' } {
+    let score = 40;
+    const feedbackParts: string[] = [];
+
+    if (!code.trim()) {
+      return {
+        score: 0,
+        feedback: '未提交代码，无法评估。',
+        followUpQuestion: '',
+        passed: false,
+        source: 'fallback',
+      };
+    }
+
+    /* 代码长度评估 */
+    const lines = code.trim().split('\n').length;
+    if (lines >= 5) {
+      score += 10;
+      feedbackParts.push('代码具备一定长度，说明有基本实现思路。');
+    } else {
+      feedbackParts.push('代码较短，可能实现不完整。');
+    }
+
+    /* 关键语法结构检测 */
+    const hasFunction = /function\s+\w+|def\s+\w+|(?:const|let|var)\s+\w+\s*=\s*(?:\(|function)/.test(code);
+    const hasLoop = /for\s*\(|while\s*\(|\.forEach|\.map|\.filter|\.reduce/.test(code);
+    const hasCondition = /if\s*\(|else|switch\s*\(|case\s+/.test(code);
+    const hasReturn = /return\s+/.test(code);
+
+    if (hasFunction) { score += 10; feedbackParts.push('包含函数定义，结构合理。'); }
+    if (hasLoop) { score += 5; feedbackParts.push('包含循环结构，能处理重复逻辑。'); }
+    if (hasCondition) { score += 5; feedbackParts.push('包含条件判断，考虑了分支逻辑。'); }
+    if (hasReturn) { score += 5; feedbackParts.push('包含返回语句。'); }
+
+    /* 括号匹配检查 */
+    const openBraces = (code.match(/{/g) || []).length;
+    const closeBraces = (code.match(/}/g) || []).length;
+    if (openBraces === closeBraces) {
+      score += 5;
+    } else {
+      feedbackParts.push('花括号不匹配，可能存在语法错误。');
+    }
+
+    score = Math.min(score, 85);
+
+    const passed = score >= 60;
+    const feedback = feedbackParts.join(' ') + '\n\n> 📝 当前为练习模式评估，配置AI后可获得更精准的面试反馈。';
+
+    return {
+      score,
+      feedback,
+      followUpQuestion: passed ? '请解释你代码中的时间复杂度和空间复杂度。' : '',
+      passed,
+      source: 'fallback',
+    };
+  }
+
+  // ========================
+  // Feature 2: AI Bug 猎手
+  // ========================
+
+  async generateBuggyCode(
+    userId: string,
+    options: { topic: string; difficulty: string },
+  ): Promise<{ buggyCode: string; language: string; bugCount: number; hints: string[]; correctCode: string; bugExplanations: string[]; source: 'ai' | 'fallback' }> {
+    const aiEnabled = await this.isFeatureEnabled('bug-hunter');
+    const config = await this.getConfig();
+
+    if (!aiEnabled || !config?.apiKey) {
+      return this.fallbackGenerateBuggyCode(options);
+    }
+
+    const bugCountMap: Record<string, number> = { easy: 1, medium: 2, hard: 3 };
+    const bugCount = bugCountMap[options.difficulty] || 1;
+
+    const prompt = `请生成一段包含 ${bugCount} 个 bug 的代码。主题：${options.topic}。难度：${options.difficulty}。
+
+要求：
+1. 代码应该看起来合理，但包含 ${bugCount} 个隐蔽的 bug
+2. Bug 类型应多样化（逻辑错误、边界条件、类型错误等）
+3. 代码长度适中（20-50行）
+
+请以JSON格式返回，包含以下字段：
+- buggyCode: 包含bug的代码（字符串）
+- language: 编程语言
+- bugCount: bug数量
+- hints: 提示数组（每个bug一个提示，不直接指出bug位置，只给方向性提示）
+- correctCode: 修正后的代码
+- bugExplanations: 每个bug的详细解释数组
+
+只返回JSON，不要其他内容。`;
+
+    const response = await this.callAI(prompt, config, 'bug-hunter', userId);
+
+    try {
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      return {
+        buggyCode: parsed.buggyCode || '',
+        language: parsed.language || 'python',
+        bugCount: parsed.bugCount || bugCount,
+        hints: Array.isArray(parsed.hints) ? parsed.hints : [],
+        correctCode: parsed.correctCode || '',
+        bugExplanations: Array.isArray(parsed.bugExplanations) ? parsed.bugExplanations : [],
+        source: 'ai',
+      };
+    } catch {
+      return {
+        buggyCode: response,
+        language: 'python',
+        bugCount,
+        hints: ['仔细检查循环边界', '注意变量类型', '检查返回值'],
+        correctCode: '',
+        bugExplanations: [],
+        source: 'ai',
+      };
+    }
+  }
+
+  /**
+   * Bug猎手的降级方案：根据主题和难度返回预置的有bug代码
+   */
+  private fallbackGenerateBuggyCode(
+    options: { topic: string; difficulty: string },
+  ): { buggyCode: string; language: string; bugCount: number; hints: string[]; correctCode: string; bugExplanations: string[]; source: 'ai' | 'fallback' } {
+    const scenarios: Record<string, {
+      easy: { buggyCode: string; correctCode: string; hints: string[]; bugExplanations: string[] };
+      medium: { buggyCode: string; correctCode: string; hints: string[]; bugExplanations: string[] };
+      hard: { buggyCode: string; correctCode: string; hints: string[]; bugExplanations: string[] };
+    }> = {
+      '数组': {
+        easy: {
+          buggyCode: `def find_max(arr):
+    max_val = 0
+    for i in range(len(arr)):
+        if arr[i] > max_val:
+            max_val = arr[i]
+    return max_val`,
+          correctCode: `def find_max(arr):
+    if not arr:
+        return None
+    max_val = arr[0]
+    for i in range(1, len(arr)):
+        if arr[i] > max_val:
+            max_val = arr[i]
+    return max_val`,
+          hints: ['考虑数组中所有元素都为负数的情况', '初始值的选择很关键'],
+          bugExplanations: ['初始值设为0，当数组全为负数时会返回0而非最大值。应将初始值设为arr[0]。'],
+        },
+        medium: {
+          buggyCode: `def two_sum(nums, target):
+    seen = {}
+    for i, num in enumerate(nums):
+        complement = target - num
+        if complement in seen:
+            return [seen[complement], i]
+        seen[num] = i
+    return []
+    
+def remove_duplicates(arr):
+    result = []
+    for item in arr:
+        if item not in result:
+            result.append(item)
+    return result`,
+          correctCode: `def two_sum(nums, target):
+    seen = {}
+    for i, num in enumerate(nums):
+        complement = target - num
+        if complement in seen:
+            return [seen[complement], i]
+        seen[num] = i
+    return []
+
+def remove_duplicates(arr):
+    return list(dict.fromkeys(arr))`,
+          hints: ['remove_duplicates 的效率有问题', '考虑使用集合或字典来去重'],
+          bugExplanations: ['remove_duplicates 使用列表的 in 操作符，时间复杂度为 O(n²)，应使用 dict.fromkeys() 或 set 来去重，时间复杂度 O(n)。'],
+        },
+        hard: {
+          buggyCode: `def merge_sort(arr):
+    if len(arr) <= 1:
+        return arr
+    mid = len(arr) // 2
+    left = merge_sort(arr[:mid])
+    right = merge_sort(arr[mid:])
+    return merge(left, right)
+
+def merge(left, right):
+    result = []
+    i = j = 0
+    while i < len(left) and j < len(right):
+        if left[i] <= right[j]:
+            result.append(left[i])
+            i += 1
+        else:
+            result.append(right[j])
+            j += 1
+    result.extend(left[i:])
+    result.extend(right[j:])
+    return result
+
+def binary_search(arr, target):
+    left, right = 0, len(arr)
+    while left < right:
+        mid = (left + right) // 2
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] < target:
+            left = mid + 1
+        else:
+            right = mid`,
+          correctCode: `def merge_sort(arr):
+    if len(arr) <= 1:
+        return arr
+    mid = len(arr) // 2
+    left = merge_sort(arr[:mid])
+    right = merge_sort(arr[mid:])
+    return merge(left, right)
+
+def merge(left, right):
+    result = []
+    i = j = 0
+    while i < len(left) and j < len(right):
+        if left[i] <= right[j]:
+            result.append(left[i])
+            i += 1
+        else:
+            result.append(right[j])
+            j += 1
+    result.extend(left[i:])
+    result.extend(right[j:])
+    return result
+
+def binary_search(arr, target):
+    left, right = 0, len(arr) - 1
+    while left <= right:
+        mid = (left + right) // 2
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] < target:
+            left = mid + 1
+        else:
+            right = mid - 1
+    return -1`,
+          hints: ['binary_search 的边界条件有问题', 'right 的初始值和循环条件需要配合', '找不到目标值时应该返回什么'],
+          bugExplanations: [
+            'binary_search 中 right 初始值应为 len(arr)-1 而非 len(arr)，循环条件应为 left <= right 而非 left < right',
+            'binary_search 在 right = mid 时应为 right = mid - 1，否则可能死循环',
+            'binary_search 找不到目标值时应返回 -1 而非隐式返回 None',
+          ],
+        },
+      },
+      '字符串': {
+        easy: {
+          buggyCode: `def is_palindrome(s):
+    return s == s[::-1]
+
+def count_vowels(s):
+    count = 0
+    for c in s:
+        if c in 'aeiou':
+            count += 1
+    return count`,
+          correctCode: `def is_palindrome(s):
+    s = s.lower()
+    return s == s[::-1]
+
+def count_vowels(s):
+    count = 0
+    for c in s.lower():
+        if c in 'aeiou':
+            count += 1
+    return count`,
+          hints: ['大小写会影响回文判断', '元音字母的大小写是否都考虑了'],
+          bugExplanations: ['is_palindrome 未统一大小写，"Racecar" 会被判为非回文。count_vowels 未将字符转为小写，大写元音字母不会被计数。'],
+        },
+        medium: {
+          buggyCode: `def reverse_words(s):
+    words = s.split(' ')
+    return ' '.join(word[::-1] for word in words)
+
+def is_anagram(s1, s2):
+    return sorted(s1) == sorted(s2)`,
+          correctCode: `def reverse_words(s):
+    words = s.split()
+    return ' '.join(word[::-1] for word in words)
+
+def is_anagram(s1, s2):
+    s1 = s1.replace(' ', '').lower()
+    s2 = s2.replace(' ', '').lower()
+    return sorted(s1) == sorted(s2)`,
+          hints: ['split(" ") 和 split() 处理连续空格的方式不同', 'anagram 判断是否考虑了空格和大小写'],
+          bugExplanations: ['split(" ") 不会合并连续空格，应使用 split()。is_anagram 未去除空格和统一大小写。'],
+        },
+        hard: {
+          buggyCode: `def longest_substring_without_repeating(s):
+    char_set = set()
+    left = 0
+    max_len = 0
+    for right in range(len(s)):
+        while s[right] in char_set:
+            char_set.remove(s[left])
+            left += 1
+        char_set.add(s[right])
+        max_len = max(max_len, right - left)
+    return max_len`,
+          correctCode: `def longest_substring_without_repeating(s):
+    char_set = set()
+    left = 0
+    max_len = 0
+    for right in range(len(s)):
+        while s[right] in char_set:
+            char_set.remove(s[left])
+            left += 1
+        char_set.add(s[right])
+        max_len = max(max_len, right - left + 1)
+    return max_len`,
+          hints: ['子串长度的计算公式是否正确', '考虑 right - left + 1 而非 right - left'],
+          bugExplanations: ['max_len 的计算应为 right - left + 1，因为当前窗口包含 right 位置的字符，长度需要加1。'],
+        },
+      },
+    };
+
+    /* 默认使用数组主题 */
+    const topicScenarios = scenarios[options.topic] || scenarios['数组'];
+    const difficultyScenario = topicScenarios[options.difficulty] || topicScenarios.easy;
+    const bugCountMap: Record<string, number> = { easy: 1, medium: 2, hard: 3 };
+
+    return {
+      buggyCode: difficultyScenario.buggyCode,
+      language: 'python',
+      bugCount: bugCountMap[options.difficulty] || 1,
+      hints: difficultyScenario.hints,
+      correctCode: difficultyScenario.correctCode,
+      bugExplanations: difficultyScenario.bugExplanations,
+      source: 'fallback',
+    };
+  }
+
+  async verifyBugFix(
+    userId: string,
+    buggyCodeId: string,
+    fixedCode: string,
+  ): Promise<{ allFixed: boolean; remainingBugs: number; score: number; explanation: string; source: 'ai' | 'fallback' }> {
+    const aiEnabled = await this.isFeatureEnabled('bug-hunter');
+    const config = await this.getConfig();
+
+    if (!aiEnabled || !config?.apiKey) {
+      return this.fallbackVerifyBugFix(fixedCode);
+    }
+
+    const prompt = `你是一位代码审查专家，正在验证学生修复的代码。
+
+原始有bug的代码ID：${buggyCodeId}
+
+学生提交的修复代码：
+\`\`\`
+${fixedCode}
+\`\`\`
+
+请验证学生是否成功修复了所有bug，以JSON格式返回：
+- allFixed: 是否所有bug都已修复（布尔值）
+- remainingBugs: 仍然存在的bug数量
+- score: 修复得分（0-100，全部修复为100）
+- explanation: 详细解释（哪些bug被修复了，哪些仍然存在，修复方式是否正确）
+
+只返回JSON，不要其他内容。`;
+
+    const response = await this.callAI(prompt, config, 'bug-hunter', userId);
+
+    try {
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      return {
+        allFixed: parsed.allFixed ?? false,
+        remainingBugs: typeof parsed.remainingBugs === 'number' ? parsed.remainingBugs : 0,
+        score: typeof parsed.score === 'number' ? parsed.score : 0,
+        explanation: parsed.explanation || '',
+        source: 'ai',
+      };
+    } catch {
+      return {
+        allFixed: false,
+        remainingBugs: 0,
+        score: 0,
+        explanation: response,
+        source: 'ai',
+      };
+    }
+  }
+
+  /**
+   * Bug修复验证的降级方案：基于字符串差异和基本代码结构分析
+   */
+  private fallbackVerifyBugFix(
+    fixedCode: string,
+  ): { allFixed: boolean; remainingBugs: number; score: number; explanation: string; source: 'ai' | 'fallback' } {
+    if (!fixedCode.trim()) {
+      return {
+        allFixed: false,
+        remainingBugs: 1,
+        score: 0,
+        explanation: '未提交修复代码。',
+        source: 'fallback',
+      };
+    }
+
+    let score = 50;
+    const feedbackParts: string[] = [];
+
+    /* 检查代码基本完整性 */
+    const lines = fixedCode.trim().split('\n').length;
+    if (lines >= 3) {
+      score += 10;
+      feedbackParts.push('代码具备基本结构。');
+    }
+
+    /* 检查括号匹配 */
+    const openBraces = (fixedCode.match(/{/g) || []).length;
+    const closeBraces = (fixedCode.match(/}/g) || []).length;
+    if (openBraces === closeBraces) {
+      score += 10;
+    } else {
+      feedbackParts.push('花括号不匹配，可能存在语法错误。');
+    }
+
+    /* 检查是否有 return 语句 */
+    if (/return\s+/.test(fixedCode)) {
+      score += 10;
+    }
+
+    /* 检查是否有条件判断 */
+    if (/if\s*\(|else/.test(fixedCode)) {
+      score += 5;
+      feedbackParts.push('包含条件判断逻辑。');
+    }
+
+    /* 检查是否有循环 */
+    if (/for\s*\(|while\s*\(/.test(fixedCode)) {
+      score += 5;
+    }
+
+    score = Math.min(score, 80);
+    const allFixed = score >= 70;
+    const remainingBugs = allFixed ? 0 : Math.max(1, Math.floor((100 - score) / 30));
+
+    feedbackParts.push(
+      allFixed
+        ? '代码结构看起来合理，可能已修复主要问题。'
+        : '代码可能仍有问题，建议仔细检查逻辑。',
+    );
+    feedbackParts.push('\n\n> 📝 当前为练习模式验证，配置AI后可获得更精准的Bug修复评估。');
+
+    return {
+      allFixed,
+      remainingBugs,
+      score,
+      explanation: feedbackParts.join(' '),
+      source: 'fallback',
+    };
+  }
+
+  // ========================
+  // Feature 3: AI 学习日记
+  // ========================
+
+  async generateLearningDiary(
+    userId: string,
+    dateRange: { from: Date; to: Date },
+  ): Promise<{ diary: string; highlights: string[]; suggestion: string; mood: string }> {
+    if (!(await this.isFeatureEnabled('learning-diary'))) {
+      throw new Error('AI学习日记功能未启用');
+    }
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      throw new Error('AI API未配置');
+    }
+
+    const [submissions, profile, matchParticipants] = await Promise.all([
+      prisma.submission.findMany({
+        where: {
+          userId,
+          createdAt: { gte: dateRange.from, lte: dateRange.to },
+        },
+        include: { problem: { select: { title: true, difficulty: true, tags: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+      }),
+      prisma.learnerProfile.findUnique({ where: { userId } }),
+      prisma.matchParticipant.findMany({
+        where: {
+          userId,
+          match: {
+            createdAt: { gte: dateRange.from, lte: dateRange.to },
+            status: 'COMPLETED',
+          },
+        },
+        take: 10,
+      }),
+    ]);
+
+    const acceptedCount = submissions.filter(s => s.status === 'ACCEPTED').length;
+    const wrongCount = submissions.filter(s => s.status === 'WRONG_ANSWER').length;
+    const problemTitles = submissions
+      .filter(s => s.status === 'ACCEPTED')
+      .map(s => s.problem?.title)
+      .filter(Boolean)
+      .slice(0, 10);
+    const wrongTitles = submissions
+      .filter(s => s.status === 'WRONG_ANSWER')
+      .map(s => s.problem?.title)
+      .filter(Boolean)
+      .slice(0, 5);
+    const matchCount = matchParticipants.length;
+
+    const fromDate = dateRange.from.toLocaleDateString('zh-CN');
+    const toDate = dateRange.to.toLocaleDateString('zh-CN');
+
+    const prompt = `你是一位温暖、鼓励的学习伙伴，正在为一位学生写学习日记。
+
+时间范围：${fromDate} 至 ${toDate}
+
+学习数据：
+- 总提交数：${submissions.length}
+- 通过数：${acceptedCount}
+- 错误数：${wrongCount}
+- 通过的题目：${problemTitles.join('、') || '无'}
+- 未通过的题目：${wrongTitles.join('、') || '无'}
+- 对战次数：${matchCount}
+${profile ? `- 连续学习天数：${profile.streakDays || 0}` : ''}
+
+请以温暖、鼓励的语气写一篇学习日记，以JSON格式返回：
+- diary: 日记正文（3-5段，包含今天做了什么、遇到了什么困难、有什么进步）
+- highlights: 亮点数组（2-4个关键词或短语）
+- suggestion: 明天的学习建议（一句话）
+- mood: 今日心情（emoji + 文字，如"😊 充实"）
+
+只返回JSON，不要其他内容。`;
+
+    const response = await this.callAI(prompt, config, 'learning-diary', userId);
+
+    try {
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      return {
+        diary: parsed.diary || '',
+        highlights: Array.isArray(parsed.highlights) ? parsed.highlights : [],
+        suggestion: parsed.suggestion || '',
+        mood: parsed.mood || '📝 学习中',
+      };
+    } catch {
+      return {
+        diary: response,
+        highlights: ['坚持学习'],
+        suggestion: '继续加油！',
+        mood: '📝 学习中',
+      };
+    }
+  }
+
+  // ========================
+  // Feature 4: AI 代码解说员
+  // ========================
+
+  async generateCodeCommentary(
+    userId: string,
+    code: string,
+    language: string,
+    problemTitle: string,
+  ): Promise<{ commentary: string; highlights: string[]; rating: string }> {
+    if (!(await this.isFeatureEnabled('code-commentary'))) {
+      throw new Error('AI代码解说功能未启用');
+    }
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      throw new Error('AI API未配置');
+    }
+
+    const prompt = `你是一位充满激情的电竞解说员，正在实时解说一位选手的编程过程！
+
+题目：${problemTitle}
+编程语言：${language}
+
+选手的代码：
+\`\`\`${language}
+${code}
+\`\`\`
+
+请用体育解说风格，对这段代码进行激情解说！要求：
+1. 用生动的比喻和夸张的语气
+2. 对巧妙之处要大加赞赏
+3. 对潜在问题要"紧张地"指出
+4. 保持幽默感
+
+以JSON格式返回：
+- commentary: 解说词（2-4句，充满激情的解说风格）
+- highlights: 亮点数组（代码中的精彩之处或问题）
+- rating: 评级（"🔥 神级操作" / "👍 不错" / "🤔 需要改进"）
+
+只返回JSON，不要其他内容。`;
+
+    const response = await this.callAI(prompt, config, 'code-commentary', userId);
+
+    try {
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      return {
+        commentary: parsed.commentary || '',
+        highlights: Array.isArray(parsed.highlights) ? parsed.highlights : [],
+        rating: parsed.rating || '🤔 需要改进',
+      };
+    } catch {
+      return {
+        commentary: response,
+        highlights: [],
+        rating: '🤔 需要改进',
+      };
+    }
   }
 
   /**

@@ -535,6 +535,127 @@ router.post('/smart-hint', authMiddleware, async (req: Request, res: any): Promi
 });
 
 // ========================
+// AI 面试模拟器
+// ========================
+
+router.post('/interview/simulate', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { role, difficulty } = req.body;
+
+    if (!role || !difficulty) {
+      res.status(400).json({ success: false, error: { message: '缺少角色或难度参数' } });
+      return;
+    }
+
+    const result = await aiService.simulateInterview(userId, { role, difficulty });
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/interview/evaluate', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { questionId, code, language } = req.body;
+
+    if (!questionId || !code || !language) {
+      res.status(400).json({ success: false, error: { message: '缺少必要参数' } });
+      return;
+    }
+
+    const result = await aiService.evaluateInterviewAnswer(userId, questionId, code, language);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
+// AI Bug 猎手
+// ========================
+
+router.post('/bug-hunter/generate', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { topic, difficulty } = req.body;
+
+    if (!topic || !difficulty) {
+      res.status(400).json({ success: false, error: { message: '缺少主题或难度参数' } });
+      return;
+    }
+
+    const result = await aiService.generateBuggyCode(userId, { topic, difficulty });
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/bug-hunter/verify', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { buggyCodeId, fixedCode } = req.body;
+
+    if (!buggyCodeId || !fixedCode) {
+      res.status(400).json({ success: false, error: { message: '缺少必要参数' } });
+      return;
+    }
+
+    const result = await aiService.verifyBugFix(userId, buggyCodeId, fixedCode);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
+// AI 学习日记
+// ========================
+
+router.post('/learning-diary', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { from, to } = req.body;
+
+    if (!from || !to) {
+      res.status(400).json({ success: false, error: { message: '缺少日期范围参数' } });
+      return;
+    }
+
+    const result = await aiService.generateLearningDiary(userId, {
+      from: new Date(from),
+      to: new Date(to),
+    });
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
+// AI 代码解说员
+// ========================
+
+router.post('/code-commentary', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { code, language, problemTitle } = req.body;
+
+    if (!code || !language || !problemTitle) {
+      res.status(400).json({ success: false, error: { message: '缺少必要参数' } });
+      return;
+    }
+
+    const result = await aiService.generateCodeCommentary(userId, code, language, problemTitle);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
 // AI 功能配置管理路由（管理员）
 // ========================
 

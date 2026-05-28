@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { problemsAPI, submissionsAPI, aiAPI, enhancedAiAPI } from '../services/api';
-import { ArrowLeft, Send, Lightbulb, Loader2, Star, Settings, X, Sparkles, Wand2 } from 'lucide-react';
+import { ArrowLeft, Send, Lightbulb, Loader2, Star, Settings, X, Sparkles, Wand2, Mic, MicOff } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { useAuthStore } from '../stores/auth.store';
 import { MarkdownRenderer } from '../components/MarkdownEditor';
@@ -184,6 +184,13 @@ export function SolvePage() {
   const [smartHintAttemptCount, setSmartHintAttemptCount] = useState(1);
   const [smartHintHistory, setSmartHintHistory] = useState<string[]>([]);
 
+  // AI 代码解说员状态
+  const [commentaryEnabled, setCommentaryEnabled] = useState(false);
+  const [commentaryData, setCommentaryData] = useState<{ commentary: string; highlights: string[]; rating: string } | null>(null);
+  const [commentaryLoading, setCommentaryLoading] = useState(false);
+  const commentaryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [displayedCommentary, setDisplayedCommentary] = useState('');
+
   useEffect(() => {
     if (id) loadProblem();
   }, [id]);
@@ -365,6 +372,57 @@ export function SolvePage() {
       return next;
     });
   }, []);
+
+  // AI 代码解说员：代码变化时防抖触发解说
+  useEffect(() => {
+    if (!commentaryEnabled || !code.trim() || !problem?.title) return;
+
+    if (commentaryTimerRef.current) {
+      clearTimeout(commentaryTimerRef.current);
+    }
+
+    commentaryTimerRef.current = setTimeout(async () => {
+      setCommentaryLoading(true);
+      try {
+        const res = await enhancedAiAPI.generateCodeCommentary({
+          code,
+          language,
+          problemTitle: problem.title,
+        });
+        if (res.success && res.data) {
+          setCommentaryData(res.data);
+          setDisplayedCommentary('');
+        }
+      } catch {
+        // 解说功能非关键，静默处理错误
+      } finally {
+        setCommentaryLoading(false);
+      }
+    }, 3000);
+
+    return () => {
+      if (commentaryTimerRef.current) {
+        clearTimeout(commentaryTimerRef.current);
+      }
+    };
+  }, [code, commentaryEnabled, language, problem?.title]);
+
+  // 打字机效果：逐字显示解说词
+  useEffect(() => {
+    if (!commentaryData?.commentary) return;
+
+    let index = 0;
+    setDisplayedCommentary('');
+    const timer = setInterval(() => {
+      index++;
+      setDisplayedCommentary(commentaryData.commentary.slice(0, index));
+      if (index >= commentaryData.commentary.length) {
+        clearInterval(timer);
+      }
+    }, 30);
+
+    return () => clearInterval(timer);
+  }, [commentaryData?.commentary]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -601,6 +659,23 @@ export function SolvePage() {
                 {smartHintAttemptCount > 1 && (
                   <span className="ml-1.5 text-xs bg-emerald-500/30 px-1.5 py-0.5 rounded">第{smartHintAttemptCount}次</span>
                 )}
+              </button>
+              <button
+                onClick={() => {
+                  setCommentaryEnabled(!commentaryEnabled);
+                  if (commentaryEnabled) {
+                    setCommentaryData(null);
+                    setDisplayedCommentary('');
+                  }
+                }}
+                className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
+                  commentaryEnabled
+                    ? 'bg-orange-500/30 text-orange-300 border border-orange-500/50'
+                    : 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30'
+                }`}
+              >
+                {commentaryEnabled ? <Mic className="h-4 w-4 mr-2" /> : <MicOff className="h-4 w-4 mr-2" />}
+                解说模式
               </button>
             </div>
 
@@ -890,6 +965,57 @@ export function SolvePage() {
           )}
         </div>
       </div>
+
+      {/* AI 代码解说员浮动面板 */}
+      {commentaryEnabled && (displayedCommentary || commentaryLoading) && (
+        <div className="fixed bottom-0 left-0 right-0 z-40">
+          <div className="max-w-4xl mx-auto px-4 pb-4">
+            <div className="bg-slate-800/95 backdrop-blur-sm border border-orange-500/30 rounded-xl p-4 shadow-2xl">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Mic className="h-4 w-4 text-orange-400" />
+                  <span className="text-sm font-medium text-orange-400">AI 解说员</span>
+                  {commentaryLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-400" />}
+                  {commentaryData?.rating && !commentaryLoading && (
+                    <span className={`text-sm font-bold ${
+                      commentaryData.rating.includes('神级') ? 'text-red-400' :
+                      commentaryData.rating.includes('不错') ? 'text-emerald-400' :
+                      'text-amber-400'
+                    }`}>
+                      {commentaryData.rating}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    setCommentaryEnabled(false);
+                    setCommentaryData(null);
+                    setDisplayedCommentary('');
+                  }}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="text-sm text-slate-200 leading-relaxed">
+                {displayedCommentary}
+                {displayedCommentary.length < (commentaryData?.commentary?.length || 0) && (
+                  <span className="inline-block w-1.5 h-4 bg-orange-400 animate-pulse ml-0.5" />
+                )}
+              </div>
+              {commentaryData?.highlights && commentaryData.highlights.length > 0 && !commentaryLoading && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {commentaryData.highlights.map((h, i) => (
+                    <span key={i} className="text-xs px-2 py-0.5 bg-orange-500/20 text-orange-300 rounded">
+                      {h}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

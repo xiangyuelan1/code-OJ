@@ -7,16 +7,16 @@ import {
   User, Mail, Clock, CheckCircle, XCircle, Award, Shield, GraduationCap,
   Crown, TrendingUp, Users, BookOpen, ClipboardList, Plus, LogOut, X,
   ChevronRight, ArrowLeft, Loader2, Trophy, Activity, Brain, Sparkles,
-  ListChecks, FileText, Target, Timer, ArrowRight,
+  ListChecks, FileText, Target, Timer, ArrowRight, Calendar, PenLine,
 } from 'lucide-react';
 
-type ProfileTab = 'submissions' | 'points' | 'classes' | 'ai-plan';
+type ProfileTab = 'submissions' | 'points' | 'classes' | 'ai-plan' | 'diary';
 type ClassDetailTab = 'members' | 'ranking' | 'activity';
 
 interface PersonalizedPlan {
   title: string;
   description: string;
-  problems: Array<{ id: string; reason: string }>;
+  problems: Array<{ id: string; title: string; difficulty: string; type: string; reason: string }>;
   estimatedTime: string;
   focusAreas: string[];
 }
@@ -85,6 +85,12 @@ export function ProfilePage() {
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [planType, setPlanType] = useState<'PROBLEM_LIST' | 'EXAM'>('PROBLEM_LIST');
 
+  // AI 学习日记相关状态
+  const [diary, setDiary] = useState<{ diary: string; highlights: string[]; suggestion: string; mood: string } | null>(null);
+  const [diaryLoading, setDiaryLoading] = useState(false);
+  const [diaryDate, setDiaryDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [diaryHistory, setDiaryHistory] = useState<Array<{ date: string; mood: string; highlights: string[] }>>([]);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -97,6 +103,9 @@ export function ProfilePage() {
     }
     if (activeTab === 'ai-plan' && !aiRecommendations && !recommendationsLoading) {
       loadRecommendations();
+    }
+    if (activeTab === 'diary') {
+      loadDiaryHistory();
     }
   }, [activeTab]);
 
@@ -230,6 +239,48 @@ export function ProfilePage() {
       setRecommendationsLoading(false);
     }
   }, []);
+
+  const loadDiaryHistory = useCallback(() => {
+    try {
+      const stored = localStorage.getItem('oj_diary_history');
+      if (stored) {
+        setDiaryHistory(JSON.parse(stored));
+      }
+    } catch {}
+  }, []);
+
+  const handleGenerateDiary = async () => {
+    setDiaryLoading(true);
+    setDiary(null);
+    try {
+      const dateObj = new Date(diaryDate);
+      const from = new Date(dateObj);
+      from.setHours(0, 0, 0, 0);
+      const to = new Date(dateObj);
+      to.setHours(23, 59, 59, 999);
+
+      const res = await enhancedAiAPI.generateLearningDiary({
+        from: from.toISOString(),
+        to: to.toISOString(),
+      });
+      if (res.success && res.data) {
+        const data = res.data;
+        setDiary(data);
+        const newEntry = { date: diaryDate, mood: data.mood, highlights: data.highlights };
+        setDiaryHistory(prev => {
+          const existing = prev.filter(d => d.date !== diaryDate);
+          const updated = [newEntry, ...existing].slice(0, 30);
+          localStorage.setItem('oj_diary_history', JSON.stringify(updated));
+          return updated;
+        });
+      }
+    } catch (error: any) {
+      console.error('生成学习日记失败:', error);
+      alert(error.error?.message || '生成失败，请稍后重试');
+    } finally {
+      setDiaryLoading(false);
+    }
+  };
 
   const getTrialDaysLeft = () => {
     if (!accessStatus?.expiresAt) return 0;
@@ -773,11 +824,28 @@ export function ProfilePage() {
                     {index + 1}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-white text-sm font-medium truncate">题目 {problem.id.slice(0, 8)}...</div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-white text-sm font-medium truncate">{problem.title || `题目 ${problem.id.slice(0, 8)}...`}</span>
+                      {problem.difficulty && (
+                        <span className={`shrink-0 px-1.5 py-0.5 rounded text-xs font-medium border ${
+                          problem.difficulty === 'EASY' ? 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10' :
+                          problem.difficulty === 'MEDIUM' ? 'text-amber-400 border-amber-400/30 bg-amber-400/10' :
+                          problem.difficulty === 'HARD' ? 'text-rose-400 border-rose-400/30 bg-rose-400/10' :
+                          'text-slate-400 border-slate-400/30 bg-slate-400/10'
+                        }`}>
+                          {problem.difficulty === 'EASY' ? '简单' : problem.difficulty === 'MEDIUM' ? '中等' : problem.difficulty === 'HARD' ? '困难' : problem.difficulty}
+                        </span>
+                      )}
+                      {problem.type && (
+                        <span className="shrink-0 px-1.5 py-0.5 rounded text-xs font-medium bg-slate-500/20 text-slate-300 border border-slate-500/30">
+                          {problem.type === 'PROGRAMMING' ? '编程' : problem.type === 'CHOICE' ? '选择' : problem.type === 'FILL_BLANK' ? '填空' : problem.type}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-slate-400 text-xs mt-0.5">{problem.reason}</div>
                   </div>
                   <button
-                    onClick={() => navigate(`/problems/${problem.id}`)}
+                    onClick={() => navigate(`/problem/${problem.id}`)}
                     className="flex items-center gap-1 px-3 py-1.5 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors text-sm shrink-0"
                   >
                     开始练习
@@ -790,7 +858,7 @@ export function ProfilePage() {
             {aiPlan.problems.length > 0 && (
               <div className="p-4 border-t border-slate-600 bg-slate-700/30">
                 <button
-                  onClick={() => navigate(`/problems/${aiPlan.problems[0].id}`)}
+                  onClick={() => navigate(`/problem/${aiPlan.problems[0].id}`)}
                   className="flex items-center justify-center gap-2 w-full py-3 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors font-medium"
                 >
                   <Sparkles className="h-4 w-4" />
@@ -871,7 +939,7 @@ export function ProfilePage() {
                           <div className="text-slate-400 text-xs mt-0.5">{step.reason}</div>
                           {step.problemIds.length > 0 && (
                             <button
-                              onClick={() => navigate(`/problems/${step.problemIds[0]}`)}
+                              onClick={() => navigate(`/problem/${step.problemIds[0]}`)}
                               className="mt-2 text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1"
                             >
                               去练习 <ArrowRight className="h-3 w-3" />
@@ -956,6 +1024,114 @@ export function ProfilePage() {
             </button>
           </div>
         </div>
+      </div>
+    );
+  };
+
+  const renderDiary = () => {
+    return (
+      <div className="space-y-6">
+        {/* 日期选择与生成按钮 */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-cyan-400" />
+            <input
+              type="date"
+              value={diaryDate}
+              onChange={e => setDiaryDate(e.target.value)}
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+            />
+          </div>
+          <button
+            onClick={handleGenerateDiary}
+            disabled={diaryLoading}
+            className="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-pink-500 to-orange-500 text-white font-medium rounded-lg hover:from-pink-600 hover:to-orange-600 transition-all disabled:opacity-50"
+          >
+            {diaryLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenLine className="h-4 w-4" />}
+            生成今日日记
+          </button>
+        </div>
+
+        {/* 加载状态 */}
+        {diaryLoading && (
+          <div className="flex flex-col items-center justify-center py-12">
+            <div className="relative">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-pink-500/30 border-t-pink-500" />
+              <BookOpen className="h-5 w-5 text-pink-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            <p className="text-slate-400 mt-4">AI 正在为你撰写学习日记...</p>
+          </div>
+        )}
+
+        {/* 日记内容 */}
+        {diary && !diaryLoading && (
+          <div className="bg-gradient-to-br from-pink-500/5 to-orange-500/5 border border-pink-500/20 rounded-xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">{diary.mood.split(' ')[0] || '📝'}</span>
+                <span className="text-lg font-semibold text-white">{diary.mood}</span>
+              </div>
+              <span className="text-sm text-slate-400">{diaryDate}</span>
+            </div>
+
+            {diary.highlights.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {diary.highlights.map((h, i) => (
+                  <span key={i} className="px-3 py-1 bg-pink-500/20 text-pink-300 rounded-full text-sm">
+                    ✨ {h}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="text-slate-200 leading-relaxed whitespace-pre-wrap">
+              {diary.diary}
+            </div>
+
+            {diary.suggestion && (
+              <div className="mt-4 p-4 bg-orange-500/10 border border-orange-500/20 rounded-lg">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-orange-400">💡</span>
+                  <span className="text-sm font-medium text-orange-300">明日建议</span>
+                </div>
+                <p className="text-sm text-orange-200/80">{diary.suggestion}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 历史日记 */}
+        {diaryHistory.length > 0 && (
+          <div>
+            <h3 className="text-sm font-medium text-slate-300 mb-3">历史日记</h3>
+            <div className="grid grid-cols-7 gap-2">
+              {diaryHistory.map(entry => (
+                <button
+                  key={entry.date}
+                  onClick={() => {
+                    setDiaryDate(entry.date);
+                  }}
+                  className={`p-2 rounded-lg border text-center transition-all ${
+                    diaryDate === entry.date
+                      ? 'border-pink-500 bg-pink-500/10'
+                      : 'border-slate-600 bg-slate-700 hover:border-slate-500'
+                  }`}
+                >
+                  <div className="text-lg">{entry.mood.split(' ')[0] || '📝'}</div>
+                  <div className="text-xs text-slate-400 mt-1">{entry.date.slice(5)}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!diary && !diaryLoading && diaryHistory.length === 0 && (
+          <div className="text-center py-12">
+            <BookOpen className="h-16 w-16 text-slate-600 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-white mb-2">还没有学习日记</h3>
+            <p className="text-slate-400">选择日期并点击"生成今日日记"，AI 会为你记录学习历程</p>
+          </div>
+        )}
       </div>
     );
   };
@@ -1081,6 +1257,15 @@ export function ProfilePage() {
             <Brain className="h-4 w-4" />
             AI学习计划
           </button>
+          <button
+            onClick={() => setActiveTab('diary')}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-md transition-colors text-sm ${
+              activeTab === 'diary' ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <BookOpen className="h-4 w-4" />
+            学习日记
+          </button>
         </div>
 
         {/* 最近提交 */}
@@ -1147,6 +1332,9 @@ export function ProfilePage() {
 
         {/* AI 学习计划 */}
         {activeTab === 'ai-plan' && renderAIPlan()}
+
+        {/* 学习日记 */}
+        {activeTab === 'diary' && renderDiary()}
       </div>
 
       {/* 加入班级弹窗 */}
