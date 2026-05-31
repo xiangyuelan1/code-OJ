@@ -107,11 +107,11 @@ init_database() {
 
     if [ ! -f "prisma/dev.db" ]; then
         info "初始化数据库..."
-        npx prisma migrate dev --name init
+        npx prisma db push
         ok "数据库创建完成"
     else
-        info "检查数据库迁移..."
-        npx prisma migrate deploy 2>/dev/null || npx prisma migrate dev --name init
+        info "同步数据库 Schema..."
+        npx prisma db push || npx prisma migrate dev --name init
         ok "数据库已就绪"
     fi
 
