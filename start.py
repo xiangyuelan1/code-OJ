@@ -1,6 +1,11 @@
 """
 OJ在线评测系统 - 一键启动脚本
 用法: python start.py
+
+数据库初始化策略：统一使用 prisma db push
+原因：开发阶段频繁迭代 schema，migrate dev 产生的迁移文件
+往往滞后于 schema 变更，导致部署后数据库缺少表/字段。
+db push 直接将 schema 同步到数据库，不依赖迁移文件历史。
 """
 
 import subprocess
@@ -67,7 +72,8 @@ def kill_port(port: int):
 
 
 def init_database():
-    log("STEP", "检查数据库...")
+    log("STEP", "初始化数据库...")
+
     if not (PROJECT_DIR / ".env").exists():
         env_content = (
             'DATABASE_URL="file:./dev.db"\n'
@@ -82,23 +88,22 @@ def init_database():
 
     kill_port(BACKEND_PORT)
 
+    # Step 1: 生成 Prisma Client（确保 Client 与 schema 一致）
+    log("STEP", "[1/2] 生成 Prisma Client...")
     if not run("npx prisma generate", quiet=True):
-        log("ERR", "Prisma 客户端生成失败！")
+        log("ERR", "Prisma 客户端生成失败！请检查 schema.prisma 语法")
         sys.exit(1)
     log("OK", "Prisma 客户端已生成")
 
-    db_path = PROJECT_DIR / "prisma" / "dev.db"
-    if not db_path.exists():
-        log("INFO", "首次运行，正在创建数据库...")
+    # Step 2: 同步 schema 到数据库
+    # 统一使用 db push，不依赖迁移文件
+    log("STEP", "[2/2] 同步数据库 Schema...")
+    if not run("npx prisma db push", quiet=True):
+        log("WARN", "prisma db push 失败，尝试 prisma migrate dev...")
         if not run("npx prisma migrate dev --name init"):
-            log("ERR", "数据库创建失败！")
+            log("ERR", "数据库同步失败！请手动执行: npx prisma db push")
             sys.exit(1)
-        log("OK", "数据库创建完成")
-    else:
-        if not run("npx prisma db push", quiet=True):
-            log("WARN", "数据库同步失败，可能需要手动执行 prisma db push")
-        else:
-            log("OK", "数据库已同步最新Schema")
+    log("OK", "数据库 Schema 已同步")
 
 
 def seed_data():
@@ -147,8 +152,6 @@ def start_services():
     )
     processes.append(backend_proc)
 
-    stream_output(backend_proc, "BACKEND")
-
     if wait_for_backend():
         log("OK", f"后端服务已启动 → http://localhost:{BACKEND_PORT}")
     else:
@@ -161,9 +164,8 @@ def start_services():
         "npx vite --host 0.0.0.0",
         shell=True, cwd=str(PROJECT_DIR), env=frontend_env,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        )
+    )
     processes.append(frontend_proc)
-    stream_output(frontend_proc, "FRONTEND")    
     log("OK", f"前端服务已启动 → http://localhost:{FRONTEND_PORT}")
 
 

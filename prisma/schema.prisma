@@ -55,6 +55,9 @@ model User {
   teamMemberships  TeamMember[]
   eventParticipations UserEventParticipation[]
   skillSnapshots   UserSkillSnapshot[]
+  dailyChests      UserDailyChest[]
+  spacePet         UserSpacePet?
+  planetCustoms    UserPlanetCustomization[]
 }
 
 model Session {
@@ -605,7 +608,8 @@ model StarPlanet {
   updatedAt   DateTime            @updatedAt
   progress    UserPlanetProgress[]
   chapters    StoryChapter[]
-  buildings   PlanetBuilding[]
+  buildings      PlanetBuilding[]
+  customizations UserPlanetCustomization[]
 }
 
 model UserPlanetProgress {
@@ -877,4 +881,44 @@ model UserSkillSnapshot {
   createdAt            DateTime @default(now())
 
   @@unique([userId, snapshotDate])
+}
+
+model UserDailyChest {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  chestDate   String
+  pointsWon   Int      @default(0)
+  openedAt    DateTime @default(now())
+
+  @@unique([userId, chestDate])
+}
+
+model UserSpacePet {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  petType     String   @default("star_cat")
+  petName     String   @default("星喵")
+  mood        Int      @default(80)
+  level       Int      @default(1)
+  exp         Int      @default(0)
+  accessories String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model UserPlanetCustomization {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  planetId    String
+  planet      StarPlanet @relation(fields: [planetId], references: [id])
+  customName  String?
+  customColor String?
+  emoji       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, planetId])
 }

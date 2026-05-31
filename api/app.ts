@@ -35,6 +35,7 @@ import starpathStoryRoutes from './routes/starpath-story';
 import starpathBuildingRoutes from './routes/starpath-building';
 import starpathSocialRoutes from './routes/starpath-social';
 import starpathAchievementRoutes from './routes/starpath-achievement';
+import starpathFunRoutes from './routes/starpath-fun';
 
 dotenv.config();
 
@@ -83,6 +84,7 @@ app.use('/api/starpath/story', starpathStoryRoutes);
 app.use('/api/starpath/building', starpathBuildingRoutes);
 app.use('/api/starpath/social', starpathSocialRoutes);
 app.use('/api/starpath/achievement', starpathAchievementRoutes);
+app.use('/api/starpath/fun', starpathFunRoutes);
 
 app.use(
   '/api/health',

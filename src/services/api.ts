@@ -652,6 +652,20 @@ export const starpathAchievementAPI = {
   getRecommend: () => api.get('/api/starpath/achievement/recommend'),
 };
 
+export const starpathFunAPI = {
+  openChest: () => api.post('/api/starpath/fun/chest/open'),
+  getChestStatus: () => api.get('/api/starpath/fun/chest/status'),
+  getPet: () => api.get('/api/starpath/fun/pet'),
+  feedPet: () => api.post('/api/starpath/fun/pet/feed'),
+  changePetType: (petType: string) => api.post('/api/starpath/fun/pet/type', { petType }),
+  renamePet: (petName: string) => api.post('/api/starpath/fun/pet/rename', { petName }),
+  getPetTypes: () => api.get('/api/starpath/fun/pet/types'),
+  customizePlanet: (planetId: string, data: { customName?: string; customColor?: string; emoji?: string }) =>
+    api.post('/api/starpath/fun/planet/customize', { planetId, ...data }),
+  getPlanetCustomizations: () => api.get('/api/starpath/fun/planet/customizations'),
+  collectStar: (starType: string) => api.post('/api/starpath/fun/collect-star', { starType }),
+};
+
 export const dailyAPI = {
   getToday: () => api.get('/api/daily-challenge/today'),
   submit: (data: any) => api.post('/api/daily-challenge/submit', data),
