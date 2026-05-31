@@ -1,10 +1,10 @@
 import { Router, type Request } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { dailyService } from '../services/daily.service';
 import prisma from '../lib/prisma';
 
 const router = Router();
 
-/** 获取今日每日挑战题目（公开，登录后可查看完成状态） */
 router.get('/today', authMiddleware, async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
@@ -30,8 +30,18 @@ router.get('/today', authMiddleware, async (req: Request, res: any): Promise<voi
     });
 
     if (!dailyChallenge) {
+      const recentDates = await prisma.dailyChallenge.findMany({
+        select: { problemId: true },
+        orderBy: { createdAt: 'desc' },
+        take: 7,
+      });
+      const recentProblemIds = [...new Set(recentDates.map(d => d.problemId))];
+
       const problem = await prisma.problem.findFirst({
-        where: { type: 'PROGRAMMING' },
+        where: {
+          type: 'PROGRAMMING',
+          ...(recentProblemIds.length > 0 && { id: { notIn: recentProblemIds } }),
+        },
         select: {
           id: true,
           title: true,
@@ -84,6 +94,31 @@ router.get('/today', authMiddleware, async (req: Request, res: any): Promise<voi
         completed,
       },
     });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/submit', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const result = await dailyService.submitDailyChallenge(
+      userId,
+      req.body.dailyChallengeId,
+      req.body.solved,
+      req.body.timeTaken,
+    );
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.get('/stats', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const stats = await dailyService.getDailyStats(userId);
+    res.json({ success: true, data: stats });
   } catch (error: any) {
     res.status(500).json({ success: false, error: { message: error.message } });
   }

@@ -95,7 +95,10 @@ def init_database():
             sys.exit(1)
         log("OK", "数据库创建完成")
     else:
-        log("OK", "数据库已就绪")
+        if not run("npx prisma db push", quiet=True):
+            log("WARN", "数据库同步失败，可能需要手动执行 prisma db push")
+        else:
+            log("OK", "数据库已同步最新Schema")
 
 
 def seed_data():

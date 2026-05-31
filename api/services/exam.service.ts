@@ -233,7 +233,7 @@ export class ExamService {
       where: { examId, userId, status: 'GRADED' }
     });
 
-    const maxAttempts = (exam as any).maxAttempts || 1;
+    const maxAttempts = exam.maxAttempts || 1;
     if (gradedAttempts >= maxAttempts) {
       throw new Error('您已达到最大考试次数');
     }

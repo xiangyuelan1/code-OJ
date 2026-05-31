@@ -1,20 +1,11 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Request } from 'express';
 import { learningAdminService } from '../services/learning-admin.service';
+import { authMiddleware } from '../middleware/auth.middleware';
+import { roleMiddleware } from '../middleware/role.middleware';
 
 const router = Router();
 
-function requireAdmin(req: Request, res: Response, next: Function) {
-  const user = (req as any).user;
-  if (!user || user.role !== 'ADMIN') {
-    res.status(403).json({ success: false, error: { message: '需要管理员权限' } });
-    return;
-  }
-  next();
-}
-
-router.use(requireAdmin);
-
-router.get('/stats', async (_req: Request, res: Response) => {
+router.get('/stats', authMiddleware, roleMiddleware('ADMIN'), async (_req: Request, res: any) => {
   try {
     const stats = await learningAdminService.getLearningModuleStats();
     res.json({ success: true, data: stats });
@@ -23,7 +14,7 @@ router.get('/stats', async (_req: Request, res: Response) => {
   }
 });
 
-router.post('/region', async (req: Request, res: Response) => {
+router.post('/region', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any) => {
   try {
     const region = await learningAdminService.manageStarRegion(req.body);
     res.json({ success: true, data: region });
@@ -32,7 +23,7 @@ router.post('/region', async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/region/:id', async (req: Request, res: Response) => {
+router.delete('/region/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any) => {
   try {
     const region = await learningAdminService.deleteStarRegion(req.params.id);
     res.json({ success: true, data: region });
@@ -41,7 +32,7 @@ router.delete('/region/:id', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/planet', async (req: Request, res: Response) => {
+router.post('/planet', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any) => {
   try {
     const planet = await learningAdminService.manageStarPlanet(req.body);
     res.json({ success: true, data: planet });
@@ -50,7 +41,7 @@ router.post('/planet', async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/planet/:id', async (req: Request, res: Response) => {
+router.delete('/planet/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any) => {
   try {
     const planet = await learningAdminService.deleteStarPlanet(req.params.id);
     res.json({ success: true, data: planet });
@@ -59,7 +50,7 @@ router.delete('/planet/:id', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/planet/:id/problems', async (req: Request, res: Response) => {
+router.post('/planet/:id/problems', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any) => {
   try {
     const planet = await learningAdminService.assignProblemsToPlanet(
       req.params.id,
@@ -71,7 +62,7 @@ router.post('/planet/:id/problems', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/interview-templates', async (_req: Request, res: Response) => {
+router.get('/interview-templates', authMiddleware, roleMiddleware('ADMIN'), async (_req: Request, res: any) => {
   try {
     const templates = await learningAdminService.getInterviewTemplates();
     res.json({ success: true, data: templates });
@@ -80,7 +71,7 @@ router.get('/interview-templates', async (_req: Request, res: Response) => {
   }
 });
 
-router.post('/interview-template', async (req: Request, res: Response) => {
+router.post('/interview-template', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any) => {
   try {
     const template = await learningAdminService.createInterviewTemplate(req.body);
     res.json({ success: true, data: template });
@@ -89,7 +80,7 @@ router.post('/interview-template', async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/interview-template/:id', async (req: Request, res: Response) => {
+router.delete('/interview-template/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any) => {
   try {
     const template = await learningAdminService.deleteInterviewTemplate(req.params.id);
     res.json({ success: true, data: template });
@@ -98,7 +89,7 @@ router.delete('/interview-template/:id', async (req: Request, res: Response) => 
   }
 });
 
-router.get('/bug-scenarios', async (_req: Request, res: Response) => {
+router.get('/bug-scenarios', authMiddleware, roleMiddleware('ADMIN'), async (_req: Request, res: any) => {
   try {
     const scenarios = await learningAdminService.getBugScenarios();
     res.json({ success: true, data: scenarios });
@@ -107,7 +98,7 @@ router.get('/bug-scenarios', async (_req: Request, res: Response) => {
   }
 });
 
-router.post('/bug-scenario', async (req: Request, res: Response) => {
+router.post('/bug-scenario', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any) => {
   try {
     const scenario = await learningAdminService.createBugScenario(req.body);
     res.json({ success: true, data: scenario });
@@ -116,7 +107,7 @@ router.post('/bug-scenario', async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/bug-scenario/:id', async (req: Request, res: Response) => {
+router.delete('/bug-scenario/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any) => {
   try {
     const scenario = await learningAdminService.deleteBugScenario(req.params.id);
     res.json({ success: true, data: scenario });

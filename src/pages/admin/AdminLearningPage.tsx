@@ -82,8 +82,9 @@ export function AdminLearningPage() {
           setRegions(mapRes.data.regions);
         }
       }
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     } finally {
       setLoading(false);
     }
@@ -104,8 +105,9 @@ export function AdminLearningPage() {
           order: 0,
         })));
       }
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     }
   }, []);
 
@@ -115,8 +117,9 @@ export function AdminLearningPage() {
       if (res.success && res.data) {
         setInterviewTemplates(res.data);
       }
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     }
   }, []);
 
@@ -126,8 +129,9 @@ export function AdminLearningPage() {
       if (res.success && res.data) {
         setBugScenarios(res.data);
       }
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     }
   }, []);
 
@@ -155,8 +159,9 @@ export function AdminLearningPage() {
       if (res.success && res.data) {
         setSearchResults(res.data);
       }
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     }
   };
 
@@ -167,8 +172,9 @@ export function AdminLearningPage() {
       await learningAdminAPI.manageRegion(editingRegion);
       setEditingRegion(null);
       fetchRegions();
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     }
   };
 
@@ -181,8 +187,9 @@ export function AdminLearningPage() {
         setPlanets([]);
       }
       fetchRegions();
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     }
   };
 
@@ -192,8 +199,9 @@ export function AdminLearningPage() {
       await learningAdminAPI.managePlanet(editingPlanet);
       setEditingPlanet(null);
       if (selectedRegionId) fetchPlanets(selectedRegionId);
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     }
   };
 
@@ -202,8 +210,9 @@ export function AdminLearningPage() {
     try {
       await learningAdminAPI.deletePlanet(id);
       if (selectedRegionId) fetchPlanets(selectedRegionId);
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     }
   };
 
@@ -222,8 +231,9 @@ export function AdminLearningPage() {
       });
       setEditingInterview(null);
       fetchInterviewTemplates();
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     }
   };
 
@@ -232,8 +242,9 @@ export function AdminLearningPage() {
     try {
       await learningAdminAPI.deleteInterviewTemplate(id);
       fetchInterviewTemplates();
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     }
   };
 
@@ -252,8 +263,9 @@ export function AdminLearningPage() {
       });
       setEditingBug(null);
       fetchBugScenarios();
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     }
   };
 
@@ -262,8 +274,9 @@ export function AdminLearningPage() {
     try {
       await learningAdminAPI.deleteBugScenario(id);
       fetchBugScenarios();
-    } catch {
-      // 静默处理
+    } catch (error: any) {
+      console.error('操作失败', error);
+      alert(error.error?.message || error.message || '操作失败');
     }
   };
 
