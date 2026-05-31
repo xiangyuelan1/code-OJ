@@ -50,7 +50,7 @@ export class ExamService {
     maxAttempts?: number;
     createdBy: string;
   }) {
-    const { problemIds, points: customPoints, classId, ...examData } = data;
+    const { problemIds = [], points: customPoints, classId, ...examData } = data;
     const normalizedClassId = classId?.trim() || undefined;
 
     return await prisma.$transaction(async (tx) => {

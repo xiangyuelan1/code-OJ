@@ -115,6 +115,33 @@ router.get('/check-ac/:problemId', authMiddleware, async (req: Request, res: any
   }
 });
 
+router.get('/solved-problems', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const solved = await prisma.submission.findMany({
+      where: { userId, status: 'ACCEPTED' },
+      select: {
+        problemId: true,
+        problem: {
+          select: { id: true, title: true, type: true, difficulty: true, tags: true },
+        },
+        createdAt: true,
+        score: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const seen = new Set<string>();
+    const unique = solved.filter((s) => {
+      if (seen.has(s.problemId)) return false;
+      seen.add(s.problemId);
+      return true;
+    });
+    res.json({ success: true, data: unique });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
 router.get('/problem/:problemId', authMiddleware, async (req: Request, res: any): Promise<void> => {
   try {
     const submissions = await submissionService.getProblemSubmissions(req.params.problemId);

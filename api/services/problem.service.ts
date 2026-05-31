@@ -177,8 +177,24 @@ export class ProblemService {
   }
 
   async deleteProblem(id: string) {
-    return await prisma.problem.delete({
-      where: { id }
+    return await prisma.$transaction(async (tx) => {
+      await tx.submission.deleteMany({ where: { problemId: id } });
+      await tx.matchProblem.deleteMany({ where: { problemId: id } });
+      await tx.examQuestion.deleteMany({ where: { problemId: id } });
+      await tx.discussion.updateMany({
+        where: { problemId: id },
+        data: { problemId: null },
+      });
+      const dailyChallenges = await tx.dailyChallenge.findMany({
+        where: { problemId: id },
+        select: { id: true },
+      });
+      if (dailyChallenges.length > 0) {
+        const dcIds = dailyChallenges.map(dc => dc.id);
+        await tx.userDailyChallenge.deleteMany({ where: { dailyChallengeId: { in: dcIds } } });
+        await tx.dailyChallenge.deleteMany({ where: { id: { in: dcIds } } });
+      }
+      return await tx.problem.delete({ where: { id } });
     });
   }
 
@@ -211,17 +227,22 @@ export class ProblemService {
     const problemIds = problemsToDelete.map((p) => p.id);
 
     await prisma.$transaction(async (tx) => {
-      // Solution 有 onDelete: Cascade，无需手动删除
-      // 以下模型没有级联删除，需手动清理
       await tx.submission.deleteMany({ where: { problemId: { in: problemIds } } });
       await tx.matchProblem.deleteMany({ where: { problemId: { in: problemIds } } });
       await tx.examQuestion.deleteMany({ where: { problemId: { in: problemIds } } });
-      // Discussion 的 problemId 可为空，将关联题目的 problemId 置空而非删除讨论
       await tx.discussion.updateMany({
         where: { problemId: { in: problemIds } },
         data: { problemId: null },
       });
-      await tx.dailyChallenge.deleteMany({ where: { problemId: { in: problemIds } } });
+      const dailyChallenges = await tx.dailyChallenge.findMany({
+        where: { problemId: { in: problemIds } },
+        select: { id: true },
+      });
+      if (dailyChallenges.length > 0) {
+        const dcIds = dailyChallenges.map(dc => dc.id);
+        await tx.userDailyChallenge.deleteMany({ where: { dailyChallengeId: { in: dcIds } } });
+        await tx.dailyChallenge.deleteMany({ where: { id: { in: dcIds } } });
+      }
 
       await tx.problem.deleteMany({ where: { id: { in: problemIds } } });
     });

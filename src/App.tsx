@@ -14,6 +14,7 @@ const ProfilePage = lazy(() => import("./pages/Profile").then(m => ({ default: m
 const SolutionDetailPage = lazy(() => import("./pages/SolutionDetail").then(m => ({ default: m.SolutionDetailPage })));
 const KnowledgeTreePage = lazy(() => import("./pages/KnowledgeTreePage").then(m => ({ default: m.KnowledgeTreePage })));
 const ExamListPage = lazy(() => import("./pages/ExamListPage").then(m => ({ default: m.ExamListPage })));
+const SolvedProblemsPage = lazy(() => import("./pages/SolvedProblems").then(m => ({ default: m.SolvedProblemsPage })));
 const ExamPage = lazy(() => import("./pages/ExamListPage").then(m => ({ default: m.ExamPage })));
 const ExamResultPage = lazy(() => import("./pages/ExamResultPage").then(m => ({ default: m.ExamResultPage })));
 const MatchPage = lazy(() => import("./pages/MatchPage").then(m => ({ default: m.MatchPage })));
@@ -173,6 +174,14 @@ export default function App() {
                 element={
                   <ProtectedRoute>
                     <ExamListPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/solved"
+                element={
+                  <ProtectedRoute>
+                    <SolvedProblemsPage />
                   </ProtectedRoute>
                 }
               />

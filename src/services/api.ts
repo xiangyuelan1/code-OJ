@@ -81,6 +81,7 @@ export const submissionsAPI = {
   getProblemSubmissions: (problemId: string) =>
     api.get(`/api/submissions/problem/${problemId}`),
   checkAC: (problemId: string) => api.get(`/api/submissions/check-ac/${problemId}`),
+  getSolvedProblems: () => api.get('/api/submissions/solved-problems'),
 };
 
 export const solutionsAPI = {
