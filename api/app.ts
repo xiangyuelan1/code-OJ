@@ -31,6 +31,10 @@ import learningAdminRoutes from './routes/learning-admin';
 import featureToggleRoutes from './routes/feature-toggle';
 import learningPathRoutes from './routes/learning-path';
 import aiProviderRoutes from './routes/ai-provider';
+import starpathStoryRoutes from './routes/starpath-story';
+import starpathBuildingRoutes from './routes/starpath-building';
+import starpathSocialRoutes from './routes/starpath-social';
+import starpathAchievementRoutes from './routes/starpath-achievement';
 
 dotenv.config();
 
@@ -75,6 +79,10 @@ app.use('/api/learning-admin', learningAdminRoutes);
 app.use('/api/features', featureToggleRoutes);
 app.use('/api/learning', learningPathRoutes);
 app.use('/api/ai-providers', aiProviderRoutes);
+app.use('/api/starpath/story', starpathStoryRoutes);
+app.use('/api/starpath/building', starpathBuildingRoutes);
+app.use('/api/starpath/social', starpathSocialRoutes);
+app.use('/api/starpath/achievement', starpathAchievementRoutes);
 
 app.use(
   '/api/health',

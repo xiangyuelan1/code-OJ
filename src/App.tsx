@@ -29,6 +29,10 @@ const DiscussionDetailPage = lazy(() => import("./pages/DiscussionDetail").then(
 const StarPathPage = lazy(() => import("./pages/StarPath").then(m => ({ default: m.StarPathPage })));
 const StarRegionPage = lazy(() => import("./pages/StarRegion").then(m => ({ default: m.StarRegionPage })));
 const StarChallengePage = lazy(() => import("./pages/StarChallenge").then(m => ({ default: m.StarChallengePage })));
+const StarStoryPage = lazy(() => import("./pages/StarStory").then(m => ({ default: m.StarStoryPage })));
+const StarBuildingPage = lazy(() => import("./pages/StarBuilding").then(m => ({ default: m.StarBuildingPage })));
+const StarSocialPage = lazy(() => import("./pages/StarSocial").then(m => ({ default: m.StarSocialPage })));
+const StarAchievementPage = lazy(() => import("./pages/StarAchievement").then(m => ({ default: m.StarAchievementPage })));
 const InterviewSimulatorPage = lazy(() => import("./pages/InterviewSimulator").then(m => ({ default: m.InterviewSimulator })));
 const BugHunterPage = lazy(() => import("./pages/BugHunter").then(m => ({ default: m.BugHunter })));
 const LearningHub = lazy(() => import("./pages/LearningHub").then(m => ({ default: m.LearningHub })));
@@ -268,6 +272,38 @@ export default function App() {
                 element={
                   <ProtectedRoute>
                     <StarChallengePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/starpath/story/:regionId"
+                element={
+                  <ProtectedRoute>
+                    <StarStoryPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/starpath/building"
+                element={
+                  <ProtectedRoute>
+                    <StarBuildingPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/starpath/social"
+                element={
+                  <ProtectedRoute>
+                    <StarSocialPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/starpath/achievement"
+                element={
+                  <ProtectedRoute>
+                    <StarAchievementPage />
                   </ProtectedRoute>
                 }
               />

@@ -475,6 +475,182 @@ export const starpathAPI = {
   deletePlanet: (id: string) => api.delete(`/api/starpath/admin/planets/${id}`),
 };
 
+/* ── 星途游戏化 API ── */
+
+export interface StoryChapterData {
+  id: string;
+  order: number;
+  title: string;
+  narrative: string;
+  completionText: string;
+  isBoss: boolean;
+  planetId: string | null;
+  bossProblemIds: string[];
+  rewardPoints: number;
+  rewardBuildingType: string | null;
+  completed: boolean;
+  completedAt: string | null;
+  isUnlocked: boolean;
+}
+
+export interface StoryArcData {
+  id: string;
+  regionId: string;
+  title: string;
+  prologue: string;
+  epilogue: string;
+  theme: string;
+  chapters: StoryChapterData[];
+  allCompleted: boolean;
+}
+
+export interface SeasonEventData {
+  id: string;
+  name: string;
+  description: string;
+  theme: string;
+  eventType: string;
+  bonusMultiplier: number;
+  startDate: string;
+  endDate: string;
+  isActive: boolean;
+  specialRegionId: string | null;
+}
+
+export interface BuildingConfig {
+  name: string;
+  description: string;
+  cost: number;
+  effect: string;
+}
+
+export interface PlanetBuildingData {
+  id: string;
+  planetId: string;
+  buildingType: string;
+  level: number;
+  builtAt: string;
+  upgradedAt: string | null;
+  config: BuildingConfig | null;
+}
+
+export interface UserBuildingData extends PlanetBuildingData {
+  planetName: string;
+  regionName: string;
+  regionColor: string;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  username: string;
+  avatar: string | null;
+  score?: number;
+  attempts?: number;
+  masteredPlanets?: number;
+  totalScore?: number;
+  points?: number;
+}
+
+export interface FriendData {
+  id: string;
+  username: string;
+  avatar: string | null;
+  points: number;
+  friendshipId: string;
+}
+
+export interface TeamChallengeData {
+  id: string;
+  title: string;
+  description: string;
+  planetIds: string;
+  maxTeamSize: number;
+  startTime: string;
+  endTime: string;
+  status: string;
+  rewardPoints: number;
+  teams: any[];
+}
+
+export interface AchievementData {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  points: number;
+  earnedAt?: string;
+  progress?: any;
+  criteria?: string;
+}
+
+export interface SkillRadarData {
+  snapshotDate: string;
+  skillRadar: Record<string, number>;
+  totalPlanetsMastered: number;
+  totalScore: number;
+}
+
+export interface LearningCurvePoint {
+  date: string;
+  totalPlanetsMastered: number;
+  totalScore: number;
+  skillRadar: Record<string, number>;
+}
+
+export interface RecommendedPlanet {
+  planetId: string;
+  planetName: string;
+  regionId: string;
+  regionName: string;
+  regionColor: string;
+  reason: string;
+  status: string;
+}
+
+export const starpathStoryAPI = {
+  getArc: (regionId: string) => api.get(`/api/starpath/story/arc/${regionId}`),
+  completeChapter: (chapterId: string) => api.post(`/api/starpath/story/chapter/${chapterId}/complete`),
+  initialize: () => api.post('/api/starpath/story/initialize'),
+  getEvents: () => api.get('/api/starpath/story/events'),
+  createEvent: (data: any) => api.post('/api/starpath/story/events', data),
+  joinEvent: (eventId: string) => api.post(`/api/starpath/story/events/${eventId}/join`),
+  getEventLeaderboard: (eventId: string) => api.get(`/api/starpath/story/events/${eventId}/leaderboard`),
+};
+
+export const starpathBuildingAPI = {
+  getConfigs: () => api.get('/api/starpath/building/configs'),
+  getPlanetBuildings: (planetId: string) => api.get(`/api/starpath/building/planet/${planetId}`),
+  getMyBuildings: () => api.get('/api/starpath/building/my'),
+  build: (planetId: string, buildingType: string) => api.post('/api/starpath/building/build', { planetId, buildingType }),
+  upgrade: (planetId: string, buildingType: string) => api.post('/api/starpath/building/upgrade', { planetId, buildingType }),
+};
+
+export const starpathSocialAPI = {
+  getPlanetLeaderboard: (planetId: string, limit?: number) => api.get(`/api/starpath/social/leaderboard/planet/${planetId}?limit=${limit || 20}`),
+  getRegionLeaderboard: (regionId: string, limit?: number) => api.get(`/api/starpath/social/leaderboard/region/${regionId}?limit=${limit || 20}`),
+  getGlobalLeaderboard: (limit?: number) => api.get(`/api/starpath/social/leaderboard/global?limit=${limit || 20}`),
+  sendFriendRequest: (friendId: string) => api.post('/api/starpath/social/friends/request', { friendId }),
+  acceptFriendRequest: (friendId: string) => api.post('/api/starpath/social/friends/accept', { friendId }),
+  getFriends: () => api.get('/api/starpath/social/friends'),
+  getPendingRequests: () => api.get('/api/starpath/social/friends/pending'),
+  removeFriend: (friendId: string) => api.delete(`/api/starpath/social/friends/${friendId}`),
+  getFriendProgress: (friendId: string) => api.get(`/api/starpath/social/friends/${friendId}/progress`),
+  createTeamChallenge: (data: any) => api.post('/api/starpath/social/team-challenges', data),
+  getTeamChallenges: () => api.get('/api/starpath/social/team-challenges'),
+  joinTeamChallenge: (challengeId: string, teamId?: string) => api.post(`/api/starpath/social/team-challenges/${challengeId}/join`, { teamId: teamId || null }),
+  searchUsers: (query: string) => api.get('/api/starpath/social/users/search', { params: { query } }),
+};
+
+export const starpathAchievementAPI = {
+  getMy: () => api.get('/api/starpath/achievement/my'),
+  check: () => api.post('/api/starpath/achievement/check'),
+  initialize: () => api.post('/api/starpath/achievement/initialize'),
+  getRadar: () => api.get('/api/starpath/achievement/radar'),
+  getLearningCurve: (days?: number) => api.get(`/api/starpath/achievement/learning-curve?days=${days || 30}`),
+  getRecommend: () => api.get('/api/starpath/achievement/recommend'),
+};
+
 export const dailyAPI = {
   getToday: () => api.get('/api/daily-challenge/today'),
   submit: (data: any) => api.post('/api/daily-challenge/submit', data),

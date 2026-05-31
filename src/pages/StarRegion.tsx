@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { starpathAPI, type RegionDetailData, type StarMapPlanet, type PlanetStatus } from '../services/api';
 import {
-  ArrowLeft, MessageSquare, Loader2,
+  ArrowLeft, MessageSquare, Loader2, BookOpen,
 } from 'lucide-react';
 import { GuideChatPanel } from '../components/GuideChatPanel';
 
@@ -200,9 +200,18 @@ export function StarRegionPage() {
             </div>
             <p className="text-slate-400 text-sm max-w-lg">{region.description}</p>
           </div>
-          <div className="glass-card rounded-xl px-4 py-2.5 text-center shrink-0 ml-4">
-            <div className="text-xs text-slate-400 mb-1">探索进度</div>
-            <div className="text-lg font-bold text-white">{progress}%</div>
+          <div className="flex items-center gap-2 shrink-0 ml-4">
+            <Link
+              to={`/starpath/story/${regionId}`}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-500/15 border border-amber-400/25 text-amber-300 hover:bg-amber-500/25 transition-all text-xs"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              故事线
+            </Link>
+            <div className="glass-card rounded-xl px-4 py-2.5 text-center">
+              <div className="text-xs text-slate-400 mb-1">探索进度</div>
+              <div className="text-lg font-bold text-white">{progress}%</div>
+            </div>
           </div>
         </div>
 

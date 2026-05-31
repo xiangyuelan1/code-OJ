@@ -48,6 +48,13 @@ model User {
   planetProgresses UserPlanetProgress[]
   learningPaths    LearningPath[]
   learningAchievements LearningAchievement[]
+  storyProgresses  UserStoryProgress[]
+  planetBuildings  PlanetBuilding[]
+  starPathFriends  StarPathFriend[]  @relation("StarPathFriends")
+  starPathFriendOf StarPathFriend[]  @relation("StarPathFriendOf")
+  teamMemberships  TeamMember[]
+  eventParticipations UserEventParticipation[]
+  skillSnapshots   UserSkillSnapshot[]
 }
 
 model Session {
@@ -577,6 +584,7 @@ model StarRegion {
   knowledgeTreeId String?          @unique
   knowledgeTree   KnowledgeTree? @relation(fields: [knowledgeTreeId], references: [id])
   planets         StarPlanet[]
+  storyArc        StoryArc?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 }
@@ -596,6 +604,8 @@ model StarPlanet {
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
   progress    UserPlanetProgress[]
+  chapters    StoryChapter[]
+  buildings   PlanetBuilding[]
 }
 
 model UserPlanetProgress {
@@ -711,4 +721,160 @@ model AIProviderConfig {
   priority    Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model StoryArc {
+  id          String   @id @default(uuid())
+  regionId    String   @unique
+  region      StarRegion @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  title       String
+  prologue    String   @default("")
+  epilogue    String   @default("")
+  theme       String   @default("exploration")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  chapters    StoryChapter[]
+}
+
+model StoryChapter {
+  id              String   @id @default(uuid())
+  arcId           String
+  arc             StoryArc @relation(fields: [arcId], references: [id], onDelete: Cascade)
+  planetId        String?
+  planet          StarPlanet? @relation(fields: [planetId], references: [id])
+  order           Int      @default(0)
+  title           String
+  narrative       String   @default("")
+  completionText  String   @default("")
+  isBoss          Boolean  @default(false)
+  bossProblemIds  String   @default("[]")
+  rewardPoints    Int      @default(0)
+  rewardBuildingType String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  userProgress    UserStoryProgress[]
+
+  @@unique([arcId, order])
+}
+
+model UserStoryProgress {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  chapterId    String
+  chapter      StoryChapter @relation(fields: [chapterId], references: [id])
+  completed    Boolean  @default(false)
+  completedAt  DateTime?
+
+  @@unique([userId, chapterId])
+}
+
+model SeasonEvent {
+  id              String   @id @default(uuid())
+  name            String
+  description     String   @default("")
+  theme           String   @default("default")
+  eventType       String   @default("SEASON")
+  bonusMultiplier Float    @default(1.0)
+  startDate       DateTime
+  endDate         DateTime
+  isActive        Boolean  @default(true)
+  specialRegionId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  participations  UserEventParticipation[]
+}
+
+model UserEventParticipation {
+  id        String     @id @default(uuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  eventId   String
+  event     SeasonEvent @relation(fields: [eventId], references: [id])
+  score     Int        @default(0)
+  completed Boolean    @default(false)
+  joinedAt  DateTime   @default(now())
+
+  @@unique([userId, eventId])
+}
+
+model PlanetBuilding {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  planetId     String
+  planet       StarPlanet @relation(fields: [planetId], references: [id])
+  buildingType String
+  level        Int      @default(1)
+  builtAt      DateTime @default(now())
+  upgradedAt   DateTime?
+
+  @@unique([userId, planetId, buildingType])
+}
+
+model StarPathFriend {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation("StarPathFriends", fields: [userId], references: [id])
+  friendId   String
+  friend     User     @relation("StarPathFriendOf", fields: [friendId], references: [id])
+  status     String   @default("PENDING")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, friendId])
+}
+
+model TeamChallenge {
+  id           String   @id @default(uuid())
+  title        String
+  description  String   @default("")
+  regionId     String?
+  planetIds    String   @default("[]")
+  maxTeamSize  Int      @default(3)
+  startTime    DateTime
+  endTime      DateTime
+  status       String   @default("UPCOMING")
+  rewardPoints Int      @default(0)
+  createdBy    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  teams        ChallengeTeam[]
+}
+
+model ChallengeTeam {
+  id          String   @id @default(uuid())
+  challengeId String
+  challenge   TeamChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  name        String
+  score       Int      @default(0)
+  rank        Int?
+  members     TeamMember[]
+  createdAt   DateTime @default(now())
+}
+
+model TeamMember {
+  id       String   @id @default(uuid())
+  teamId   String
+  team     ChallengeTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id])
+  role     String   @default("MEMBER")
+  joinedAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+}
+
+model UserSkillSnapshot {
+  id                   String   @id @default(uuid())
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id])
+  snapshotDate         String
+  totalPlanetsMastered Int      @default(0)
+  totalScore           Int      @default(0)
+  skillRadar           String   @default("{}")
+  regionProgress       String   @default("{}")
+  createdAt            DateTime @default(now())
+
+  @@unique([userId, snapshotDate])
 }
