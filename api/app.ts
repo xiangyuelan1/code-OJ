@@ -6,6 +6,7 @@ import express, {
 import cors from 'cors';
 import path from 'path';
 import dotenv from 'dotenv';
+import { authMiddleware } from './middleware/auth.middleware.js';
 import authRoutes from './routes/auth.js';
 import problemRoutes from './routes/problems.js';
 import submissionRoutes from './routes/submissions.js';
@@ -29,6 +30,8 @@ import dailyChallengeRoutes from './routes/daily-challenge';
 import starpathRoutes from './routes/starpath';
 import learningAdminRoutes from './routes/learning-admin';
 import featureToggleRoutes from './routes/feature-toggle';
+import learningPathRoutes from './routes/learning-path';
+import aiProviderRoutes from './routes/ai-provider';
 
 dotenv.config();
 
@@ -70,8 +73,10 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/daily', dailyRoutes);
 app.use('/api/daily-challenge', dailyChallengeRoutes);
 app.use('/api/starpath', starpathRoutes);
-app.use('/api/learning-admin', learningAdminRoutes);
+app.use('/api/learning-admin', authMiddleware, learningAdminRoutes);
 app.use('/api/features', featureToggleRoutes);
+app.use('/api/learning', learningPathRoutes);
+app.use('/api/ai-providers', aiProviderRoutes);
 
 app.use(
   '/api/health',

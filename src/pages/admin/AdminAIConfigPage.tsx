@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { aiAPI, enhancedAiAPI } from '../../services/api';
-import { Cpu, Save, Loader2, Brain, Code, Lightbulb, Bug, FileText, TreePine, Tag, FileUp, CheckCircle, XCircle, Settings2, ToggleLeft, ToggleRight, Edit3, Plus, X, Play, RotateCcw, Zap, ZapOff, BarChart3, DollarSign, Activity, BookOpen, GraduationCap, PenTool, Gavel, Layers, Sliders, Target } from 'lucide-react';
+import { aiAPI, enhancedAiAPI, aiProviderAPI } from '../../services/api';
+import { Cpu, Save, Loader2, Brain, Code, Lightbulb, Bug, FileText, TreePine, Tag, FileUp, CheckCircle, XCircle, Settings2, ToggleLeft, ToggleRight, Edit3, Plus, X, Play, RotateCcw, Zap, ZapOff, BarChart3, DollarSign, Activity, BookOpen, GraduationCap, PenTool, Gavel, Layers, Sliders, Target, Star, Trash2, ArrowUpDown } from 'lucide-react';
 
 interface FeatureConfig {
   id: string;
@@ -137,6 +137,16 @@ export function AdminAIConfigPage() {
   const [usageStats, setUsageStats] = useState<UsageStats | null>(null);
   const [testingFeature, setTestingFeature] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ featureKey: string; success: boolean; message: string } | null>(null);
+
+  const [providerConfigs, setProviderConfigs] = useState<any[]>([]);
+  const [showProviderForm, setShowProviderForm] = useState(false);
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [providerForm, setProviderForm] = useState({
+    name: '', provider: 'openai', apiKey: '', baseUrl: '', model: 'gpt-3.5-turbo',
+    isDefault: false, maxTokens: 4000, temperature: 0.7, enabled: true, priority: 0
+  });
+  const [providerSaving, setProviderSaving] = useState(false);
+  const [testingProvider, setTestingProvider] = useState<string | null>(null);
   const [showPromptPreview, setShowPromptPreview] = useState(false);
 
   // 个性化推荐配置状态
@@ -205,6 +215,10 @@ export function AdminAIConfigPage() {
           baseUrl: res.data.baseUrl || '',
           model: res.data.model
         });
+      }
+      const providerRes = await aiProviderAPI.getAllConfigs();
+      if (providerRes.success && providerRes.data) {
+        setProviderConfigs(providerRes.data);
       }
     } catch (error) {
       console.error('加载配置失败', error);
@@ -515,6 +529,150 @@ export function AdminAIConfigPage() {
                 <div className="text-white font-medium">{config.apiKey ? '已配置' : '未配置'}</div>
               </div>
             </div>
+          </div>
+
+          {/* 多AI配置管理 */}
+          <div className="bg-slate-800 rounded-xl p-8 shadow-xl">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center">
+                <Layers className="h-8 w-8 text-violet-400 mr-3" />
+                <div>
+                  <h2 className="text-xl font-semibold text-white">多AI配置管理</h2>
+                  <p className="text-slate-400 text-sm mt-1">保存多个AI供应商配置，按需切换使用</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingProviderId(null);
+                  setProviderForm({ name: '', provider: 'openai', apiKey: '', baseUrl: '', model: 'gpt-3.5-turbo', isDefault: providerConfigs.length === 0, maxTokens: 4000, temperature: 0.7, enabled: true, priority: 0 });
+                  setShowProviderForm(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 rounded-lg text-sm transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                添加配置
+              </button>
+            </div>
+
+            {providerConfigs.length > 0 ? (
+              <div className="space-y-3">
+                {providerConfigs.map((pc: any) => (
+                  <div key={pc.id} className={`p-4 rounded-lg border ${pc.isDefault ? 'border-cyan-500/40 bg-cyan-500/5' : 'border-slate-700 bg-slate-700/50'}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold ${pc.isDefault ? 'bg-cyan-500/20 text-cyan-400' : 'bg-slate-600 text-slate-300'}`}>
+                          {pc.provider === 'openai' ? 'OA' : pc.provider === 'claude' ? 'CL' : 'CU'}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-white font-medium">{pc.name}</h4>
+                            {pc.isDefault && <span className="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400">默认</span>}
+                            {!pc.enabled && <span className="text-xs px-2 py-0.5 rounded bg-slate-600 text-slate-400">已禁用</span>}
+                          </div>
+                          <p className="text-slate-400 text-xs mt-0.5">{pc.provider} · {pc.model}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {!pc.isDefault && (
+                          <button onClick={async () => { await aiProviderAPI.setDefault(pc.id); loadConfig(); }} className="p-1.5 text-slate-400 hover:text-cyan-400 transition-colors" title="设为默认">
+                            <Star className="h-4 w-4" />
+                          </button>
+                        )}
+                        <button onClick={async () => { setTestingProvider(pc.id); try { const r = await aiProviderAPI.testConnection(pc.id); alert(r.data?.success ? `连接成功！延迟: ${r.data.latency}ms` : `连接失败: ${r.data?.error}`); } catch(e: any) { alert(e.error?.message || '测试失败'); } finally { setTestingProvider(null); } }} disabled={testingProvider === pc.id} className="p-1.5 text-slate-400 hover:text-green-400 transition-colors" title="测试连接">
+                          {testingProvider === pc.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                        </button>
+                        <button onClick={() => { setEditingProviderId(pc.id); setProviderForm({ name: pc.name, provider: pc.provider, apiKey: pc.apiKey || '', baseUrl: pc.baseUrl || '', model: pc.model, isDefault: pc.isDefault, maxTokens: pc.maxTokens, temperature: pc.temperature, enabled: pc.enabled, priority: pc.priority }); setShowProviderForm(true); }} className="p-1.5 text-slate-400 hover:text-blue-400 transition-colors" title="编辑">
+                          <Edit3 className="h-4 w-4" />
+                        </button>
+                        <button onClick={async () => { if (!confirm('确定删除此配置？')) return; await aiProviderAPI.deleteConfig(pc.id); loadConfig(); }} className="p-1.5 text-slate-400 hover:text-red-400 transition-colors" title="删除">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Layers className="h-12 w-12 text-slate-600 mx-auto mb-3" />
+                <p className="text-slate-400 text-sm mb-2">暂无多AI配置</p>
+                <p className="text-slate-500 text-xs">可添加多个AI供应商配置，为不同功能指定不同配置</p>
+              </div>
+            )}
+
+            {/* 添加/编辑配置弹窗 */}
+            {showProviderForm && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                <div className="bg-slate-800 rounded-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+                  <h3 className="text-lg font-semibold text-white mb-4">{editingProviderId ? '编辑配置' : '添加AI配置'}</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">配置名称</label>
+                      <input type="text" value={providerForm.name} onChange={(e) => setProviderForm(p => ({ ...p, name: e.target.value }))} placeholder="如：GPT-4生产、Claude备选" className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">供应商</label>
+                      <select value={providerForm.provider} onChange={(e) => setProviderForm(p => ({ ...p, provider: e.target.value }))} className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                        <option value="openai">OpenAI</option>
+                        <option value="claude">Claude</option>
+                        <option value="custom">自定义</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">API Key</label>
+                      <input type="password" value={providerForm.apiKey} onChange={(e) => setProviderForm(p => ({ ...p, apiKey: e.target.value }))} className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">Base URL</label>
+                      <input type="text" value={providerForm.baseUrl} onChange={(e) => setProviderForm(p => ({ ...p, baseUrl: e.target.value }))} placeholder="https://api.openai.com/v1" className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">模型</label>
+                      <input type="text" value={providerForm.model} onChange={(e) => setProviderForm(p => ({ ...p, model: e.target.value }))} className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm text-slate-400 mb-1">Max Tokens</label>
+                        <input type="number" value={providerForm.maxTokens} onChange={(e) => setProviderForm(p => ({ ...p, maxTokens: parseInt(e.target.value) || 4000 }))} className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-slate-400 mb-1">Temperature</label>
+                        <input type="number" step="0.1" min="0" max="2" value={providerForm.temperature} onChange={(e) => setProviderForm(p => ({ ...p, temperature: parseFloat(e.target.value) || 0.7 }))} className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2 text-slate-300 text-sm">
+                        <input type="checkbox" checked={providerForm.enabled} onChange={(e) => setProviderForm(p => ({ ...p, enabled: e.target.checked }))} className="rounded" />
+                        启用
+                      </label>
+                      <label className="flex items-center gap-2 text-slate-300 text-sm">
+                        <input type="checkbox" checked={providerForm.isDefault} onChange={(e) => setProviderForm(p => ({ ...p, isDefault: e.target.checked }))} className="rounded" />
+                        设为默认
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex gap-3 mt-6">
+                    <button onClick={() => setShowProviderForm(false)} className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm text-slate-300 transition-colors">取消</button>
+                    <button onClick={async () => {
+                      if (!providerForm.name) { alert('请填写配置名称'); return; }
+                      setProviderSaving(true);
+                      try {
+                        if (editingProviderId) {
+                          await aiProviderAPI.updateConfig(editingProviderId, providerForm);
+                        } else {
+                          await aiProviderAPI.createConfig(providerForm);
+                        }
+                        setShowProviderForm(false);
+                        loadConfig();
+                      } catch (e: any) { alert(e.error?.message || '保存失败'); } finally { setProviderSaving(false); }
+                    }} disabled={providerSaving} className="flex-1 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg text-sm text-white font-medium disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+                      {providerSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      {editingProviderId ? '保存修改' : '添加配置'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

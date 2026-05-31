@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma';
 import { matchService } from './match.service';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'oj-secret-key-2024';
 
 interface OnlineUser {
   userId: string;
@@ -42,8 +42,15 @@ export function setupSocketIO(httpServer: any) {
       }
 
       const decoded = jwt.verify(token, JWT_SECRET) as any;
-      socket.userId = decoded.userId;
-      socket.username = decoded.username;
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: { id: true, username: true, role: true }
+      });
+      if (!user) {
+        return next(new Error('用户不存在'));
+      }
+      socket.userId = user.id;
+      socket.username = user.username;
       next();
     } catch (err) {
       next(new Error('认证失败'));

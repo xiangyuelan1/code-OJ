@@ -22,8 +22,10 @@ export function AdminExamPage() {
     startTime: '',
     endTime: '',
     enableProctoring: false,
+    maxAttempts: 1,
     problemIds: [] as string[]
   });
+  const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<any[]>([]);
   const [selectedKnowledgeNodeId, setSelectedKnowledgeNodeId] = useState<string>('');
   const [problemTypeFilter, setProblemTypeFilter] = useState<string>('');
@@ -171,6 +173,7 @@ export function AdminExamPage() {
         type: form.type,
         duration: form.duration,
         enableProctoring: form.enableProctoring,
+        maxAttempts: form.maxAttempts,
         problemIds: form.problemIds
       };
 
@@ -181,23 +184,67 @@ export function AdminExamPage() {
         data.endTime = new Date(form.endTime).toISOString();
       }
 
-      const res = await examAPI.create(data);
-      if (res.success) {
-        setShowForm(false);
+      if (editingExamId) {
+        const res = await examAPI.update(editingExamId, data);
+        if (res.success) {
+          setEditingExamId(null);
+        }
+      } else {
+        const res = await examAPI.create(data);
+      }
+
+      setShowForm(false);
+      setForm({
+        title: '',
+        description: '',
+        type: 'PRACTICE',
+        duration: 60,
+        startTime: '',
+        endTime: '',
+        enableProctoring: false,
+        maxAttempts: 1,
+        problemIds: []
+      });
+      fetchExams();
+    } catch (error: any) {
+      alert(error.error?.message || (editingExamId ? '更新考试失败' : '创建考试失败'));
+    }
+  };
+
+  const handleEditExam = async (examId: string) => {
+    try {
+      const res = await examAPI.getById(examId);
+      if (res.success && res.data) {
+        const exam = res.data;
         setForm({
-          title: '',
-          description: '',
-          type: 'PRACTICE',
-          duration: 60,
-          startTime: '',
-          endTime: '',
-          enableProctoring: false,
-          problemIds: []
+          title: exam.title,
+          description: exam.description || '',
+          type: exam.type,
+          duration: exam.duration,
+          startTime: exam.startTime ? new Date(exam.startTime).toISOString().slice(0, 16) : '',
+          endTime: exam.endTime ? new Date(exam.endTime).toISOString().slice(0, 16) : '',
+          enableProctoring: exam.enableProctoring || false,
+          maxAttempts: exam.maxAttempts || 1,
+          problemIds: exam.questions?.map((q: any) => q.problemId) || []
         });
-        fetchExams();
+        setEditingExamId(examId);
+        setShowForm(true);
+        if (problems.length === 0) {
+          fetchProblems();
+          fetchKnowledgeTree();
+        }
       }
     } catch (error: any) {
-      alert(error.error?.message || '创建考试失败');
+      alert(error.error?.message || '获取考试详情失败');
+    }
+  };
+
+  const handleToggleExamStatus = async (examId: string, currentActive: boolean) => {
+    try {
+      await examAPI.update(examId, { isActive: !currentActive });
+      fetchExams();
+    } catch (error: any) {
+      alert(error.error?.message || '操作失败');
     }
   };
 
@@ -262,7 +309,7 @@ export function AdminExamPage() {
           返回列表
         </button>
 
-        <h1 className="text-3xl font-bold text-white mb-8">创建考试</h1>
+        <h1 className="text-3xl font-bold text-white mb-8">{editingExamId ? '编辑考试' : '创建考试'}</h1>
 
         <div className="space-y-6">
           <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
@@ -342,6 +389,17 @@ export function AdminExamPage() {
                 />
                 启用监考（切换标签页检测）
               </label>
+              <div className="flex items-center gap-3 text-slate-300">
+                <label>最大考试次数:</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={form.maxAttempts}
+                  onChange={(e) => setForm({ ...form, maxAttempts: parseInt(e.target.value) || 1 })}
+                  className="w-20 px-3 py-1 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
             </div>
           </div>
 
@@ -496,7 +554,7 @@ export function AdminExamPage() {
               className="flex items-center bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
             >
               <Save className="h-5 w-5 mr-2" />
-              创建考试
+              {editingExamId ? '保存修改' : '创建考试'}
             </button>
           </div>
         </div>
@@ -664,7 +722,20 @@ export function AdminExamPage() {
         <h1 className="text-3xl font-bold text-white">考试管理</h1>
         <button
           onClick={() => {
+            setEditingExamId(null);
+            setForm({
+              title: '',
+              description: '',
+              type: 'PRACTICE',
+              duration: 60,
+              startTime: '',
+              endTime: '',
+              enableProctoring: false,
+              maxAttempts: 1,
+              problemIds: []
+            });
             fetchProblems();
+            fetchKnowledgeTree();
             setShowForm(true);
           }}
           className="flex items-center px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
@@ -720,11 +791,25 @@ export function AdminExamPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => handleToggleExamStatus(exam.id, exam.isActive)}
+                    className={`p-2 transition-colors ${exam.isActive ? 'text-green-400 hover:text-green-300' : 'text-slate-500 hover:text-slate-400'}`}
+                    title={exam.isActive ? '关闭考试' : '开放考试'}
+                  >
+                    {exam.isActive ? '🟢' : '🔴'}
+                  </button>
+                  <button
                     onClick={() => handleViewAttempts(exam.id)}
                     className="text-cyan-400 hover:text-cyan-300 p-2 transition-colors"
                     title="查看提交记录"
                   >
                     <Eye className="h-5 w-5" />
+                  </button>
+                  <button
+                    onClick={() => handleEditExam(exam.id)}
+                    className="text-blue-400 hover:text-blue-300 p-2 transition-colors"
+                    title="编辑考试"
+                  >
+                    ✏️
                   </button>
                   <button
                     onClick={() => handleDeleteExam(exam.id)}

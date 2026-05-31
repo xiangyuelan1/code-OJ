@@ -718,6 +718,173 @@ export class StarPathService {
       message: `成功创建 ${createdRegions.length} 个星域`,
     };
   }
+
+  async createRegion(data: {
+    name: string;
+    description?: string;
+    icon?: string;
+    color?: string;
+    knowledgeTreeId?: string;
+  }) {
+    const maxOrder = await prisma.starRegion.aggregate({ _max: { order: true } });
+    return await prisma.starRegion.create({
+      data: {
+        name: data.name,
+        description: data.description || '',
+        icon: data.icon || '🌌',
+        color: data.color || '#6366f1',
+        order: (maxOrder._max.order || 0) + 1,
+        knowledgeTreeId: data.knowledgeTreeId || null,
+      },
+    });
+  }
+
+  async updateRegion(regionId: string, data: {
+    name?: string;
+    description?: string;
+    icon?: string;
+    color?: string;
+    knowledgeTreeId?: string;
+  }) {
+    const region = await prisma.starRegion.findUnique({ where: { id: regionId } });
+    if (!region) throw new Error('星域不存在');
+
+    return await prisma.starRegion.update({
+      where: { id: regionId },
+      data: {
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.icon !== undefined && { icon: data.icon }),
+        ...(data.color !== undefined && { color: data.color }),
+        ...(data.knowledgeTreeId !== undefined && { knowledgeTreeId: data.knowledgeTreeId || null }),
+      },
+    });
+  }
+
+  async deleteRegion(regionId: string) {
+    const planets = await prisma.starPlanet.findMany({
+      where: { regionId },
+      select: { id: true },
+    });
+    const planetIds = planets.map(p => p.id);
+
+    await prisma.userPlanetProgress.deleteMany({
+      where: { planetId: { in: planetIds } },
+    });
+    await prisma.starPlanet.deleteMany({
+      where: { regionId },
+    });
+    return await prisma.starRegion.delete({
+      where: { id: regionId },
+    });
+  }
+
+  async createPlanet(data: {
+    regionId: string;
+    name: string;
+    description?: string;
+    difficulty?: string;
+    tags?: string[];
+    problemIds?: string[];
+    posX?: number;
+    posY?: number;
+  }) {
+    const region = await prisma.starRegion.findUnique({ where: { id: data.regionId } });
+    if (!region) throw new Error('星域不存在');
+
+    const maxOrder = await prisma.starPlanet.aggregate({
+      where: { regionId: data.regionId },
+      _max: { order: true },
+    });
+
+    return await prisma.starPlanet.create({
+      data: {
+        regionId: data.regionId,
+        name: data.name,
+        description: data.description || '',
+        difficulty: data.difficulty || 'MEDIUM',
+        tags: JSON.stringify(data.tags || []),
+        problemIds: JSON.stringify(data.problemIds || []),
+        order: (maxOrder._max.order || 0) + 1,
+        posX: data.posX || Math.random() * 400 + 50,
+        posY: data.posY || Math.random() * 400 + 50,
+      },
+    });
+  }
+
+  async updatePlanet(planetId: string, data: {
+    name?: string;
+    description?: string;
+    difficulty?: string;
+    tags?: string[];
+    problemIds?: string[];
+    posX?: number;
+    posY?: number;
+  }) {
+    const planet = await prisma.starPlanet.findUnique({ where: { id: planetId } });
+    if (!planet) throw new Error('星球不存在');
+
+    return await prisma.starPlanet.update({
+      where: { id: planetId },
+      data: {
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.difficulty !== undefined && { difficulty: data.difficulty }),
+        ...(data.tags !== undefined && { tags: JSON.stringify(data.tags) }),
+        ...(data.problemIds !== undefined && { problemIds: JSON.stringify(data.problemIds) }),
+        ...(data.posX !== undefined && { posX: data.posX }),
+        ...(data.posY !== undefined && { posY: data.posY }),
+      },
+    });
+  }
+
+  async deletePlanet(planetId: string) {
+    await prisma.userPlanetProgress.deleteMany({
+      where: { planetId },
+    });
+    return await prisma.starPlanet.delete({
+      where: { id: planetId },
+    });
+  }
+
+  async getAdminMap() {
+    const regions = await prisma.starRegion.findMany({
+      include: {
+        planets: {
+          orderBy: { order: 'asc' },
+        },
+      },
+      orderBy: { order: 'asc' },
+    });
+
+    return regions.map(r => ({
+      ...r,
+      planets: r.planets.map(p => ({
+        ...p,
+        tags: safeJsonParse(p.tags, []),
+        problemIds: safeJsonParse(p.problemIds, []),
+      })),
+    }));
+  }
+
+  async reinitializeRegions() {
+    const regions = await prisma.starRegion.findMany({
+      select: { id: true, planets: { select: { id: true } } },
+    });
+
+    for (const region of regions) {
+      const planetIds = region.planets.map(p => p.id);
+      await prisma.userPlanetProgress.deleteMany({
+        where: { planetId: { in: planetIds } },
+      });
+      await prisma.starPlanet.deleteMany({
+        where: { regionId: region.id },
+      });
+    }
+    await prisma.starRegion.deleteMany({});
+
+    return await this.initializeDefaultRegions();
+  }
 }
 
 export const starPathService = new StarPathService();

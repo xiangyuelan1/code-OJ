@@ -173,8 +173,7 @@ export class SubmissionService {
 
   async submitProgramming(problemId: string, userId: string, code: string, language: string) {
     const problem = await prisma.problem.findUnique({
-      where: { id: problemId },
-      include: { submissions: true }
+      where: { id: problemId }
     });
 
     if (!problem) {
@@ -213,21 +212,27 @@ export class SubmissionService {
       };
     }
 
-    const isFirstAC = !problem.submissions.some(s =>
-      s.userId === userId && s.status === 'ACCEPTED'
-    );
-
     let pointsEarned = 0;
-    if (result.status === 'ACCEPTED' && isFirstAC) {
-      try {
-        const pointResult = await pointsService.awardPointsForProblem(
-          userId,
+    if (result.status === 'ACCEPTED') {
+      const existingAC = await prisma.submission.findFirst({
+        where: {
           problemId,
-          problem.difficulty,
-          true
-        );
-        pointsEarned = pointResult.pointsEarned;
-      } catch {}
+          userId,
+          status: 'ACCEPTED',
+          id: { not: submission.id }
+        }
+      });
+      if (!existingAC) {
+        try {
+          const pointResult = await pointsService.awardPointsForProblem(
+            userId,
+            problemId,
+            problem.difficulty,
+            true
+          );
+          pointsEarned = pointResult.pointsEarned;
+        } catch { /* 积分发放失败不影响提交 */ }
+      }
     }
 
     const updatedSubmission = await prisma.submission.update({
@@ -245,32 +250,13 @@ export class SubmissionService {
 
   async submitChoice(problemId: string, userId: string, answer: string) {
     const problem = await prisma.problem.findUnique({
-      where: { id: problemId },
-      include: { submissions: true }
+      where: { id: problemId }
     });
     if (!problem) throw new Error('题目不存在');
 
-    const choices = problem.choices ? JSON.parse(problem.choices) : [];
-    const choice = choices.find((c: any) => c.key === answer);
-    
     const isCorrect = answer === problem.correctAnswer;
 
-    const isFirstAC = isCorrect && !problem.submissions.some(s => 
-      s.userId === userId && s.status === 'ACCEPTED'
-    );
-
-    let pointsEarned = 0;
-    if (isCorrect && isFirstAC) {
-      const pointResult = await pointsService.awardPointsForProblem(
-        userId,
-        problemId,
-        problem.difficulty,
-        true
-      );
-      pointsEarned = pointResult.pointsEarned;
-    }
-
-    return await prisma.submission.create({
+    const submission = await prisma.submission.create({
       data: {
         problemId,
         userId,
@@ -283,15 +269,40 @@ export class SubmissionService {
           selectedAnswer: answer
         }),
         score: isCorrect ? 100 : 0,
-        pointsEarned
+        pointsEarned: 0
       }
     });
+
+    let pointsEarned = 0;
+    if (isCorrect) {
+      const existingAC = await prisma.submission.findFirst({
+        where: {
+          problemId,
+          userId,
+          status: 'ACCEPTED',
+          id: { not: submission.id }
+        }
+      });
+      if (!existingAC) {
+        try {
+          const pointResult = await pointsService.awardPointsForProblem(
+            userId, problemId, problem.difficulty, true
+          );
+          pointsEarned = pointResult.pointsEarned;
+        } catch { /* 积分发放失败不影响提交 */ }
+        await prisma.submission.update({
+          where: { id: submission.id },
+          data: { pointsEarned }
+        });
+      }
+    }
+
+    return { ...submission, pointsEarned };
   }
 
   async submitFillBlank(problemId: string, userId: string, answers: string[]) {
     const problem = await prisma.problem.findUnique({
-      where: { id: problemId },
-      include: { submissions: true }
+      where: { id: problemId }
     });
     if (!problem) throw new Error('题目不存在');
 
@@ -307,22 +318,7 @@ export class SubmissionService {
     const score = Math.round((correctCount / correctAnswers.length) * 100);
     const isCorrect = score === 100;
 
-    const isFirstAC = isCorrect && !problem.submissions.some(s => 
-      s.userId === userId && s.status === 'ACCEPTED'
-    );
-
-    let pointsEarned = 0;
-    if (isCorrect && isFirstAC) {
-      const pointResult = await pointsService.awardPointsForProblem(
-        userId,
-        problemId,
-        problem.difficulty,
-        true
-      );
-      pointsEarned = pointResult.pointsEarned;
-    }
-
-    return await prisma.submission.create({
+    const submission = await prisma.submission.create({
       data: {
         problemId,
         userId,
@@ -336,9 +332,35 @@ export class SubmissionService {
           score
         }),
         score,
-        pointsEarned
+        pointsEarned: 0
       }
     });
+
+    let pointsEarned = 0;
+    if (isCorrect) {
+      const existingAC = await prisma.submission.findFirst({
+        where: {
+          problemId,
+          userId,
+          status: 'ACCEPTED',
+          id: { not: submission.id }
+        }
+      });
+      if (!existingAC) {
+        try {
+          const pointResult = await pointsService.awardPointsForProblem(
+            userId, problemId, problem.difficulty, true
+          );
+          pointsEarned = pointResult.pointsEarned;
+        } catch { /* 积分发放失败不影响提交 */ }
+        await prisma.submission.update({
+          where: { id: submission.id },
+          data: { pointsEarned }
+        });
+      }
+    }
+
+    return { ...submission, pointsEarned };
   }
 
   private async judgeProgramming(

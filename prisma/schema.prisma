@@ -46,6 +46,8 @@ model User {
   discussionVotes  DiscussionVote[]
   dailyChallenges  UserDailyChallenge[]
   planetProgresses UserPlanetProgress[]
+  learningPaths    LearningPath[]
+  learningAchievements LearningAchievement[]
 }
 
 model Session {
@@ -181,6 +183,7 @@ model Exam {
   startTime         DateTime?
   endTime           DateTime?
   enableProctoring  Boolean  @default(false)
+  maxAttempts       Int      @default(1)
   createdBy         String
   creator           User     @relation("UserExams", fields: [createdBy], references: [id])
   classId           String?
@@ -645,6 +648,67 @@ model SystemFeature {
   enabled     Boolean  @default(true)
   visible     Boolean  @default(true)
   order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model LearningPath {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  title        String
+  description  String   @default("")
+  difficulty   String   @default("MEDIUM")
+  status       String   @default("ACTIVE")
+  totalSteps   Int      @default(0)
+  completedSteps Int    @default(0)
+  regionIds    String   @default("[]")
+  planetIds    String   @default("[]")
+  problemIds   String   @default("[]")
+  generatedBy  String   @default("AI")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  steps        LearningPathStep[]
+}
+
+model LearningPathStep {
+  id         String       @id @default(uuid())
+  pathId     String
+  path       LearningPath @relation(fields: [pathId], references: [id], onDelete: Cascade)
+  order      Int
+  type       String
+  referenceId String
+  title      String
+  description String     @default("")
+  completed  Boolean     @default(false)
+  completedAt DateTime?
+}
+
+model LearningAchievement {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  type        String
+  title       String
+  description String   @default("")
+  icon        String   @default("🏆")
+  earnedAt    DateTime @default(now())
+
+  @@unique([userId, type])
+}
+
+model AIProviderConfig {
+  id          String   @id @default(uuid())
+  name        String
+  provider    String   @default("openai")
+  apiKey      String?
+  baseUrl     String?
+  model       String   @default("gpt-3.5-turbo")
+  isDefault   Boolean  @default(false)
+  maxTokens   Int      @default(4000)
+  temperature Float    @default(0.7)
+  enabled     Boolean  @default(true)
+  priority    Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

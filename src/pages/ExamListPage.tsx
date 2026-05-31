@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { examAPI } from '../services/api';
-import { Clock, Users, FileText, Trophy, ArrowLeft, User } from 'lucide-react';
+import { Clock, Users, FileText, Trophy, ArrowLeft, User, Save, AlertTriangle } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { MarkdownRenderer } from '../components/MarkdownEditor';
+
+const AUTO_SAVE_INTERVAL = 30000;
 
 export function ExamListPage() {
   const [exams, setExams] = useState<any[]>([]);
@@ -67,6 +69,14 @@ export function ExamListPage() {
     }
   };
 
+  const getExamStatus = (exam: any) => {
+    const now = new Date();
+    if (!exam.isActive) return { label: '未开放', color: 'text-slate-400 bg-slate-700' };
+    if (exam.startTime && now < new Date(exam.startTime)) return { label: '未开始', color: 'text-yellow-400 bg-yellow-500/20' };
+    if (exam.endTime && now > new Date(exam.endTime)) return { label: '已结束', color: 'text-red-400 bg-red-500/20' };
+    return { label: '进行中', color: 'text-green-400 bg-green-500/20' };
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 text-white p-6">
       <div className="max-w-7xl mx-auto">
@@ -78,50 +88,70 @@ export function ExamListPage() {
           <div className="mb-10">
             <h2 className="text-xl font-semibold text-white mb-4">可参加的考试</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {exams.map((exam) => (
-                <div
-                  key={exam.id}
-                  className="bg-slate-800 rounded-lg p-6 hover:bg-slate-700 transition-colors"
-                >
-                  <h3 className="text-xl font-semibold mb-3 text-cyan-400">{exam.title}</h3>
-                  {exam.description && (
-                    <p className="text-slate-400 text-sm mb-4 line-clamp-2">{exam.description}</p>
-                  )}
-
-                  <div className="space-y-2 text-sm text-slate-400">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
-                      <span>时长: {exam.duration} 分钟</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      <span>题目数: {exam._count?.questions || 0}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      <span>参与人数: {exam._count?.attempts || 0}</span>
-                    </div>
-                    {exam.creator && (
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4" />
-                        <span>创建者: {exam.creator.username}</span>
-                      </div>
+              {exams.map((exam) => {
+                const status = getExamStatus(exam);
+                const isAvailable = status.label === '进行中';
+                return (
+                  <div
+                    key={exam.id}
+                    className="bg-slate-800 rounded-lg p-6 hover:bg-slate-700 transition-colors"
+                  >
+                    <h3 className="text-xl font-semibold mb-3 text-cyan-400">{exam.title}</h3>
+                    {exam.description && (
+                      <p className="text-slate-400 text-sm mb-4 line-clamp-2">{exam.description}</p>
                     )}
-                  </div>
 
-                  <div className="mt-4 flex items-center justify-between">
-                    <span className="text-xs px-2 py-1 bg-slate-700 rounded">
-                      {getTypeName(exam.type)}
-                    </span>
-                    <Link
-                      to={`/exam/${exam.id}`}
-                      className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg text-sm transition-colors"
-                    >
-                      开始考试
-                    </Link>
+                    <div className="space-y-2 text-sm text-slate-400">
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        <span>时长: {exam.duration} 分钟</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        <span>题目数: {exam._count?.questions || 0}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4" />
+                        <span>参与人数: {exam._count?.attempts || 0}</span>
+                      </div>
+                      {exam.creator && (
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4" />
+                          <span>创建者: {exam.creator.username}</span>
+                        </div>
+                      )}
+                      {exam.startTime && (
+                        <div className="text-xs text-slate-500">
+                          开始: {new Date(exam.startTime).toLocaleString()}
+                        </div>
+                      )}
+                      {exam.endTime && (
+                        <div className="text-xs text-slate-500">
+                          截止: {new Date(exam.endTime).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between">
+                      <span className={`text-xs px-2 py-1 rounded ${status.color}`}>
+                        {status.label}
+                      </span>
+                      {isAvailable ? (
+                        <Link
+                          to={`/exam/${exam.id}`}
+                          className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg text-sm transition-colors"
+                        >
+                          开始考试
+                        </Link>
+                      ) : (
+                        <span className="px-4 py-2 bg-slate-700 rounded-lg text-sm text-slate-400 cursor-not-allowed">
+                          {status.label === '未开始' ? '等待开始' : status.label === '已结束' ? '已结束' : '未开放'}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -156,6 +186,15 @@ export function ExamListPage() {
                         <div className="text-sm text-slate-400">得分</div>
                       </div>
                     )}
+                    {attempt.status === 'IN_PROGRESS' && (
+                      <Link
+                        to={`/exam/${attempt.examId}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg text-sm transition-colors"
+                      >
+                        继续考试
+                      </Link>
+                    )}
                   </div>
                 </div>
               ))}
@@ -184,9 +223,13 @@ export function ExamPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [attemptStartTime, setAttemptStartTime] = useState<Date | null>(null);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const answersRef = useRef(answers);
   const submittingRef = useRef(submitting);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     answersRef.current = answers;
@@ -195,6 +238,19 @@ export function ExamPage() {
   useEffect(() => {
     submittingRef.current = submitting;
   }, [submitting]);
+
+  const autoSave = useCallback(async () => {
+    if (!examId || submittingRef.current) return;
+    try {
+      setSaving(true);
+      await examAPI.save(examId, answersRef.current);
+      setLastSaved(new Date());
+    } catch {
+      // 自动保存失败静默处理
+    } finally {
+      setSaving(false);
+    }
+  }, [examId]);
 
   const handleSubmit = useCallback(async (currentAnswers?: Record<string, any>) => {
     if (submittingRef.current) return;
@@ -206,6 +262,10 @@ export function ExamPage() {
       navigate(`/exam/${examId}/result`);
     } catch (error: any) {
       console.error('提交失败:', error);
+      if (error.error?.message?.includes('自动提交')) {
+        navigate(`/exam/${examId}/result`);
+        return;
+      }
       alert(error.error?.message || '提交失败，请重试');
       setSubmitting(false);
       submittingRef.current = false;
@@ -214,24 +274,43 @@ export function ExamPage() {
 
   useEffect(() => {
     fetchExam();
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearInterval(autoSaveTimerRef.current);
+      }
+    };
   }, [examId]);
 
   useEffect(() => {
-    if (exam && exam.duration) {
-      setTimeLeft(exam.duration * 60);
-      const interval = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            handleSubmit(answersRef.current);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [exam, handleSubmit]);
+    if (!attemptStartTime || !exam?.duration) return;
+
+    const durationMs = exam.duration * 60 * 1000;
+    const elapsed = Date.now() - attemptStartTime.getTime();
+    const remaining = Math.max(0, Math.floor((durationMs - elapsed) / 1000));
+    setTimeLeft(remaining);
+
+    const interval = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          handleSubmit(answersRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    autoSaveTimerRef.current = setInterval(() => {
+      autoSave();
+    }, AUTO_SAVE_INTERVAL);
+
+    return () => {
+      clearInterval(interval);
+      if (autoSaveTimerRef.current) {
+        clearInterval(autoSaveTimerRef.current);
+      }
+    };
+  }, [attemptStartTime, exam, handleSubmit, autoSave]);
 
   const fetchExam = async () => {
     try {
@@ -241,12 +320,30 @@ export function ExamPage() {
         const startRes = await examAPI.start(examId!);
         if (startRes.success) {
           setAttemptId(startRes.data.id);
+          const startTime = new Date(startRes.data.startTime);
+          setAttemptStartTime(startTime);
+
+          if (startRes.data.answers) {
+            try {
+              const savedAnswers = typeof startRes.data.answers === 'string'
+                ? JSON.parse(startRes.data.answers)
+                : startRes.data.answers;
+              if (savedAnswers && typeof savedAnswers === 'object') {
+                setAnswers(savedAnswers);
+              }
+            } catch {
+              // 恢复答案失败，使用空答案
+            }
+          }
         }
       }
     } catch (error: any) {
       console.error('获取考试失败:', error);
-      if (error.error?.message?.includes('已完成')) {
+      if (error.error?.message?.includes('已完成') || error.error?.message?.includes('自动提交')) {
         navigate(`/exam/${examId}/result`);
+      } else {
+        alert(error.error?.message || '加载考试失败');
+        navigate('/exams');
       }
     } finally {
       setLoading(false);
@@ -263,6 +360,37 @@ export function ExamPage() {
     setAnswers(prev => ({ ...prev, [problemId]: value }));
   };
 
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && examId) {
+        examAPI.logProctoring(examId, 'FOCUS_LOST').catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [examId]);
+
+  useEffect(() => {
+    const handleCopy = (e: ClipboardEvent) => {
+      if (examId) {
+        e.preventDefault();
+        examAPI.logProctoring(examId, 'COPY_ATTEMPT').catch(() => {});
+      }
+    };
+    const handlePaste = (e: ClipboardEvent) => {
+      if (examId) {
+        e.preventDefault();
+        examAPI.logProctoring(examId, 'PASTE_ATTEMPT').catch(() => {});
+      }
+    };
+    document.addEventListener('copy', handleCopy);
+    document.addEventListener('paste', handlePaste);
+    return () => {
+      document.removeEventListener('copy', handleCopy);
+      document.removeEventListener('paste', handlePaste);
+    };
+  }, [examId]);
+
   if (loading || !exam) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -274,14 +402,24 @@ export function ExamPage() {
   const questions = exam.questions || [];
   const currentQ = questions[currentQuestion];
   const isTimeWarning = timeLeft < 300;
+  const isTimeCritical = timeLeft < 60;
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       <div className="bg-slate-800 p-4 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <h1 className="text-xl font-semibold text-cyan-400">{exam.title}</h1>
-          <div className={`text-2xl font-mono ${isTimeWarning ? 'text-red-400' : 'text-green-400'}`}>
-            {formatTime(timeLeft)}
+          <div className="flex items-center gap-4">
+            {saving && <span className="text-xs text-slate-400">保存中...</span>}
+            {lastSaved && !saving && (
+              <span className="text-xs text-slate-500">上次保存: {lastSaved.toLocaleTimeString()}</span>
+            )}
+            <div className={`text-2xl font-mono flex items-center gap-2 ${
+              isTimeCritical ? 'text-red-400 animate-pulse' : isTimeWarning ? 'text-red-400' : 'text-green-400'
+            }`}>
+              {isTimeCritical && <AlertTriangle className="h-5 w-5" />}
+              {formatTime(timeLeft)}
+            </div>
           </div>
         </div>
       </div>
@@ -369,6 +507,7 @@ export function ExamPage() {
                               lineNumbers: 'on',
                               scrollBeyondLastLine: false,
                               automaticLayout: true,
+                              contextmenu: false,
                             }}
                           />
                         </div>
@@ -433,6 +572,14 @@ export function ExamPage() {
                 上一题
               </button>
               <button
+                onClick={() => autoSave()}
+                disabled={saving}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm flex items-center gap-2 transition-colors"
+              >
+                <Save className="h-4 w-4" />
+                {saving ? '保存中...' : '手动保存'}
+              </button>
+              <button
                 onClick={() => setCurrentQuestion((prev) => Math.min(questions.length - 1, prev + 1))}
                 disabled={currentQuestion === questions.length - 1}
                 className="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -483,9 +630,22 @@ export function ExamPage() {
                 </div>
               </div>
 
+              <div className="mt-4 p-3 bg-slate-700/50 rounded-lg text-xs text-slate-400">
+                <p>⚠️ 考试期间请勿切换页面或复制粘贴，系统会记录异常行为。超过5次违规将自动提交。</p>
+              </div>
+
               <button
                 onClick={() => {
-                  if (confirm('确定要提交考试吗？提交后不可修改。')) {
+                  const unanswered = questions.filter((q: any) => {
+                    const hasAnswer = q.problem.type === 'PROGRAMMING'
+                      ? answers[q.problem.id]?.code?.trim()
+                      : answers[q.problem.id];
+                    return !hasAnswer;
+                  });
+                  const msg = unanswered.length > 0
+                    ? `还有 ${unanswered.length} 道题未作答，确定要提交考试吗？提交后不可修改。`
+                    : '确定要提交考试吗？提交后不可修改。';
+                  if (confirm(msg)) {
                     handleSubmit();
                   }
                 }}

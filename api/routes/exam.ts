@@ -34,7 +34,7 @@ router.get('/', authMiddleware, async (req: Request, res: any): Promise<void> =>
 router.post('/', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
-    const { title, description, type, duration, startTime, endTime, enableProctoring, problemIds, points, classId } = req.body;
+    const { title, description, type, duration, startTime, endTime, enableProctoring, problemIds, points, classId, maxAttempts } = req.body;
     const exam = await examService.createExam({
       title,
       description,
@@ -46,6 +46,7 @@ router.post('/', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, r
       problemIds,
       points,
       classId,
+      maxAttempts,
       createdBy: userId
     });
     res.status(201).json({ success: true, data: exam });
@@ -79,7 +80,22 @@ router.get('/:id', authMiddleware, async (req: Request, res: any): Promise<void>
 
 router.put('/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
-    const exam = await examService.updateExam(req.params.id, req.body);
+    const userId = (req as any).user.userId;
+    const { title, description, type, duration, startTime, endTime, enableProctoring, isActive, classId, maxAttempts, problemIds, points } = req.body;
+    const exam = await examService.updateExam(req.params.id, userId, {
+      title,
+      description,
+      type,
+      duration,
+      startTime: startTime ? new Date(startTime) : undefined,
+      endTime: endTime ? new Date(endTime) : undefined,
+      enableProctoring,
+      isActive,
+      classId,
+      maxAttempts,
+      problemIds,
+      points
+    });
     res.json({ success: true, data: exam });
   } catch (error: any) {
     res.status(400).json({ success: false, error: { message: error.message } });
@@ -100,6 +116,17 @@ router.post('/:id/start', authMiddleware, async (req: Request, res: any): Promis
     const userId = (req as any).user.userId;
     const attempt = await examService.startExam(req.params.id, userId);
     res.json({ success: true, data: attempt });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/:id/save', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { answers } = req.body;
+    const result = await examService.saveExamAnswers(req.params.id, userId, answers);
+    res.json({ success: true, data: result });
   } catch (error: any) {
     res.status(400).json({ success: false, error: { message: error.message } });
   }
@@ -160,7 +187,7 @@ router.post('/:id/proctoring', authMiddleware, async (req: Request, res: any): P
     await examService.logProctoringEvent(req.params.id, userId, event, details);
     res.json({ success: true, data: { message: '已记录' } });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: { message: error.message } });
+    res.status(400).json({ success: false, error: { message: error.message } });
   }
 });
 

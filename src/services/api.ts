@@ -30,7 +30,7 @@ axiosInstance.interceptors.response.use(
       const { logout } = useAuthStore.getState();
       logout();
       if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
       }
     }
     return Promise.reject(error.response?.data || error);
@@ -215,6 +215,7 @@ export const examAPI = {
   update: (id: string, data: any) => api.put(`/api/exams/${id}`, data),
   delete: (id: string) => api.delete(`/api/exams/${id}`),
   start: (id: string) => api.post(`/api/exams/${id}/start`),
+  save: (id: string, answers: any) => api.post(`/api/exams/${id}/save`, { answers }),
   submit: (id: string, answers: any) => api.post(`/api/exams/${id}/submit`, { answers }),
   getResult: (id: string) => api.get(`/api/exams/${id}/result`),
   getAnalytics: (id: string) => api.get(`/api/exams/${id}/analytics`),
@@ -464,6 +465,14 @@ export const starpathAPI = {
     api.post('/api/starpath/planet/' + planetId + '/submit', data),
   guideChat: (data: { planetId?: string; regionId?: string; message: string }) => api.post('/api/starpath/guide', data),
   initialize: () => api.post('/api/starpath/initialize'),
+  reinitialize: () => api.post('/api/starpath/reinitialize'),
+  getAdminMap: () => api.get('/api/starpath/admin/map'),
+  createRegion: (data: any) => api.post('/api/starpath/admin/regions', data),
+  updateRegion: (id: string, data: any) => api.put(`/api/starpath/admin/regions/${id}`, data),
+  deleteRegion: (id: string) => api.delete(`/api/starpath/admin/regions/${id}`),
+  createPlanet: (data: any) => api.post('/api/starpath/admin/planets', data),
+  updatePlanet: (id: string, data: any) => api.put(`/api/starpath/admin/planets/${id}`, data),
+  deletePlanet: (id: string) => api.delete(`/api/starpath/admin/planets/${id}`),
 };
 
 export const dailyAPI = {
@@ -493,6 +502,31 @@ export const featureAPI = {
   update: (featureKey: string, data: any) => api.put(`/api/features/${featureKey}`, data),
   initialize: () => api.post('/api/features/initialize'),
   getPublic: () => api.get('/api/features/public'),
+};
+
+export const learningAPI = {
+  getPaths: () => api.get('/api/learning/paths'),
+  generatePath: (data: { title?: string; description?: string; difficulty?: string; focusAreas?: string[] }) =>
+    api.post('/api/learning/paths/generate', data),
+  getPathDetail: (id: string) => api.get(`/api/learning/paths/${id}`),
+  updateStep: (pathId: string, stepId: string, completed: boolean) =>
+    api.put(`/api/learning/paths/${pathId}/steps/${stepId}`, { completed }),
+  deletePath: (id: string) => api.delete(`/api/learning/paths/${id}`),
+  refreshPath: (id: string) => api.post(`/api/learning/paths/${id}/refresh`),
+  getAchievements: () => api.get('/api/learning/achievements'),
+  checkAchievements: () => api.post('/api/learning/achievements/check'),
+  getStats: () => api.get('/api/learning/stats'),
+};
+
+export const aiProviderAPI = {
+  getAllConfigs: () => api.get('/api/ai-providers/configs'),
+  getConfig: (id: string) => api.get(`/api/ai-providers/configs/${id}`),
+  createConfig: (data: any) => api.post('/api/ai-providers/configs', data),
+  updateConfig: (id: string, data: any) => api.put(`/api/ai-providers/configs/${id}`, data),
+  deleteConfig: (id: string) => api.delete(`/api/ai-providers/configs/${id}`),
+  setDefault: (id: string) => api.put(`/api/ai-providers/configs/${id}/default`),
+  testConnection: (id: string) => api.post(`/api/ai-providers/configs/${id}/test`),
+  migrateLegacy: () => api.post('/api/ai-providers/migrate'),
 };
 
 export const streamAPI = {

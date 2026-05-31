@@ -691,7 +691,9 @@ export function SolvePage() {
                   <h4 className="text-cyan-400 font-semibold text-sm">AI优化建议</h4>
                   <button onClick={() => setShowOptimize(false)} className="text-slate-400 hover:text-white"><X className="h-4 w-4" /></button>
                 </div>
-                <div className="prose prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: optimizeSuggestion.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-slate-900 p-3 rounded-lg overflow-x-auto"><code>$2</code></pre>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>') }} />
+                <div className="prose prose-invert max-w-none text-sm">
+                  <MarkdownRenderer content={optimizeSuggestion} />
+                </div>
               </div>
             )}
 

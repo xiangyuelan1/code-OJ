@@ -37,56 +37,95 @@ export class DailyService {
       let candidates = problems.filter(p => p.difficulty === targetDifficulty);
       if (candidates.length === 0) candidates = problems;
 
-      const selected = candidates[Math.floor(Math.random() * candidates.length)];
+      const recentProblemIds = await prisma.dailyChallenge.findMany({
+        where: { date: { gte: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10) } },
+        select: { problemId: true },
+      });
+      const recentSet = new Set(recentProblemIds.map(r => r.problemId));
+      const freshCandidates = candidates.filter(p => !recentSet.has(p.id));
+      const pool = freshCandidates.length > 0 ? freshCandidates : candidates;
 
-      challenge = await prisma.dailyChallenge.create({
-        data: {
-          problemId: selected.id,
-          date: today,
-          difficulty: targetDifficulty,
-        },
-        include: {
-          problem: {
-            select: {
-              id: true,
-              title: true,
-              description: true,
-              difficulty: true,
-              type: true,
-              tags: true,
-              testCases: true,
+      const selected = pool[Math.floor(Math.random() * pool.length)];
+
+      try {
+        challenge = await prisma.dailyChallenge.create({
+          data: {
+            problemId: selected.id,
+            date: today,
+            difficulty: targetDifficulty,
+          },
+          include: {
+            problem: {
+              select: {
+                id: true,
+                title: true,
+                description: true,
+                difficulty: true,
+                type: true,
+                tags: true,
+                testCases: true,
+              },
             },
           },
-        },
-      });
+        });
+      } catch {
+        // 并发创建时唯一约束冲突，重新查询即可
+        challenge = await prisma.dailyChallenge.findUnique({
+          where: { date: today },
+          include: {
+            problem: {
+              select: {
+                id: true,
+                title: true,
+                description: true,
+                difficulty: true,
+                type: true,
+                tags: true,
+                testCases: true,
+              },
+            },
+          },
+        });
+      }
     }
+
+    if (!challenge) return null;
 
     if (challenge.problem.testCases) {
       try {
         const allCases = JSON.parse(challenge.problem.testCases);
         challenge.problem.testCases = JSON.stringify(allCases.filter((tc: any) => tc.isSample));
-      } catch {}
+      } catch { /* 保留原始数据 */ }
     }
 
     return challenge;
   }
 
   async submitDailyChallenge(userId: string, dailyChallengeId: string, solved: boolean, timeTaken?: number) {
-    return await prisma.userDailyChallenge.upsert({
+    const existing = await prisma.userDailyChallenge.findUnique({
       where: {
-        userId_dailyChallengeId: {
-          userId,
-          dailyChallengeId,
-        },
+        userId_dailyChallengeId: { userId, dailyChallengeId },
       },
-      create: {
+    });
+
+    if (existing) {
+      if (existing.solved && !solved) {
+        return existing;
+      }
+      return await prisma.userDailyChallenge.update({
+        where: { id: existing.id },
+        data: {
+          solved: solved || existing.solved,
+          timeTaken: timeTaken ?? existing.timeTaken,
+          submittedAt: new Date(),
+        },
+      });
+    }
+
+    return await prisma.userDailyChallenge.create({
+      data: {
         userId,
         dailyChallengeId,
-        solved,
-        timeTaken,
-        submittedAt: new Date(),
-      },
-      update: {
         solved,
         timeTaken,
         submittedAt: new Date(),

@@ -1,7 +1,7 @@
 import { Router, type Request } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { roleMiddleware } from '../middleware/role.middleware';
 import { starPathService } from '../services/starpath.service';
-import prisma from '../lib/prisma';
 
 const router = Router();
 
@@ -90,23 +90,94 @@ router.post('/guide', authMiddleware, async (req: Request, res: any): Promise<vo
 });
 
 /** 初始化默认星域（仅管理员可用） */
-router.post('/initialize', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/initialize', authMiddleware, roleMiddleware('ADMIN'), async (_req: Request, res: any): Promise<void> => {
   try {
-    const userId = (req as any).user.userId;
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-
-    if (!user || user.role !== 'ADMIN') {
-      res.status(403).json({
-        success: false,
-        error: { message: '仅管理员可执行此操作' },
-      });
-      return;
-    }
-
     const data = await starPathService.initializeDefaultRegions();
     res.json({ success: true, data });
   } catch (error: any) {
     res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/** 重新初始化（清空后重建） */
+router.post('/reinitialize', authMiddleware, roleMiddleware('ADMIN'), async (_req: Request, res: any): Promise<void> => {
+  try {
+    const data = await starPathService.reinitializeRegions();
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/** 管理员获取星图（含完整数据） */
+router.get('/admin/map', authMiddleware, roleMiddleware('ADMIN'), async (_req: Request, res: any): Promise<void> => {
+  try {
+    const data = await starPathService.getAdminMap();
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/** 创建星域 */
+router.post('/admin/regions', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const data = await starPathService.createRegion(req.body);
+    res.status(201).json({ success: true, data });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/** 更新星域 */
+router.put('/admin/regions/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const data = await starPathService.updateRegion(req.params.id, req.body);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    const status = error.message.includes('不存在') ? 404 : 400;
+    res.status(status).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/** 删除星域 */
+router.delete('/admin/regions/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    await starPathService.deleteRegion(req.params.id);
+    res.json({ success: true, data: { message: '星域已删除' } });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/** 创建星球 */
+router.post('/admin/planets', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const data = await starPathService.createPlanet(req.body);
+    res.status(201).json({ success: true, data });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/** 更新星球 */
+router.put('/admin/planets/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const data = await starPathService.updatePlanet(req.params.id, req.body);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    const status = error.message.includes('不存在') ? 404 : 400;
+    res.status(status).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/** 删除星球 */
+router.delete('/admin/planets/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    await starPathService.deletePlanet(req.params.id);
+    res.json({ success: true, data: { message: '星球已删除' } });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
   }
 });
 

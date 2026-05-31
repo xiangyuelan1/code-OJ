@@ -186,7 +186,6 @@ export function AdminBatchImportPage() {
     for (const file of allFiles) {
       const key = file.webkitRelativePath || file.name;
       fileContentMap[key] = await file.text();
-      fileContentMap[file.name] = fileContentMap[key];
     }
 
     /**
@@ -295,7 +294,7 @@ export function AdminBatchImportPage() {
         }
 
         const parseAndPush = (item: any) => {
-          const parsed = parseJsonProblem(item, jsonFile.name, fileContentMap, jsonDir || undefined);
+          const parsed = parseJsonProblem(item, jsonFile.name, fileContentMap, jsonDir || undefined, matchedDirKey || undefined);
           if (extraTestCases.length > 0) {
             parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
           }
@@ -376,7 +375,7 @@ export function AdminBatchImportPage() {
     setProblems(allParsed);
   };
 
-  const parseJsonProblem = (data: any, fileName: string, fileContentMap: Record<string, string>, jsonDir?: string): ParsedProblem => {
+  const parseJsonProblem = (data: any, fileName: string, fileContentMap: Record<string, string>, jsonDir?: string, problemSubDir?: string): ParsedProblem => {
     const prob = data.problem || data;
     const type = prob.type === 1 || prob.type === 'PROGRAMMING' ? 'PROGRAMMING'
       : prob.type === 2 || prob.type === 'CHOICE' ? 'CHOICE'
@@ -399,7 +398,15 @@ export function AdminBatchImportPage() {
           const fullPath = jsonDir + '/' + ref;
           if (fileContentMap[fullPath] !== undefined) return fileContentMap[fullPath];
         }
-        if (fileContentMap[ref] !== undefined) return fileContentMap[ref];
+        if (problemSubDir) {
+          const subDirPath = problemSubDir + '/' + ref;
+          if (fileContentMap[subDirPath] !== undefined) return fileContentMap[subDirPath];
+        }
+        for (const mapKey of Object.keys(fileContentMap)) {
+          if (mapKey.endsWith('/' + ref)) {
+            return fileContentMap[mapKey];
+          }
+        }
       }
       return ref;
     };
@@ -537,7 +544,7 @@ export function AdminBatchImportPage() {
               });
             }
 
-            const parsed = parseJsonProblem(data, file.name, fileContentMap, jsonDir || undefined);
+            const parsed = parseJsonProblem(data, file.name, fileContentMap, jsonDir || undefined, jsonDir || undefined);
             if (extraTestCases.length > 0) {
               parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
             }
@@ -568,7 +575,7 @@ export function AdminBatchImportPage() {
                   isSample: i === 0
                 });
               }
-              const parsed = parseJsonProblem(data, file.name, fileContentMap, matchedDir || undefined);
+              const parsed = parseJsonProblem(data, file.name, fileContentMap, matchedDir || undefined, matchedDir || undefined);
               if (extraTestCases.length > 0) {
                 parsed.testCases = [...(parsed.testCases || []), ...extraTestCases];
               }
@@ -577,14 +584,14 @@ export function AdminBatchImportPage() {
             } else {
               if (Array.isArray(data)) {
                 for (const item of data) {
-                  allParsed.push(parseJsonProblem(item, file.name, fileContentMap, jsonDir || undefined));
+                  allParsed.push(parseJsonProblem(item, file.name, fileContentMap, jsonDir || undefined, undefined));
                 }
               } else if (data.problems && Array.isArray(data.problems)) {
                 for (const item of data.problems) {
-                  allParsed.push(parseJsonProblem(item, file.name, fileContentMap, jsonDir || undefined));
+                  allParsed.push(parseJsonProblem(item, file.name, fileContentMap, jsonDir || undefined, undefined));
                 }
               } else {
-                allParsed.push(parseJsonProblem(data, file.name, fileContentMap, jsonDir || undefined));
+                allParsed.push(parseJsonProblem(data, file.name, fileContentMap, jsonDir || undefined, undefined));
               }
             }
           }

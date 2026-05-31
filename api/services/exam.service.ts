@@ -47,14 +47,17 @@ export class ExamService {
     problemIds: string[];
     points?: number[];
     classId?: string;
+    maxAttempts?: number;
     createdBy: string;
   }) {
-    const { problemIds, points: customPoints, ...examData } = data;
+    const { problemIds, points: customPoints, classId, ...examData } = data;
+    const normalizedClassId = classId?.trim() || undefined;
 
     return await prisma.$transaction(async (tx) => {
       const exam = await tx.exam.create({
         data: {
           ...examData,
+          classId: normalizedClassId,
           createdBy: data.createdBy
         }
       });
@@ -74,25 +77,60 @@ export class ExamService {
     });
   }
 
-  async updateExam(examId: string, data: any) {
-    return await prisma.exam.update({
-      where: { id: examId },
-      data
+  async updateExam(examId: string, userId: string, data: {
+    title?: string;
+    description?: string;
+    type?: string;
+    duration?: number;
+    startTime?: Date;
+    endTime?: Date;
+    enableProctoring?: boolean;
+    isActive?: boolean;
+    classId?: string;
+    maxAttempts?: number;
+    problemIds?: string[];
+    points?: number[];
+  }) {
+    const exam = await prisma.exam.findUnique({ where: { id: examId } });
+    if (!exam) throw new Error('考试不存在');
+
+    const gradedCount = await prisma.examAttempt.count({
+      where: { examId, status: 'GRADED' }
+    });
+    if (gradedCount > 0 && (data.problemIds || data.points)) {
+      throw new Error('已有学生完成考试，无法修改题目和分值');
+    }
+
+    const { problemIds, points: customPoints, classId, ...examData } = data;
+    const normalizedClassId = classId !== undefined ? (classId?.trim() || undefined) : undefined;
+
+    return await prisma.$transaction(async (tx) => {
+      if (problemIds && problemIds.length > 0) {
+        await tx.examQuestion.deleteMany({ where: { examId } });
+        await tx.examQuestion.createMany({
+          data: problemIds.map((problemId, i) => ({
+            examId,
+            problemId,
+            order: i,
+            points: customPoints?.[i] || 10
+          }))
+        });
+      }
+
+      return await tx.exam.update({
+        where: { id: examId },
+        data: {
+          ...examData,
+          ...(classId !== undefined && { classId: normalizedClassId }),
+        }
+      });
     });
   }
 
   async deleteExam(examId: string) {
-    await prisma.examAttempt.deleteMany({
-      where: { examId }
-    });
-
-    await prisma.examQuestion.deleteMany({
-      where: { examId }
-    });
-
-    return await prisma.exam.delete({
-      where: { id: examId }
-    });
+    await prisma.examAttempt.deleteMany({ where: { examId } });
+    await prisma.examQuestion.deleteMany({ where: { examId } });
+    return await prisma.exam.delete({ where: { id: examId } });
   }
 
   async getExam(examId: string) {
@@ -100,9 +138,7 @@ export class ExamService {
       where: { id: examId },
       include: {
         questions: {
-          include: {
-            problem: true
-          },
+          include: { problem: true },
           orderBy: { order: 'asc' }
         }
       }
@@ -137,8 +173,10 @@ export class ExamService {
 
       where = {
         ...where,
+        isActive: true,
         OR: [
           { classId: null },
+          { classId: '' },
           { classId: { in: classIds } }
         ]
       };
@@ -163,12 +201,23 @@ export class ExamService {
 
   async startExam(examId: string, userId: string) {
     const exam = await prisma.exam.findUnique({
-      where: { id: examId },
-      select: { classId: true }
+      where: { id: examId }
     });
 
     if (!exam) {
       throw new Error('考试不存在');
+    }
+
+    if (!exam.isActive) {
+      throw new Error('该考试当前未开放');
+    }
+
+    const now = new Date();
+    if (exam.startTime && now < exam.startTime) {
+      throw new Error('考试尚未开始');
+    }
+    if (exam.endTime && now > exam.endTime) {
+      throw new Error('考试已结束');
     }
 
     if (exam.classId) {
@@ -180,27 +229,26 @@ export class ExamService {
       }
     }
 
-    const gradedAttempt = await prisma.examAttempt.findFirst({
-      where: {
-        examId,
-        userId,
-        status: 'GRADED'
-      }
+    const gradedAttempts = await prisma.examAttempt.count({
+      where: { examId, userId, status: 'GRADED' }
     });
 
-    if (gradedAttempt) {
-      throw new Error('您已完成此考试，不能重复参加');
+    const maxAttempts = (exam as any).maxAttempts || 1;
+    if (gradedAttempts >= maxAttempts) {
+      throw new Error('您已达到最大考试次数');
     }
 
     const existingAttempt = await prisma.examAttempt.findFirst({
-      where: {
-        examId,
-        userId,
-        status: 'IN_PROGRESS'
-      }
+      where: { examId, userId, status: 'IN_PROGRESS' }
     });
 
     if (existingAttempt) {
+      const elapsed = now.getTime() - existingAttempt.startTime.getTime();
+      const durationMs = exam.duration * 60 * 1000;
+      if (elapsed > durationMs + 60000) {
+        await this.submitExam(examId, userId, safeJsonParse(existingAttempt.answers, {}));
+        throw new Error('考试时间已过，系统已自动提交');
+      }
       return existingAttempt;
     }
 
@@ -213,20 +261,40 @@ export class ExamService {
     });
   }
 
+  async saveExamAnswers(examId: string, userId: string, answers: Record<string, any>) {
+    const attempt = await prisma.examAttempt.findFirst({
+      where: { examId, userId, status: 'IN_PROGRESS' }
+    });
+
+    if (!attempt) {
+      throw new Error('没有进行中的考试');
+    }
+
+    const exam = await prisma.exam.findUnique({ where: { id: examId } });
+    if (!exam) throw new Error('考试不存在');
+
+    const elapsed = Date.now() - attempt.startTime.getTime();
+    const durationMs = exam.duration * 60 * 1000;
+    if (elapsed > durationMs + 60000) {
+      throw new Error('考试时间已过');
+    }
+
+    await prisma.examAttempt.update({
+      where: { id: attempt.id },
+      data: { answers: JSON.stringify(answers) }
+    });
+
+    return { saved: true };
+  }
+
   async submitExam(examId: string, userId: string, answers: Record<string, any>) {
     const attempt = await prisma.examAttempt.findFirst({
-      where: {
-        examId,
-        userId,
-        status: 'IN_PROGRESS'
-      },
+      where: { examId, userId, status: 'IN_PROGRESS' },
       include: {
         exam: {
           include: {
             questions: {
-              include: {
-                problem: true
-              }
+              include: { problem: true }
             }
           }
         }
@@ -265,12 +333,11 @@ export class ExamService {
       }
     }
 
-    await pointsService.awardExamPoints(
-      userId,
-      examId,
-      earnedScore,
-      totalScore
-    );
+    try {
+      await pointsService.awardExamPoints(userId, examId, earnedScore, totalScore);
+    } catch {
+      // 积分发放失败不影响考试提交
+    }
 
     return await prisma.examAttempt.update({
       where: { id: attempt.id },
@@ -290,17 +357,12 @@ export class ExamService {
 
   async getExamResult(examId: string, userId: string) {
     const attempt = await prisma.examAttempt.findFirst({
-      where: {
-        examId,
-        userId
-      },
+      where: { examId, userId },
       include: {
         exam: {
           include: {
             questions: {
-              include: {
-                problem: true
-              },
+              include: { problem: true },
               orderBy: { order: 'asc' }
             }
           }
@@ -309,9 +371,7 @@ export class ExamService {
       orderBy: { createdAt: 'desc' }
     });
 
-    if (!attempt) {
-      return null;
-    }
+    if (!attempt) return null;
 
     const parsedAnswers = safeJsonParse(attempt.answers, null);
     const violationsData = safeJsonParse(attempt.violations, {}) as Record<string, any>;
@@ -339,19 +399,15 @@ export class ExamService {
 
   async getExamAnalytics(examId: string, userId: string): Promise<ExamAnalytics | null> {
     const attempt = await this.getExamResult(examId, userId);
-    if (!attempt) {
-      return null;
-    }
+    if (!attempt) return null;
 
     const totalScore = attempt.exam.questions.reduce((sum: number, q: any) => sum + q.points, 0);
     const weakPoints: string[] = [];
     const recommendedProblems: any[] = [];
 
     for (const question of attempt.exam.questions) {
-      const userAnswer = attempt.answers?.[question.problemId];
-      const isCorrect = userAnswer && await this.checkAnswer(question.problemId, userAnswer, question.points);
-
-      if (!isCorrect && question.problem.knowledgeTreeId) {
+      const qr = attempt.questionResults?.find((r: QuestionResult) => r.problemId === question.problemId);
+      if (!qr?.isCorrect && question.problem.knowledgeTreeId) {
         const knowledgeNode = await prisma.knowledgeTree.findUnique({
           where: { id: question.problem.knowledgeTreeId }
         });
@@ -385,49 +441,31 @@ export class ExamService {
 
   async logProctoringEvent(examId: string, userId: string, event: string, details?: string) {
     const attempt = await prisma.examAttempt.findFirst({
-      where: {
-        examId,
-        userId,
-        status: 'IN_PROGRESS'
-      }
+      where: { examId, userId, status: 'IN_PROGRESS' }
     });
 
     if (!attempt) return;
 
     const logs = safeJsonParse(attempt.proctoringLogs, []);
+    logs.push({ timestamp: new Date().toISOString(), event, details });
 
-    logs.push({
-      timestamp: new Date().toISOString(),
-      event,
-      details
-    });
+    const violations = safeJsonParse(attempt.violations, {});
+    const violationTypes = ['FOCUS_LOST', 'TAB_SWITCH', 'COPY_ATTEMPT', 'PASTE_ATTEMPT'];
+
+    if (violationTypes.includes(event)) {
+      violations[event] = (violations[event] || 0) + 1;
+    }
 
     await prisma.examAttempt.update({
       where: { id: attempt.id },
       data: {
-        proctoringLogs: JSON.stringify(logs)
+        proctoringLogs: JSON.stringify(logs),
+        violations: JSON.stringify(violations)
       }
     });
 
-    const violations = safeJsonParse(attempt.violations, {});
-
-    const violationTypes = ['FOCUS_LOST', 'TAB_SWITCH', 'COPY_ATTEMPT', 'PASTE_ATTEMPT'];
-    if (violationTypes.includes(event)) {
-      if (!violations[event]) {
-        violations[event] = 0;
-      }
-      violations[event]++;
-
-      await prisma.examAttempt.update({
-        where: { id: attempt.id },
-        data: {
-          violations: JSON.stringify(violations)
-        }
-      });
-
-      if (violations[event] >= 5) {
-        await this.submitExam(examId, userId, safeJsonParse(attempt.answers, {}));
-      }
+    if (violations[event] >= 5) {
+      await this.submitExam(examId, userId, safeJsonParse(attempt.answers, {}));
     }
   }
 
@@ -452,10 +490,7 @@ export class ExamService {
       where: { examId },
       include: {
         user: {
-          select: {
-            username: true,
-            email: true
-          }
+          select: { username: true, email: true }
         }
       },
       orderBy: { score: 'desc' }
@@ -464,17 +499,12 @@ export class ExamService {
     return attempts.map(attempt => {
       const violationsData = safeJsonParse(attempt.violations, {}) as Record<string, any>;
       const questionResults: QuestionResult[] = violationsData.questionResults || [];
-      return {
-        ...attempt,
-        questionResults
-      };
+      return { ...attempt, questionResults };
     });
   }
 
   private async checkAnswer(problemId: string, answer: any, points: number): Promise<QuestionResult> {
-    const problem = await prisma.problem.findUnique({
-      where: { id: problemId }
-    });
+    const problem = await prisma.problem.findUnique({ where: { id: problemId } });
 
     if (!problem) {
       return { problemId, isCorrect: false, points, earnedPoints: 0, type: 'UNKNOWN' };
@@ -506,22 +536,14 @@ export class ExamService {
       language = answer.language || 'javascript';
     } else {
       return {
-        problemId,
-        isCorrect: false,
-        points,
-        earnedPoints: 0,
-        type: 'PROGRAMMING',
+        problemId, isCorrect: false, points, earnedPoints: 0, type: 'PROGRAMMING',
         detail: { error: '编程题答案格式错误，缺少代码或语言信息' }
       };
     }
 
     if (!code || !code.trim()) {
       return {
-        problemId,
-        isCorrect: false,
-        points,
-        earnedPoints: 0,
-        type: 'PROGRAMMING',
+        problemId, isCorrect: false, points, earnedPoints: 0, type: 'PROGRAMMING',
         detail: { error: '未提交代码' }
       };
     }
@@ -531,11 +553,7 @@ export class ExamService {
 
       if (testCases.length === 0) {
         return {
-          problemId,
-          isCorrect: false,
-          points,
-          earnedPoints: 0,
-          type: 'PROGRAMMING',
+          problemId, isCorrect: false, points, earnedPoints: 0, type: 'PROGRAMMING',
           detail: { error: '题目缺少测试用例' }
         };
       }
@@ -561,10 +579,7 @@ export class ExamService {
         const passed = execResult.output.trim() === tc.output.trim();
         if (passed) passedCount++;
         testResults.push({
-          testCase: i + 1,
-          passed,
-          expected: tc.output,
-          actual: execResult.output
+          testCase: i + 1, passed, expected: tc.output, actual: execResult.output
         });
       }
 
@@ -572,24 +587,12 @@ export class ExamService {
       const earnedPoints = isCorrect ? points : Math.round((passedCount / testCases.length) * points);
 
       return {
-        problemId,
-        isCorrect,
-        points,
-        earnedPoints,
-        type: 'PROGRAMMING',
-        detail: {
-          passedCount,
-          totalCount: testCases.length,
-          testResults
-        }
+        problemId, isCorrect, points, earnedPoints, type: 'PROGRAMMING',
+        detail: { passedCount, totalCount: testCases.length, testResults }
       };
     } catch (error: any) {
       return {
-        problemId,
-        isCorrect: false,
-        points,
-        earnedPoints: 0,
-        type: 'PROGRAMMING',
+        problemId, isCorrect: false, points, earnedPoints: 0, type: 'PROGRAMMING',
         detail: { error: `判题异常: ${error.message}` }
       };
     }
@@ -598,15 +601,8 @@ export class ExamService {
   private checkChoiceAnswer(problemId: string, problem: any, answer: string, points: number): QuestionResult {
     const isCorrect = answer === problem.correctAnswer;
     return {
-      problemId,
-      isCorrect,
-      points,
-      earnedPoints: isCorrect ? points : 0,
-      type: 'CHOICE',
-      detail: {
-        selectedAnswer: answer,
-        correctAnswer: problem.correctAnswer
-      }
+      problemId, isCorrect, points, earnedPoints: isCorrect ? points : 0, type: 'CHOICE',
+      detail: { selectedAnswer: answer, correctAnswer: problem.correctAnswer }
     };
   }
 
@@ -625,17 +621,8 @@ export class ExamService {
     const earnedPoints = isCorrect ? points : Math.round((correctCount / correctAnswers.length) * points);
 
     return {
-      problemId,
-      isCorrect,
-      points,
-      earnedPoints,
-      type: 'FILL_BLANK',
-      detail: {
-        correctAnswers,
-        userAnswers,
-        correctCount,
-        totalCount: correctAnswers.length
-      }
+      problemId, isCorrect, points, earnedPoints, type: 'FILL_BLANK',
+      detail: { correctAnswers, userAnswers, correctCount, totalCount: correctAnswers.length }
     };
   }
 }

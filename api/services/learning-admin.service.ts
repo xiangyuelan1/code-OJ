@@ -61,6 +61,15 @@ export class LearningAdminService {
   }
 
   async deleteStarRegion(id: string) {
+    const planets = await prisma.starPlanet.findMany({
+      where: { regionId: id },
+      select: { id: true },
+    });
+    const planetIds = planets.map(p => p.id);
+    await prisma.userPlanetProgress.deleteMany({
+      where: { planetId: { in: planetIds } },
+    });
+    await prisma.starPlanet.deleteMany({ where: { regionId: id } });
     return prisma.starRegion.delete({ where: { id } });
   }
 
@@ -108,6 +117,7 @@ export class LearningAdminService {
   }
 
   async deleteStarPlanet(id: string) {
+    await prisma.userPlanetProgress.deleteMany({ where: { planetId: id } });
     return prisma.starPlanet.delete({ where: { id } });
   }
 

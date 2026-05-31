@@ -32,6 +32,8 @@ const StarChallengePage = lazy(() => import("./pages/StarChallenge").then(m => (
 const InterviewSimulatorPage = lazy(() => import("./pages/InterviewSimulator").then(m => ({ default: m.InterviewSimulator })));
 const BugHunterPage = lazy(() => import("./pages/BugHunter").then(m => ({ default: m.BugHunter })));
 const LearningHub = lazy(() => import("./pages/LearningHub").then(m => ({ default: m.LearningHub })));
+const LearningPathPage = lazy(() => import("./pages/LearningPath").then(m => ({ default: m.LearningPathPage })));
+const LearningPathDetailPage = lazy(() => import("./pages/LearningPath").then(m => ({ default: m.LearningPathDetailPage })));
 
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard").then(m => ({ default: m.AdminDashboard })));
 const AdminProblemsPage = lazy(() => import("./pages/admin/AdminProblemsPage").then(m => ({ default: m.AdminProblemsPage })));
@@ -266,6 +268,22 @@ export default function App() {
                 element={
                   <ProtectedRoute>
                     <StarChallengePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/learning"
+                element={
+                  <ProtectedRoute>
+                    <LearningPathPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/learning/path/:id"
+                element={
+                  <ProtectedRoute>
+                    <LearningPathDetailPage />
                   </ProtectedRoute>
                 }
               />

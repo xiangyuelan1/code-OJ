@@ -1,5 +1,15 @@
 import prisma from '../lib/prisma';
 import { pointsService } from './points.service';
+import { CodeExecutor, type TestCase } from './submission.service';
+
+function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
 
 export interface MatchConfig {
   type: '1V1_RANKED' | '1V1_FRIENDLY' | 'GROUP_ARENA';
@@ -201,12 +211,50 @@ export class MatchService {
           );
         break;
       }
-      case 'PROGRAMMING':
-        // 安全风险：此处信任客户端传递的判题状态，理论上可被伪造。
-        // 前端通过 submissionsAPI.submit 先调用后端判题再传回状态，
-        // 完整修复需在此处独立执行后端判题，当前暂保留此逻辑。
-        isCorrect = answer === 'ACCEPTED';
+      case 'PROGRAMMING': {
+        let code: string;
+        let language: string;
+        try {
+          const parsed = JSON.parse(answer);
+          if (parsed && typeof parsed === 'object' && 'code' in parsed) {
+            code = parsed.code;
+            language = parsed.language || 'javascript';
+          } else {
+            code = answer;
+            language = 'javascript';
+          }
+        } catch {
+          code = answer;
+          language = 'javascript';
+        }
+
+        if (!code || !code.trim()) {
+          isCorrect = false;
+          break;
+        }
+
+        try {
+          const testCases: TestCase[] = safeJsonParse(problem.testCases, []);
+          if (testCases.length === 0) {
+            isCorrect = false;
+            break;
+          }
+
+          const executor = new CodeExecutor(problem.timeLimit || 2000);
+          let passedCount = 0;
+          for (const tc of testCases) {
+            const execResult = await executor.execute(code, language, tc.input);
+            if (execResult.timedOut || execResult.error) continue;
+            if (execResult.output.trim() === tc.output.trim()) {
+              passedCount++;
+            }
+          }
+          isCorrect = passedCount === testCases.length;
+        } catch {
+          isCorrect = false;
+        }
         break;
+      }
     }
 
     if (isCorrect) {
