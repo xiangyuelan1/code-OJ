@@ -26,10 +26,12 @@ function resolveDbPath(): string {
 
 /**
  * 验证数据库结构是否与 Prisma Client 一致
- * 通过尝试查询已知应该存在的表来检测 schema 漂移
+ * 通过尝试查询多个关键表来检测 schema 漂移
+ * 必须检查新表（如 PricingPlan），而非只查旧表（如 Exam 可能缺列但不报错）
  */
 async function verifyDatabase(): Promise<boolean> {
   try {
+    await prisma.pricingPlan.findFirst();
     await prisma.exam.findFirst();
     return true;
   } catch {
