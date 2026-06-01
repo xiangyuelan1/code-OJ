@@ -9,7 +9,7 @@ services:
       - oj-data:/app/prisma
       - oj-uploads:/app/uploads
     environment:
-      - DATABASE_URL=file:./dev.db
+      - DATABASE_URL=file:/app/prisma/dev.db
       - JWT_SECRET=oj-prod-secret-key-2026-change-me
       - JWT_EXPIRES_IN=24h
       - NODE_ENV=production
