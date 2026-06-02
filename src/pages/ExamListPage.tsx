@@ -70,11 +70,13 @@ export function ExamListPage() {
   };
 
   const getExamStatus = (exam: any) => {
-    const now = new Date();
-    if (!exam.isActive) return { label: '未开放', color: 'text-slate-400 bg-slate-700' };
-    if (exam.startTime && now < new Date(exam.startTime)) return { label: '未开始', color: 'text-yellow-400 bg-yellow-500/20' };
-    if (exam.endTime && now > new Date(exam.endTime)) return { label: '已结束', color: 'text-red-400 bg-red-500/20' };
-    return { label: '进行中', color: 'text-green-400 bg-green-500/20' };
+    const status = exam.status || 'active';
+    switch (status) {
+      case 'inactive': return { label: '未开放', color: 'text-slate-400 bg-slate-700' };
+      case 'not_started': return { label: '未开始', color: 'text-yellow-400 bg-yellow-500/20' };
+      case 'ended': return { label: '已结束', color: 'text-red-400 bg-red-500/20' };
+      default: return { label: '进行中', color: 'text-green-400 bg-green-500/20' };
+    }
   };
 
   return (
@@ -467,7 +469,7 @@ export function ExamPage() {
                         <div className="flex items-center justify-between mb-2">
                           <h4 className="text-sm font-semibold text-slate-300">代码编辑器</h4>
                           <select
-                            value={answers[currentQ.problem.id]?.language || 'javascript'}
+                            value={answers[currentQ.problem.id]?.language || 'cpp'}
                             onChange={(e) =>
                               updateAnswer(currentQ.problem.id, {
                                 ...answers[currentQ.problem.id],
@@ -487,9 +489,9 @@ export function ExamPage() {
                           <Editor
                             height="100%"
                             language={
-                              (answers[currentQ.problem.id]?.language || 'javascript') === 'python'
+                              (answers[currentQ.problem.id]?.language || 'cpp') === 'python'
                                 ? 'python'
-                                : (answers[currentQ.problem.id]?.language || 'javascript') === 'cpp' || (answers[currentQ.problem.id]?.language || 'javascript') === 'c'
+                                : (answers[currentQ.problem.id]?.language || 'cpp') === 'cpp' || (answers[currentQ.problem.id]?.language || 'cpp') === 'c'
                                 ? 'cpp'
                                 : 'javascript'
                             }

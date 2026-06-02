@@ -218,14 +218,14 @@ export class MatchService {
           const parsed = JSON.parse(answer);
           if (parsed && typeof parsed === 'object' && 'code' in parsed) {
             code = parsed.code;
-            language = parsed.language || 'javascript';
+            language = parsed.language || 'cpp';
           } else {
             code = answer;
-            language = 'javascript';
+            language = 'cpp';
           }
         } catch {
           code = answer;
-          language = 'javascript';
+          language = 'cpp';
         }
 
         if (!code || !code.trim()) {

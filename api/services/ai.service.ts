@@ -4189,6 +4189,80 @@ ${code}
     }
   }
 
+  async generateProblem(params: {
+    keywords: string;
+    type?: string;
+    difficulty?: string;
+    count?: number;
+  }, userId?: string): Promise<any[]> {
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      throw new Error('AI API未配置，请在AI设置中配置API Key');
+    }
+
+    const typeLabel: Record<string, string> = {
+      PROGRAMMING: '编程题',
+      CHOICE: '选择题',
+      FILL_BLANK: '填空题',
+      SHORT_ANSWER: '简答题',
+    };
+    const diffLabel: Record<string, string> = {
+      EASY: '简单',
+      MEDIUM: '中等',
+      HARD: '困难',
+    };
+
+    const problemType = typeLabel[params.type || 'PROGRAMMING'] || '编程题';
+    const difficulty = diffLabel[params.difficulty || 'MEDIUM'] || '中等';
+    const count = Math.min(params.count || 1, 5);
+
+    const prompt = `你是一位专业的算法竞赛出题专家。请根据以下关键词生成${count}道${problemType}，难度为${difficulty}。
+
+关键词/提示词：${params.keywords}
+
+要求：
+1. 题目描述必须清晰完整，包含背景故事、输入格式、输出格式、数据范围
+2. 每道题必须包含至少3个测试用例（含1个示例）
+3. 题目之间不要重复，尽量覆盖关键词的不同方面
+
+请严格以JSON数组格式返回，每个元素包含：
+{
+  "title": "题目标题",
+  "description": "题目描述（Markdown格式，包含输入格式、输出格式、样例）",
+  "type": "${params.type || 'PROGRAMMING'}",
+  "difficulty": "${params.difficulty || 'MEDIUM'}",
+  "tags": ["标签1", "标签2"],
+  "testCases": [
+    {"input": "输入数据", "output": "输出数据", "isSample": true},
+    {"input": "输入数据2", "output": "输出数据2", "isSample": false},
+    {"input": "边界输入", "output": "边界输出", "isSample": false}
+  ],
+  "timeLimit": 2000,
+  "memoryLimit": 256,
+  "correctAnswer": "选择题/填空题的正确答案（编程题为null）",
+  "choices": [{"key":"A","text":"选项A"},{"key":"B","text":"选项B"},{"key":"C","text":"选项C"},{"key":"D","text":"选项D"}]（仅选择题，其他类型为null）
+}
+
+只返回JSON数组，不要包含其他文字。`;
+
+    const response = await this.callAI(prompt, config, 'generate-problem', userId);
+
+    try {
+      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      const singleMatch = response.match(/\{[\s\S]*\}/);
+      if (singleMatch) {
+        return [JSON.parse(singleMatch[0])];
+      }
+    } catch (e) {
+      console.error('解析AI生成的题目失败:', e);
+    }
+
+    throw new Error('AI返回的题目格式无法解析，请重试');
+  }
+
   /**
    * 检查指定功能是否启用
    * 如果配置记录不存在，默认视为启用（向后兼容）

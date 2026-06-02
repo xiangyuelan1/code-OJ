@@ -687,4 +687,21 @@ router.post('/features/initialize', authMiddleware, roleMiddleware('ADMIN'), asy
   }
 });
 
+router.post('/generate-problem', authMiddleware, roleMiddleware('ADMIN', 'TEACHER'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { keywords, type, difficulty, count } = req.body;
+
+    if (!keywords || !keywords.trim()) {
+      res.status(400).json({ success: false, error: { message: '请输入关键词或提示词' } });
+      return;
+    }
+
+    const problems = await aiService.generateProblem({ keywords, type, difficulty, count }, userId);
+    res.json({ success: true, data: problems });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
 export default router;

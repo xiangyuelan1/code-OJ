@@ -101,6 +101,7 @@ export const aiAPI = {
   getConfig: () => api.get('/api/ai/config'),
   updateConfig: (data: any) => api.put('/api/ai/config', data),
   generateSolution: (data: any) => api.post('/api/ai/generate-solution', data),
+  generateProblem: (data: any) => api.post('/api/ai/generate-problem', data),
 };
 
 export const usersAPI = {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { problemsAPI, enhancedAiAPI } from '../../services/api';
-import { Plus, Edit, Trash2, Code, CheckCircle, PenTool, Search, Upload, Loader2, X, Tags, ChevronDown, Calendar, AlertTriangle, Clock, Filter } from 'lucide-react';
+import { problemsAPI, enhancedAiAPI, aiAPI } from '../../services/api';
+import { Plus, Edit, Trash2, Code, CheckCircle, PenTool, Search, Upload, Loader2, X, Tags, ChevronDown, Calendar, AlertTriangle, Clock, Filter, Sparkles } from 'lucide-react';
 
 type BatchDeleteMode = 'selected' | 'byTimeGroup' | 'all' | null;
 type TimeGroupKey = 'today' | 'last7days' | 'last30days' | 'last90days' | 'older' | 'custom';
@@ -96,6 +96,15 @@ export function AdminProblemsPage() {
   const [batchMode, setBatchMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [classifyLoading, setClassifyLoading] = useState(false);
+
+  const [showAiGenerate, setShowAiGenerate] = useState(false);
+  const [aiKeywords, setAiKeywords] = useState('');
+  const [aiType, setAiType] = useState('PROGRAMMING');
+  const [aiDifficulty, setAiDifficulty] = useState('MEDIUM');
+  const [aiCount, setAiCount] = useState(1);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiGeneratedProblems, setAiGeneratedProblems] = useState<any[]>([]);
+  const [aiImporting, setAiImporting] = useState(false);
 
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   const [deleteMode, setDeleteMode] = useState<BatchDeleteMode>(null);
@@ -540,6 +549,13 @@ export function AdminProblemsPage() {
             <Upload className="h-5 w-5 mr-2" />
             批量导入
           </button>
+          <button
+            onClick={() => { setShowAiGenerate(true); setAiGeneratedProblems([]); }}
+            className="flex items-center bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+          >
+            <Sparkles className="h-5 w-5 mr-2" />
+            AI 生成题目
+          </button>
           <Link
             to="/admin/problems/create"
             className="flex items-center bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
@@ -783,6 +799,188 @@ export function AdminProblemsPage() {
           )}
         </div>
       )}
+
+      {showAiGenerate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-xl p-6 max-w-2xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-fuchsia-400" />
+                AI 生成题目
+              </h2>
+              <button onClick={() => setShowAiGenerate(false)} className="text-slate-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {aiGeneratedProblems.length === 0 ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">关键词 / 提示词 *</label>
+                  <textarea
+                    value={aiKeywords}
+                    onChange={(e) => setAiKeywords(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                    rows={3}
+                    placeholder="例如：二叉树遍历、动态规划背包问题、图的最短路径、字符串匹配..."
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">题目类型</label>
+                    <select
+                      value={aiType}
+                      onChange={(e) => setAiType(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                    >
+                      <option value="PROGRAMMING">编程题</option>
+                      <option value="CHOICE">选择题</option>
+                      <option value="FILL_BLANK">填空题</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">难度</label>
+                    <select
+                      value={aiDifficulty}
+                      onChange={(e) => setAiDifficulty(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                    >
+                      <option value="EASY">简单</option>
+                      <option value="MEDIUM">中等</option>
+                      <option value="HARD">困难</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">生成数量</label>
+                    <select
+                      value={aiCount}
+                      onChange={(e) => setAiCount(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                    >
+                      {[1, 2, 3, 4, 5].map(n => (
+                        <option key={n} value={n}>{n} 道</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!aiKeywords.trim()) return;
+                    setAiGenerating(true);
+                    try {
+                      const res = await aiAPI.generateProblem({
+                        keywords: aiKeywords,
+                        type: aiType,
+                        difficulty: aiDifficulty,
+                        count: aiCount,
+                      });
+                      if (res.success && res.data?.length > 0) {
+                        setAiGeneratedProblems(res.data);
+                      } else {
+                        alert('AI未能生成有效题目，请调整关键词后重试');
+                      }
+                    } catch (error: any) {
+                      alert(error.error?.message || error.message || 'AI生成失败');
+                    } finally {
+                      setAiGenerating(false);
+                    }
+                  }}
+                  disabled={aiGenerating || !aiKeywords.trim()}
+                  className="w-full flex items-center justify-center px-4 py-3 bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 rounded-lg text-white font-semibold transition-colors disabled:opacity-50"
+                >
+                  {aiGenerating ? (
+                    <><Loader2 className="h-5 w-5 mr-2 animate-spin" />AI 正在生成中...</>
+                  ) : (
+                    <><Sparkles className="h-5 w-5 mr-2" />开始生成</>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="text-sm text-slate-400 mb-2">
+                  已生成 {aiGeneratedProblems.length} 道题目，预览如下：
+                </div>
+                {aiGeneratedProblems.map((p, idx) => (
+                  <div key={idx} className="bg-slate-700 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-fuchsia-400 font-semibold">#{idx + 1}</span>
+                      <span className="text-white font-semibold">{p.title}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded ${
+                        p.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400' :
+                        p.difficulty === 'HARD' ? 'bg-red-500/20 text-red-400' :
+                        'bg-yellow-500/20 text-yellow-400'
+                      }`}>
+                        {p.difficulty === 'EASY' ? '简单' : p.difficulty === 'HARD' ? '困难' : '中等'}
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-slate-600 text-slate-300">
+                        {p.type === 'PROGRAMMING' ? '编程题' : p.type === 'CHOICE' ? '选择题' : '填空题'}
+                      </span>
+                    </div>
+                    <p className="text-slate-400 text-sm line-clamp-3">{p.description?.slice(0, 200)}...</p>
+                    {p.tags && (
+                      <div className="flex gap-1 mt-2 flex-wrap">
+                        {p.tags.map((t: string, i: number) => (
+                          <span key={i} className="text-xs px-2 py-0.5 bg-cyan-500/10 text-cyan-400 rounded">{t}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setAiGeneratedProblems([])}
+                    className="px-4 py-2 text-slate-400 hover:text-white transition-colors"
+                  >
+                    重新生成
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setAiImporting(true);
+                      try {
+                        let created = 0;
+                        for (const p of aiGeneratedProblems) {
+                          try {
+                            await problemsAPI.create({
+                              title: p.title,
+                              description: p.description,
+                              type: p.type || 'PROGRAMMING',
+                              difficulty: p.difficulty || 'MEDIUM',
+                              tags: JSON.stringify(p.tags || []),
+                              testCases: JSON.stringify(p.testCases || []),
+                              timeLimit: p.timeLimit || 2000,
+                              memoryLimit: p.memoryLimit || 256,
+                              choices: p.choices ? JSON.stringify(p.choices) : null,
+                              correctAnswer: p.correctAnswer || null,
+                            });
+                            created++;
+                          } catch (e) {
+                            console.error('创建题目失败:', p.title, e);
+                          }
+                        }
+                        alert(`成功导入 ${created}/${aiGeneratedProblems.length} 道题目`);
+                        setShowAiGenerate(false);
+                        setAiKeywords('');
+                        setAiGeneratedProblems([]);
+                        loadProblems();
+                      } catch (error: any) {
+                        alert(error.error?.message || '导入失败');
+                      } finally {
+                        setAiImporting(false);
+                      }
+                    }}
+                    disabled={aiImporting}
+                    className="flex items-center px-4 py-2 bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 rounded-lg text-white font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {aiImporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                    {aiImporting ? '导入中...' : '全部导入'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {showImport && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-slate-800 rounded-xl p-6 max-w-2xl w-full mx-4 shadow-2xl">

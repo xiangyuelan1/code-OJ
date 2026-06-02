@@ -239,7 +239,7 @@ export function MatchBattlePage() {
   const [settlementFrom, setSettlementFrom] = useState('');
   const [notifications, setNotifications] = useState<string[]>([]);
   const [programmingCode, setProgrammingCode] = useState('');
-  const [programmingLanguage, setProgrammingLanguage] = useState('javascript');
+  const [programmingLanguage, setProgrammingLanguage] = useState('cpp');
   const [programmingSubmitting, setProgrammingSubmitting] = useState(false);
 
   // 结算冷却相关状态

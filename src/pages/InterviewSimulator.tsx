@@ -45,7 +45,7 @@ export function InterviewSimulator() {
   const [phase, setPhase] = useState<InterviewPhase>('setup');
   const [role, setRole] = useState('frontend');
   const [difficulty, setDifficulty] = useState('medium');
-  const [language, setLanguage] = useState('javascript');
+  const [language, setLanguage] = useState('cpp');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);

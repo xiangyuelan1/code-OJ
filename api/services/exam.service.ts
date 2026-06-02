@@ -146,8 +146,15 @@ export class ExamService {
 
     if (!exam) return null;
 
+    const now = new Date();
+    let status = 'active';
+    if (!exam.isActive) status = 'inactive';
+    else if (exam.startTime && now < exam.startTime) status = 'not_started';
+    else if (exam.endTime && now > exam.endTime) status = 'ended';
+
     return {
       ...exam,
+      status,
       questions: exam.questions.map(q => ({
         ...q,
         problem: {
@@ -196,7 +203,14 @@ export class ExamService {
         }
       },
       orderBy: { createdAt: 'desc' }
-    });
+    }).then(exams => exams.map(exam => {
+      const now = new Date();
+      let status = 'active';
+      if (!exam.isActive) status = 'inactive';
+      else if (exam.startTime && now < exam.startTime) status = 'not_started';
+      else if (exam.endTime && now > exam.endTime) status = 'ended';
+      return { ...exam, status };
+    }));
   }
 
   async startExam(examId: string, userId: string) {
@@ -302,7 +316,7 @@ export class ExamService {
     });
 
     if (!attempt) {
-      throw new Error('考试未开始');
+      throw new Error('没有进行中的考试记录，请先点击"开始考试"');
     }
 
     const endTime = new Date();
@@ -533,7 +547,7 @@ export class ExamService {
 
     if (typeof answer === 'object' && answer !== null && 'code' in answer) {
       code = answer.code;
-      language = answer.language || 'javascript';
+      language = answer.language || 'cpp';
     } else {
       return {
         problemId, isCorrect: false, points, earnedPoints: 0, type: 'PROGRAMMING',
