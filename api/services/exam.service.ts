@@ -1,6 +1,6 @@
 import prisma from '../lib/prisma';
 import { pointsService } from './points.service';
-import { CodeExecutor, type TestCase } from './submission.service';
+import { CodeExecutor, type TestCase, judgeSemaphore } from './submission.service';
 
 function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -624,25 +624,31 @@ export class ExamService {
       let passedCount = 0;
       const testResults: any[] = [];
 
-      for (let i = 0; i < testCases.length; i++) {
-        const tc = testCases[i];
-        const execResult = await executor.execute(code, language, tc.input);
+      // 获取判题执行槽
+      await judgeSemaphore.acquire();
+      try {
+        for (let i = 0; i < testCases.length; i++) {
+          const tc = testCases[i];
+          const execResult = await executor.execute(code, language, tc.input);
 
-        if (execResult.timedOut) {
-          testResults.push({ testCase: i + 1, passed: false, error: '超时' });
-          continue;
+          if (execResult.timedOut) {
+            testResults.push({ testCase: i + 1, passed: false, error: '超时' });
+            continue;
+          }
+
+          if (execResult.error) {
+            testResults.push({ testCase: i + 1, passed: false, error: execResult.error.substring(0, 200) });
+            continue;
+          }
+
+          const passed = execResult.output.trim() === tc.output.trim();
+          if (passed) passedCount++;
+          testResults.push({
+            testCase: i + 1, passed, expected: tc.output, actual: execResult.output
+          });
         }
-
-        if (execResult.error) {
-          testResults.push({ testCase: i + 1, passed: false, error: execResult.error.substring(0, 200) });
-          continue;
-        }
-
-        const passed = execResult.output.trim() === tc.output.trim();
-        if (passed) passedCount++;
-        testResults.push({
-          testCase: i + 1, passed, expected: tc.output, actual: execResult.output
-        });
+      } finally {
+        judgeSemaphore.release();
       }
 
       const isCorrect = passedCount === testCases.length;

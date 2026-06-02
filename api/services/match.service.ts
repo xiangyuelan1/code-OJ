@@ -1,6 +1,6 @@
 import prisma from '../lib/prisma';
 import { pointsService } from './points.service';
-import { CodeExecutor, type TestCase } from './submission.service';
+import { CodeExecutor, type TestCase, judgeSemaphore } from './submission.service';
 
 function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -242,12 +242,17 @@ export class MatchService {
 
           const executor = new CodeExecutor(problem.timeLimit || 2000);
           let passedCount = 0;
-          for (const tc of testCases) {
-            const execResult = await executor.execute(code, language, tc.input);
-            if (execResult.timedOut || execResult.error) continue;
-            if (execResult.output.trim() === tc.output.trim()) {
-              passedCount++;
+          await judgeSemaphore.acquire();
+          try {
+            for (const tc of testCases) {
+              const execResult = await executor.execute(code, language, tc.input);
+              if (execResult.timedOut || execResult.error) continue;
+              if (execResult.output.trim() === tc.output.trim()) {
+                passedCount++;
+              }
             }
+          } finally {
+            judgeSemaphore.release();
           }
           isCorrect = passedCount === testCases.length;
         } catch {

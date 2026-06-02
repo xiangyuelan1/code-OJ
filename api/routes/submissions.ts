@@ -1,10 +1,21 @@
 import { Router, type Request } from 'express';
-import { submissionService } from '../services/submission.service';
+import { submissionService, judgeSemaphore } from '../services/submission.service';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { roleMiddleware } from '../middleware/role.middleware';
 import prisma from '../lib/prisma';
 
 const router = Router();
+
+router.get('/judge-queue-status', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  res.json({
+    success: true,
+    data: {
+      activeCount: judgeSemaphore.activeCount,
+      pendingCount: judgeSemaphore.pendingCount,
+      maxConcurrent: parseInt(process.env.JUDGE_MAX_CONCURRENT || '10', 10),
+    }
+  });
+});
 
 router.get('/admin/all', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {

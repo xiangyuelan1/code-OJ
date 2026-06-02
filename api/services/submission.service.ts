@@ -25,6 +25,61 @@ export interface JudgeResult {
   score?: number;
 }
 
+/**
+ * 判题信号量 — 限制同时执行的判题进程数量
+ *
+ * 当并发请求数超过 maxConcurrent 时，后续请求排队等待。
+ * 这防止了多用户同时提交时 spawn 大量子进程导致服务器 OOM。
+ *
+ * 排队策略：FIFO（先进先出）
+ * 默认并发数：10（可通 JUDGE_MAX_CONCURRENT 环境变量调整）
+ */
+class JudgeSemaphore {
+  private maxConcurrent: number;
+  private running = 0;
+  private queue: Array<() => void> = [];
+
+  constructor(maxConcurrent: number = parseInt(process.env.JUDGE_MAX_CONCURRENT || '10', 10)) {
+    this.maxConcurrent = maxConcurrent;
+  }
+
+  /** 获取执行槽，如果当前并发已满则排队等待 */
+  async acquire(): Promise<void> {
+    if (this.running < this.maxConcurrent) {
+      this.running++;
+      return;
+    }
+    return new Promise<void>((resolve) => {
+      this.queue.push(resolve);
+    });
+  }
+
+  /** 释放执行槽，唤醒队列中下一个等待者 */
+  release(): void {
+    const next = this.queue.shift();
+    if (next) {
+      next();
+    } else {
+      this.running--;
+    }
+  }
+
+  /** 当前排队等待数 */
+  get pendingCount(): number {
+    return this.queue.length;
+  }
+
+  /** 当前正在执行数 */
+  get activeCount(): number {
+    return this.running;
+  }
+}
+
+/** 全局判题信号量实例 */
+const judgeSemaphore = new JudgeSemaphore();
+
+export { judgeSemaphore };
+
 export class CodeExecutor {
   private timeout: number;
   private memoryLimit: number;
@@ -201,6 +256,9 @@ export class SubmissionService {
       }
     });
 
+    // 获取判题执行槽（并发满时排队等待）
+    await judgeSemaphore.acquire();
+
     let result: JudgeResult;
     try {
       result = await this.judgeProgramming(code, language, testCases, problem.timeLimit, problem.memoryLimit);
@@ -210,6 +268,9 @@ export class SubmissionService {
         message: `判题异常: ${error.message}`,
         score: 0
       };
+    } finally {
+      // 无论成功失败都释放执行槽
+      judgeSemaphore.release();
     }
 
     let pointsEarned = 0;

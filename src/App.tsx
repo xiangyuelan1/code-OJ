@@ -28,6 +28,7 @@ const TeacherDashboardPage = lazy(() => import("./pages/teacher/TeacherDashboard
 const DiscussionsPage = lazy(() => import("./pages/Discussions").then(m => ({ default: m.DiscussionsPage })));
 const DiscussionDetailPage = lazy(() => import("./pages/DiscussionDetail").then(m => ({ default: m.DiscussionDetailPage })));
 const StarPathPage = lazy(() => import("./pages/StarPath").then(m => ({ default: m.StarPathPage })));
+const StarPathDemoPage = lazy(() => import("./pages/StarPathDemo").then(m => ({ default: m.StarPathDemoPage })));
 const StarRegionPage = lazy(() => import("./pages/StarRegion").then(m => ({ default: m.StarRegionPage })));
 const StarChallengePage = lazy(() => import("./pages/StarChallenge").then(m => ({ default: m.StarChallengePage })));
 const StarStoryPage = lazy(() => import("./pages/StarStory").then(m => ({ default: m.StarStoryPage })));
@@ -265,6 +266,14 @@ export default function App() {
                 element={
                   <ProtectedRoute>
                     <StarPathPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/starpath/demo"
+                element={
+                  <ProtectedRoute>
+                    <StarPathDemoPage />
                   </ProtectedRoute>
                 }
               />
