@@ -49,8 +49,14 @@ export class ExamService {
     classId?: string;
     maxAttempts?: number;
     createdBy: string;
+    scope?: string;
+    classIds?: string[];
+    pointsReward?: number;
+    medalEnabled?: boolean;
+    showRanking?: boolean;
+    passScore?: number;
   }) {
-    const { problemIds = [], points: customPoints, classId, ...examData } = data;
+    const { problemIds = [], points: customPoints, classId, scope, classIds, pointsReward, medalEnabled, showRanking, passScore, ...examData } = data;
     const normalizedClassId = classId?.trim() || undefined;
 
     return await prisma.$transaction(async (tx) => {
@@ -58,7 +64,13 @@ export class ExamService {
         data: {
           ...examData,
           classId: normalizedClassId,
-          createdBy: data.createdBy
+          createdBy: data.createdBy,
+          scope: scope || 'PUBLIC',
+          classIds: JSON.stringify(classIds || []),
+          pointsReward: pointsReward || 0,
+          medalEnabled: medalEnabled || false,
+          showRanking: showRanking !== false,
+          passScore: passScore || 60,
         }
       });
 
@@ -90,6 +102,12 @@ export class ExamService {
     maxAttempts?: number;
     problemIds?: string[];
     points?: number[];
+    scope?: string;
+    classIds?: string[];
+    pointsReward?: number;
+    medalEnabled?: boolean;
+    showRanking?: boolean;
+    passScore?: number;
   }) {
     const exam = await prisma.exam.findUnique({ where: { id: examId } });
     if (!exam) throw new Error('考试不存在');
@@ -101,7 +119,7 @@ export class ExamService {
       throw new Error('已有学生完成考试，无法修改题目和分值');
     }
 
-    const { problemIds, points: customPoints, classId, ...examData } = data;
+    const { problemIds, points: customPoints, classId, scope, classIds, pointsReward, medalEnabled, showRanking, passScore, ...examData } = data;
     const normalizedClassId = classId !== undefined ? (classId?.trim() || undefined) : undefined;
 
     return await prisma.$transaction(async (tx) => {
@@ -122,6 +140,12 @@ export class ExamService {
         data: {
           ...examData,
           ...(classId !== undefined && { classId: normalizedClassId }),
+          ...(scope !== undefined && { scope }),
+          ...(classIds !== undefined && { classIds: JSON.stringify(classIds) }),
+          ...(pointsReward !== undefined && { pointsReward }),
+          ...(medalEnabled !== undefined && { medalEnabled }),
+          ...(showRanking !== undefined && { showRanking }),
+          ...(passScore !== undefined && { passScore }),
         }
       });
     });
@@ -176,15 +200,17 @@ export class ExamService {
         where: { userId },
         select: { classId: true }
       });
-      const classIds = memberships.map(m => m.classId);
+      const userClassIds = memberships.map(m => m.classId);
 
       where = {
         ...where,
         isActive: true,
         OR: [
-          { classId: null },
-          { classId: '' },
-          { classId: { in: classIds } }
+          { scope: 'PUBLIC' },
+          { scope: null, classId: null },
+          { scope: null, classId: '' },
+          { scope: null, classId: { in: userClassIds } },
+          { classId: { in: userClassIds } },
         ]
       };
     }
@@ -240,6 +266,20 @@ export class ExamService {
       });
       if (!membership) {
         throw new Error('您不是该班级的成员，无法参加此考试');
+      }
+    }
+
+    const examScope = exam.scope || 'PUBLIC';
+    if (examScope === 'CLASS_ONLY' || examScope === 'SELECTED_CLASSES') {
+      const examClassIds: string[] = safeJsonParse(exam.classIds, []);
+      const allClassIds = exam.classId ? [exam.classId, ...examClassIds] : examClassIds;
+      if (allClassIds.length > 0) {
+        const membership = await prisma.classMember.findFirst({
+          where: { classId: { in: allClassIds }, userId }
+        });
+        if (!membership) {
+          throw new Error('您不在该考试的参加范围内');
+        }
       }
     }
 
@@ -347,18 +387,22 @@ export class ExamService {
       }
     }
 
+    const timeTaken = Math.floor((endTime.getTime() - attempt.startTime.getTime()) / 1000);
+
     try {
       await pointsService.awardExamPoints(userId, examId, earnedScore, totalScore);
     } catch {
       // 积分发放失败不影响考试提交
     }
 
-    return await prisma.examAttempt.update({
+    const updatedAttempt = await prisma.examAttempt.update({
       where: { id: attempt.id },
       data: {
         endTime,
         status: 'GRADED',
         score: earnedScore,
+        totalScore,
+        timeTaken,
         answers: JSON.stringify(answers),
         proctoringLogs: attempt.proctoringLogs,
         violations: JSON.stringify({
@@ -367,6 +411,10 @@ export class ExamService {
         })
       }
     });
+
+    this.settleExamRanking(examId, userId, earnedScore, totalScore, timeTaken, attempt.exam).catch(() => {});
+
+    return updatedAttempt;
   }
 
   async getExamResult(examId: string, userId: string) {
@@ -638,6 +686,121 @@ export class ExamService {
       problemId, isCorrect, points, earnedPoints, type: 'FILL_BLANK',
       detail: { correctAnswers, userAnswers, correctCount, totalCount: correctAnswers.length }
     };
+  }
+
+  /**
+   * 单人提交后更新排名记录（upsert）
+   */
+  private async settleExamRanking(
+    examId: string, userId: string, score: number, totalScore: number, timeTaken: number, exam: any
+  ) {
+    const examData = await prisma.exam.findUnique({ where: { id: examId } });
+    if (!examData) return;
+
+    const percentage = totalScore > 0 ? Math.round((score / totalScore) * 100) : 0;
+    let medal: string | null = null;
+    if (examData.medalEnabled) {
+      if (percentage >= 95) medal = 'GOLD';
+      else if (percentage >= 80) medal = 'SILVER';
+      else if (percentage >= examData.passScore) medal = 'BRONZE';
+    }
+
+    let pointsAwarded = 0;
+    if (examData.pointsReward > 0 && percentage >= examData.passScore) {
+      pointsAwarded = Math.round(examData.pointsReward * (percentage / 100));
+      try {
+        await pointsService.updateUserPoints(userId, pointsAwarded, 'EXAM_REWARD', {
+          examId, score, totalScore, percentage, medal
+        });
+      } catch {}
+    }
+
+    await prisma.examRanking.upsert({
+      where: { examId_userId: { examId, userId } },
+      create: { examId, userId, score, totalScore, timeTaken, rank: 0, medal, pointsAwarded },
+      update: { score, totalScore, timeTaken, medal, pointsAwarded }
+    });
+
+    await this.recalculateRanks(examId);
+  }
+
+  /**
+   * 重新计算排名（分数降序，同分用时少排前）
+   */
+  private async recalculateRanks(examId: string) {
+    const rankings = await prisma.examRanking.findMany({
+      where: { examId },
+      orderBy: [{ score: 'desc' }, { timeTaken: 'asc' }]
+    });
+
+    for (let i = 0; i < rankings.length; i++) {
+      await prisma.examRanking.update({
+        where: { id: rankings[i].id },
+        data: { rank: i + 1 }
+      });
+    }
+  }
+
+  /**
+   * 获取考试排行榜
+   */
+  async getExamRankings(examId: string) {
+    const exam = await prisma.exam.findUnique({ where: { id: examId } });
+    if (!exam) throw new Error('考试不存在');
+    if (!exam.showRanking) throw new Error('该考试未开启排行榜');
+
+    const rankings = await prisma.examRanking.findMany({
+      where: { examId },
+      include: {
+        user: { select: { id: true, username: true, avatar: true, level: true } }
+      },
+      orderBy: [{ rank: 'asc' }]
+    });
+
+    return rankings;
+  }
+
+  /**
+   * 考试结束后的批量结算（可由定时任务或手动触发）
+   */
+  async settleExam(examId: string) {
+    const exam = await prisma.exam.findUnique({ where: { id: examId } });
+    if (!exam) throw new Error('考试不存在');
+
+    const gradedAttempts = await prisma.examAttempt.findMany({
+      where: { examId, status: 'GRADED' },
+      orderBy: [{ score: 'desc' }, { timeTaken: 'asc' }]
+    });
+
+    for (let i = 0; i < gradedAttempts.length; i++) {
+      const attempt = gradedAttempts[i];
+      if (!attempt.score || !attempt.totalScore || !attempt.timeTaken) continue;
+
+      const percentage = Math.round((attempt.score / attempt.totalScore) * 100);
+      let medal: string | null = null;
+      if (exam.medalEnabled) {
+        if (percentage >= 95) medal = 'GOLD';
+        else if (percentage >= 80) medal = 'SILVER';
+        else if (percentage >= exam.passScore) medal = 'BRONZE';
+      }
+
+      let pointsAwarded = 0;
+      if (exam.pointsReward > 0 && percentage >= exam.passScore) {
+        pointsAwarded = Math.round(exam.pointsReward * (percentage / 100));
+      }
+
+      await prisma.examRanking.upsert({
+        where: { examId_userId: { examId, userId: attempt.userId } },
+        create: {
+          examId, userId: attempt.userId, score: attempt.score,
+          totalScore: attempt.totalScore, timeTaken: attempt.timeTaken,
+          rank: i + 1, medal, pointsAwarded
+        },
+        update: { rank: i + 1, medal, pointsAwarded }
+      });
+    }
+
+    return { settled: true, count: gradedAttempts.length };
   }
 }
 

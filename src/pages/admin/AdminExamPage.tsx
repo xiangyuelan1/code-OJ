@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { examAPI, problemsAPI, knowledgeTreeAPI, enhancedAiAPI } from '../../services/api';
+import { examAPI, problemsAPI, knowledgeTreeAPI, enhancedAiAPI, classAPI } from '../../services/api';
 import { Plus, Trash2, Clock, FileText, Users, ArrowLeft, Save, Eye, ChevronDown, ChevronUp, Trophy, Code, CheckCircle, XCircle, User, FolderTree, Filter, Sparkles, Loader2 } from 'lucide-react';
 
 export function AdminExamPage() {
@@ -23,8 +23,15 @@ export function AdminExamPage() {
     endTime: '',
     enableProctoring: false,
     maxAttempts: 1,
-    problemIds: [] as string[]
+    problemIds: [] as string[],
+    scope: 'PUBLIC',
+    classIds: [] as string[],
+    pointsReward: 0,
+    medalEnabled: false,
+    showRanking: true,
+    passScore: 60,
   });
+  const [classes, setClasses] = useState<any[]>([]);
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<any[]>([]);
   const [selectedKnowledgeNodeId, setSelectedKnowledgeNodeId] = useState<string>('');
@@ -35,6 +42,7 @@ export function AdminExamPage() {
 
   useEffect(() => {
     fetchExams();
+    fetchClasses();
   }, []);
 
   useEffect(() => {
@@ -55,6 +63,13 @@ export function AdminExamPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchClasses = async () => {
+    try {
+      const res = await classAPI.getAll();
+      if (res.success) setClasses(res.data || []);
+    } catch {}
   };
 
   const fetchProblems = async () => {
@@ -174,7 +189,13 @@ export function AdminExamPage() {
         duration: form.duration,
         enableProctoring: form.enableProctoring,
         maxAttempts: form.maxAttempts,
-        problemIds: form.problemIds
+        problemIds: form.problemIds,
+        scope: form.scope,
+        classIds: form.classIds,
+        pointsReward: form.pointsReward,
+        medalEnabled: form.medalEnabled,
+        showRanking: form.showRanking,
+        passScore: form.passScore,
       };
 
       if (form.startTime) {
@@ -203,7 +224,13 @@ export function AdminExamPage() {
         endTime: '',
         enableProctoring: false,
         maxAttempts: 1,
-        problemIds: []
+        problemIds: [],
+        scope: 'PUBLIC',
+        classIds: [],
+        pointsReward: 0,
+        medalEnabled: false,
+        showRanking: true,
+        passScore: 60,
       });
       fetchExams();
     } catch (error: any) {
@@ -225,7 +252,13 @@ export function AdminExamPage() {
           endTime: exam.endTime ? new Date(exam.endTime).toISOString().slice(0, 16) : '',
           enableProctoring: exam.enableProctoring || false,
           maxAttempts: exam.maxAttempts || 1,
-          problemIds: exam.questions?.map((q: any) => q.problemId) || []
+          problemIds: exam.questions?.map((q: any) => q.problemId) || [],
+          scope: exam.scope || 'PUBLIC',
+          classIds: JSON.parse(exam.classIds || '[]'),
+          pointsReward: exam.pointsReward || 0,
+          medalEnabled: exam.medalEnabled || false,
+          showRanking: exam.showRanking !== false,
+          passScore: exam.passScore || 60,
         });
         setEditingExamId(examId);
         setShowForm(true);
@@ -399,6 +432,97 @@ export function AdminExamPage() {
                   onChange={(e) => setForm({ ...form, maxAttempts: parseInt(e.target.value) || 1 })}
                   className="w-20 px-3 py-1 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+            <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+              <Users className="h-5 w-5 text-cyan-400" />
+              参加范围与奖励
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">参加范围</label>
+                <select
+                  value={form.scope}
+                  onChange={(e) => setForm({ ...form, scope: e.target.value, classIds: [] })}
+                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                >
+                  <option value="PUBLIC">公开考试（所有人可参加）</option>
+                  <option value="CLASS_ONLY">仅指定班级</option>
+                  <option value="SELECTED_CLASSES">多班级选择</option>
+                </select>
+              </div>
+              {(form.scope === 'CLASS_ONLY' || form.scope === 'SELECTED_CLASSES') && classes.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">选择班级</label>
+                  <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto bg-slate-700 rounded-lg p-3">
+                    {classes.map((cls: any) => (
+                      <label key={cls.id} className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={form.classIds.includes(cls.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setForm({ ...form, classIds: [...form.classIds, cls.id] });
+                            } else {
+                              setForm({ ...form, classIds: form.classIds.filter((id: string) => id !== cls.id) });
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        <span>{cls.name}</span>
+                        {cls._count?.members && <span className="text-xs text-slate-500">({cls._count.members}人)</span>}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">积分奖励</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.pointsReward}
+                    onChange={(e) => setForm({ ...form, pointsReward: parseInt(e.target.value) || 0 })}
+                    className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    placeholder="0 = 不额外奖励"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">及格者按得分比例发放，0表示不额外奖励</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">及格分数</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={form.passScore}
+                    onChange={(e) => setForm({ ...form, passScore: parseInt(e.target.value) || 60 })}
+                    className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-6">
+                <label className="flex items-center text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.medalEnabled}
+                    onChange={(e) => setForm({ ...form, medalEnabled: e.target.checked })}
+                    className="mr-3"
+                  />
+                  启用奖牌（🥇≥95% 🥈≥80% 🥉及格）
+                </label>
+                <label className="flex items-center text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.showRanking}
+                    onChange={(e) => setForm({ ...form, showRanking: e.target.checked })}
+                    className="mr-3"
+                  />
+                  显示排行榜
+                </label>
               </div>
             </div>
           </div>
@@ -732,7 +856,13 @@ export function AdminExamPage() {
               endTime: '',
               enableProctoring: false,
               maxAttempts: 1,
-              problemIds: []
+              problemIds: [],
+              scope: 'PUBLIC',
+              classIds: [],
+              pointsReward: 0,
+              medalEnabled: false,
+              showRanking: true,
+              passScore: 60,
             });
             fetchProblems();
             fetchKnowledgeTree();

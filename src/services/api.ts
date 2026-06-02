@@ -223,6 +223,8 @@ export const examAPI = {
   getAnalytics: (id: string) => api.get(`/api/exams/${id}/analytics`),
   getAttempts: (id: string) => api.get(`/api/exams/${id}/attempts`),
   getMyAttempts: () => api.get('/api/exams/my-attempts'),
+  getRankings: (id: string) => api.get(`/api/exams/${id}/rankings`),
+  settle: (id: string) => api.post(`/api/exams/${id}/settle`),
   logProctoring: (id: string, event: string, details?: string) =>
     api.post(`/api/exams/${id}/proctoring`, { event, details }),
 };

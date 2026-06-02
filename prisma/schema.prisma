@@ -31,6 +31,7 @@ model User {
   achievements    UserAchievement[]
   matchParticipations MatchParticipant[]
   examAttempts    ExamAttempt[]
+  examRankings    ExamRanking[]
   pointLogs       PointLog[]
   classes         Class[]           @relation("UserClasses")
   classMemberships ClassMember[]
@@ -197,12 +198,19 @@ model Exam {
   createdBy         String
   creator           User     @relation("UserExams", fields: [createdBy], references: [id])
   classId           String?
-  isActive         Boolean  @default(true)
+  isActive          Boolean  @default(true)
+  scope             String   @default("PUBLIC")
+  classIds          String   @default("[]")
+  pointsReward      Int      @default(0)
+  medalEnabled      Boolean  @default(false)
+  showRanking       Boolean  @default(true)
+  passScore         Int      @default(60)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   questions         ExamQuestion[]
-  attempts         ExamAttempt[]
-  class            Class?   @relation(fields: [classId], references: [id])
+  attempts          ExamAttempt[]
+  rankings          ExamRanking[]
+  class             Class?   @relation(fields: [classId], references: [id])
 }
 
 model ExamQuestion {
@@ -224,12 +232,31 @@ model ExamAttempt {
   startTime       DateTime @default(now())
   endTime         DateTime?
   score           Int?
+  totalScore      Int?
   status          String   @default("IN_PROGRESS")
   answers         String?
   proctoringLogs  String?
   violations      String?
+  timeTaken       Int?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model ExamRanking {
+  id          String   @id @default(uuid())
+  examId      String
+  exam        Exam     @relation(fields: [examId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  score       Int
+  totalScore  Int
+  timeTaken   Int
+  rank        Int
+  medal       String?
+  pointsAwarded Int   @default(0)
+  settledAt   DateTime @default(now())
+
+  @@unique([examId, userId])
 }
 
 model Achievement {

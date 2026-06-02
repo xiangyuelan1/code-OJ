@@ -191,4 +191,22 @@ router.post('/:id/proctoring', authMiddleware, async (req: Request, res: any): P
   }
 });
 
+router.get('/:id/rankings', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const rankings = await examService.getExamRankings(req.params.id);
+    res.json({ success: true, data: rankings });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/:id/settle', authMiddleware, roleMiddleware('ADMIN', 'TEACHER'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const result = await examService.settleExam(req.params.id);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
 export default router;

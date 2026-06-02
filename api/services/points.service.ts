@@ -108,7 +108,7 @@ export class PointsService {
     });
   }
 
-  private async updateUserPoints(
+  async updateUserPoints(
     userId: string,
     delta: number,
     reason: string,
