@@ -13,8 +13,7 @@ const PORT = parseInt(process.env.PORT || '5000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 
 /**
- * 获取数据库文件路径，用于验证和删除操作
- * Prisma 对 SQLite 的 file:./dev.db 解析为相对于 schema.prisma 所在目录（即 prisma/）
+ * 获取数据库文件路径
  */
 function resolveDbPath(): string {
   const url = process.env.DATABASE_URL || 'file:./dev.db';
@@ -38,31 +37,57 @@ function runCmd(cmd: string, label: string) {
 }
 
 /**
- * 验证数据库结构是否与 Prisma Client 一致
- * Prisma findFirst 会 SELECT 所有列，缺少列时抛出 P2022
+ * 直接用 SQL 检测并补齐缺失的列
+ * 这是解决 prisma db push 对旧 SQLite 误判 "already in sync" 的终极方案
+ * 不依赖 Prisma 迁移机制，直接 ALTER TABLE 添加缺失列
  */
-async function verifyDatabase(): Promise<{ valid: boolean; error?: string }> {
-  try {
-    await prisma.exam.findFirst();
-    await prisma.pricingPlan.findFirst();
-    await prisma.examRanking.findFirst();
-    return { valid: true };
-  } catch (e: any) {
-    return { valid: false, error: e.message };
-  }
-}
+async function ensureSchemaColumns() {
+  // 定义所有需要检查的表和列
+  // 格式: [表名, 列名, SQL类型, 默认值]
+  const requiredColumns: [string, string, string, string][] = [
+    // Exam 表新增列
+    ['Exam', 'scope', 'TEXT', "'PUBLIC'"],
+    ['Exam', 'classIds', 'TEXT', "'[]'"],
+    ['Exam', 'pointsReward', 'INTEGER', '0'],
+    ['Exam', 'medalEnabled', 'BOOLEAN', '0'],
+    ['Exam', 'showRanking', 'BOOLEAN', '1'],
+    ['Exam', 'passScore', 'INTEGER', '60'],
+    ['Exam', 'maxAttempts', 'INTEGER', '1'],
+    // ExamAttempt 表新增列
+    ['ExamAttempt', 'totalScore', 'INTEGER', 'NULL'],
+    ['ExamAttempt', 'timeTaken', 'INTEGER', 'NULL'],
+  ];
 
-/**
- * 强制清理 Prisma 迁移追踪表，使 db push 能正确检测 schema 差异
- * 解决核心问题：旧数据库有 _prisma_migrations 表，导致 db push
- * 误判为 "already in sync" 而跳过实际需要的 schema 变更
- */
-async function cleanMigrationTracking() {
+  let addedCount = 0;
+  for (const [table, column, type, defaultValue] of requiredColumns) {
+    try {
+      // 检查列是否已存在
+      const columns: any[] = await prisma.$queryRawUnsafe(`PRAGMA table_info("${table}")`);
+      const columnExists = columns.some((c: any) => c.name === column);
+
+      if (!columnExists) {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE "${table}" ADD COLUMN "${column}" ${type} DEFAULT ${defaultValue}`
+        );
+        console.log(`[DB] ✅ Added missing column: ${table}.${column}`);
+        addedCount++;
+      }
+    } catch (e: any) {
+      console.warn(`[DB] ⚠️  Could not add ${table}.${column}: ${e.message}`);
+    }
+  }
+
+  // 检查 ExamRanking 表是否存在
   try {
-    await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS _prisma_migrations');
-    console.log('[DB] ✅ Cleaned _prisma_migrations table');
+    await prisma.$queryRawUnsafe('SELECT 1 FROM "ExamRanking" LIMIT 1');
   } catch {
-    // 表不存在，忽略
+    console.log('[DB] ExamRanking table missing, will be created by db push...');
+  }
+
+  if (addedCount > 0) {
+    console.log(`[DB] ✅ Added ${addedCount} missing columns via direct SQL`);
+  } else {
+    console.log('[DB] ✅ All required columns exist');
   }
 }
 
@@ -75,18 +100,8 @@ async function initDatabase() {
   console.log('[DB] Step 1/4: Generating Prisma Client...');
   runCmd('npx prisma generate', 'Prisma Client generated');
 
-  // Step 2: 清理迁移追踪 + 同步 schema
+  // Step 2: 同步 schema（先尝试 db push）
   console.log('[DB] Step 2/4: Syncing schema to database...');
-
-  // 先连接数据库清理迁移追踪表，确保 db push 不会误判
-  try {
-    await prisma.$connect();
-    await cleanMigrationTracking();
-    await prisma.$disconnect();
-  } catch {
-    // 数据库可能不存在，忽略
-  }
-
   try {
     runCmd('npx prisma db push --accept-data-loss', 'Database schema synced');
   } catch {
@@ -99,11 +114,11 @@ async function initDatabase() {
     }
   }
 
-  // db push 后重新 generate，确保 Client 与实际数据库完全一致
+  // db push 后重新 generate
   runCmd('npx prisma generate', 'Prisma Client re-generated after db push');
 
-  // Step 3: 连接并验证
-  console.log('[DB] Step 3/4: Connecting and verifying...');
+  // Step 3: 连接 + 直接 SQL 补齐缺失列（兜底）
+  console.log('[DB] Step 3/4: Connecting and ensuring schema...');
   try {
     await prisma.$connect();
     console.log('[DB] ✅ Database connected');
@@ -112,9 +127,17 @@ async function initDatabase() {
     process.exit(1);
   }
 
-  const { valid, error } = await verifyDatabase();
-  if (!valid) {
-    console.log(`[DB] ⚠️  Database verification failed: ${error}`);
+  // 直接用 SQL 检测并补齐缺失列——这是最可靠的方式
+  // 解决 prisma db push 对旧 SQLite 数据库误判 "already in sync" 的问题
+  await ensureSchemaColumns();
+
+  // 最终验证：用 Prisma Client 查询包含新字段的表
+  try {
+    await prisma.exam.findFirst();
+    await prisma.examRanking.findFirst();
+    console.log('[DB] ✅ Database verification passed');
+  } catch (e: any) {
+    console.log(`[DB] ⚠️  Verification still failing: ${e.message}`);
     console.log('[DB] Deleting old database and recreating...');
     await prisma.$disconnect();
 
@@ -130,8 +153,6 @@ async function initDatabase() {
 
     await prisma.$connect();
     console.log('[DB] ✅ Reconnected to fresh database');
-  } else {
-    console.log('[DB] ✅ Database verification passed');
   }
 
   // Step 4: Seed if empty
