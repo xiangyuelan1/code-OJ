@@ -196,22 +196,23 @@ export class ExamService {
     let where: any = createdBy ? { createdBy } : {};
 
     if (userRole === 'STUDENT' && userId) {
+      // 查询学生所属班级
       const memberships = await prisma.classMember.findMany({
         where: { userId },
         select: { classId: true }
       });
       const userClassIds = memberships.map(m => m.classId);
 
+      // 学生可见：1) PUBLIC 考试；2) 自己所在班级的考试
+      const orConditions: any[] = [{ scope: 'PUBLIC' }];
+      if (userClassIds.length > 0) {
+        orConditions.push({ classId: { in: userClassIds } });
+      }
+
       where = {
         ...where,
         isActive: true,
-        OR: [
-          { scope: 'PUBLIC' },
-          { scope: null, classId: null },
-          { scope: null, classId: '' },
-          { scope: null, classId: { in: userClassIds } },
-          { classId: { in: userClassIds } },
-        ]
+        OR: orConditions,
       };
     }
 
