@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Sparkles, MessageSquare, ChevronRight,
@@ -89,15 +89,24 @@ function FloatingStars({ onCollect }: { onCollect: (type: string) => void }) {
   const [collected, setCollected] = useState<Set<number>>(new Set());
   const [popups, setPopups] = useState<Array<{ id: number; x: number; y: number; text: string }>>([]);
 
-  const addStar = useCallback(() => {
-    if (stars.filter(s => !collected.has(s.id)).length < 5) {
-      const rand = Math.random();
-      const type: FloatingStar['type'] = rand < 0.5 ? 'common' : rand < 0.8 ? 'rare' : rand < 0.95 ? 'epic' : 'legendary';
-      setStars(prev => [...prev.slice(-20), { id: Date.now() + Math.random(), x: 10 + Math.random() * 80, y: 10 + Math.random() * 80, type, size: type === 'legendary' ? 28 : type === 'epic' ? 22 : type === 'rare' ? 18 : 14, wobble: Math.random() * 4 + 2 }]);
-    }
-  }, [stars.length, collected.size]);
-
-  useState(() => { const t = setInterval(addStar, 3000); return () => clearInterval(t); });
+  // 定时添加漂浮星星
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setStars(prev => {
+        const active = prev.filter(s => !collected.has(s.id));
+        if (active.length >= 5) return prev;
+        const rand = Math.random();
+        const type: FloatingStar['type'] = rand < 0.5 ? 'common' : rand < 0.8 ? 'rare' : rand < 0.95 ? 'epic' : 'legendary';
+        return [...prev.slice(-20), {
+          id: Date.now() + Math.random(),
+          x: 10 + Math.random() * 80, y: 10 + Math.random() * 80, type,
+          size: type === 'legendary' ? 28 : type === 'epic' ? 22 : type === 'rare' ? 18 : 14,
+          wobble: Math.random() * 4 + 2,
+        }];
+      });
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [collected.size]);
 
   const handleCollect = (star: FloatingStar) => {
     if (collected.has(star.id)) return;
