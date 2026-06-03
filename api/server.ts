@@ -1,4 +1,3 @@
-import express from 'express';
 import { createServer } from 'http';
 import { execSync } from 'child_process';
 import { existsSync, unlinkSync } from 'fs';
@@ -21,54 +20,90 @@ function resolveDbPath(): string {
   const url = process.env.DATABASE_URL || 'file:./dev.db';
   const filePath = url.replace(/^file:/, '');
   if (filePath.startsWith('/')) return filePath;
-  // 相对路径基于 prisma/ 目录解析
   return join(process.cwd(), 'prisma', filePath);
 }
 
 /**
- * 验证数据库结构是否与 Prisma Client 一致
- * 通过尝试查询多个关键表来检测 schema 漂移
- * 必须检查新表（如 PricingPlan），而非只查旧表（如 Exam 可能缺列但不报错）
+ * 执行 shell 命令
  */
-async function verifyDatabase(): Promise<boolean> {
+function runCmd(cmd: string, label: string) {
+  console.log(`[DB] Running: ${cmd}`);
   try {
-    await prisma.pricingPlan.findFirst();
+    execSync(cmd, { stdio: 'inherit' });
+    console.log(`[DB] ✅ ${label}`);
+  } catch (e) {
+    console.error(`[DB] ❌ ${label} failed`);
+    throw e;
+  }
+}
+
+/**
+ * 验证数据库结构是否与 Prisma Client 一致
+ * Prisma findFirst 会 SELECT 所有列，缺少列时抛出 P2022
+ */
+async function verifyDatabase(): Promise<{ valid: boolean; error?: string }> {
+  try {
     await prisma.exam.findFirst();
-    return true;
+    await prisma.pricingPlan.findFirst();
+    await prisma.examRanking.findFirst();
+    return { valid: true };
+  } catch (e: any) {
+    return { valid: false, error: e.message };
+  }
+}
+
+/**
+ * 强制清理 Prisma 迁移追踪表，使 db push 能正确检测 schema 差异
+ * 解决核心问题：旧数据库有 _prisma_migrations 表，导致 db push
+ * 误判为 "already in sync" 而跳过实际需要的 schema 变更
+ */
+async function cleanMigrationTracking() {
+  try {
+    await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS _prisma_migrations');
+    console.log('[DB] ✅ Cleaned _prisma_migrations table');
   } catch {
-    return false;
+    // 表不存在，忽略
   }
 }
 
 async function initDatabase() {
-  console.log('[DB] Step 1/4: Generating Prisma Client from schema...');
-  try {
-    execSync('npx prisma generate', { stdio: 'inherit' });
-    console.log('[DB] ✅ Prisma Client generated');
-  } catch (e) {
-    console.error('[DB] ❌ Prisma generate failed:', e);
-    process.exit(1);
-  }
-
   const dbPath = resolveDbPath();
   console.log(`[DB] Database file path: ${dbPath}`);
+  console.log(`[DB] DATABASE_URL: ${process.env.DATABASE_URL}`);
 
-  console.log('[DB] Step 2/4: Syncing schema to database (prisma db push)...');
+  // Step 1: 生成 Prisma Client
+  console.log('[DB] Step 1/4: Generating Prisma Client...');
+  runCmd('npx prisma generate', 'Prisma Client generated');
+
+  // Step 2: 清理迁移追踪 + 同步 schema
+  console.log('[DB] Step 2/4: Syncing schema to database...');
+
+  // 先连接数据库清理迁移追踪表，确保 db push 不会误判
   try {
-    execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' });
-    console.log('[DB] ✅ Database schema synced');
-  } catch (e) {
-    console.error('[DB] ❌ prisma db push failed, attempting fallback...');
+    await prisma.$connect();
+    await cleanMigrationTracking();
+    await prisma.$disconnect();
+  } catch {
+    // 数据库可能不存在，忽略
+  }
+
+  try {
+    runCmd('npx prisma db push --accept-data-loss', 'Database schema synced');
+  } catch {
+    console.log('[DB] ⚠️  db push failed, trying migrate dev...');
     try {
-      execSync('npx prisma migrate dev --name init', { stdio: 'inherit' });
-      console.log('[DB] ✅ Database initialized via migrate dev');
-    } catch (e2) {
-      console.error('[DB] ❌ All database init methods failed:', e2);
+      runCmd('npx prisma migrate dev --name init', 'Database initialized via migrate');
+    } catch {
+      console.error('[DB] ❌ All database init methods failed');
       process.exit(1);
     }
   }
 
-  console.log('[DB] Step 3/4: Connecting to database...');
+  // db push 后重新 generate，确保 Client 与实际数据库完全一致
+  runCmd('npx prisma generate', 'Prisma Client re-generated after db push');
+
+  // Step 3: 连接并验证
+  console.log('[DB] Step 3/4: Connecting and verifying...');
   try {
     await prisma.$connect();
     console.log('[DB] ✅ Database connected');
@@ -77,28 +112,29 @@ async function initDatabase() {
     process.exit(1);
   }
 
-  const isValid = await verifyDatabase();
-  if (!isValid) {
-    console.log('[DB] ⚠️  Database verification failed — schema drift detected');
-    console.log('[DB] Deleting old database and recreating from schema...');
+  const { valid, error } = await verifyDatabase();
+  if (!valid) {
+    console.log(`[DB] ⚠️  Database verification failed: ${error}`);
+    console.log('[DB] Deleting old database and recreating...');
     await prisma.$disconnect();
 
-    if (existsSync(dbPath)) {
-      unlinkSync(dbPath);
-      console.log(`[DB] Deleted ${dbPath}`);
-    }
-    const journalPath = dbPath.replace(/\.db$/, '-journal');
-    if (existsSync(journalPath)) {
-      unlinkSync(journalPath);
+    for (const p of [dbPath, dbPath.replace(/\.db$/, '-journal')]) {
+      if (existsSync(p)) {
+        unlinkSync(p);
+        console.log(`[DB] Deleted ${p}`);
+      }
     }
 
-    execSync('npx prisma db push', { stdio: 'inherit' });
-    console.log('[DB] ✅ Database recreated from schema');
+    runCmd('npx prisma db push', 'Database recreated from schema');
+    runCmd('npx prisma generate', 'Prisma Client re-generated');
 
     await prisma.$connect();
     console.log('[DB] ✅ Reconnected to fresh database');
+  } else {
+    console.log('[DB] ✅ Database verification passed');
   }
 
+  // Step 4: Seed if empty
   const userCount = await prisma.user.count();
   if (userCount === 0) {
     console.log('[DB] Step 4/4: Database is empty, seeding...');
