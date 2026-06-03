@@ -8,10 +8,8 @@ if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath });
 }
 
-const originalDatabaseUrl = process.env.DATABASE_URL;
-
-const prisma = new PrismaClient({
-  datasourceUrl: originalDatabaseUrl,
-});
+// 直接使用 DATABASE_URL，不手动转换路径
+// Prisma 对 SQLite 的 file:./dev.db 解析为相对于 schema.prisma 所在目录
+const prisma = new PrismaClient();
 
 export default prisma;

@@ -14,13 +14,14 @@ const PORT = parseInt(process.env.PORT || '5000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 
 /**
- * 从 DATABASE_URL 环境变量中提取 SQLite 数据库文件路径
- * 支持格式: file:./dev.db / file:/app/prisma/dev.db
+ * 获取数据库文件路径，用于验证和删除操作
+ * Prisma 对 SQLite 的 file:./dev.db 解析为相对于 schema.prisma 所在目录（即 prisma/）
  */
 function resolveDbPath(): string {
   const url = process.env.DATABASE_URL || 'file:./dev.db';
   const filePath = url.replace(/^file:/, '');
   if (filePath.startsWith('/')) return filePath;
+  // 相对路径基于 prisma/ 目录解析
   return join(process.cwd(), 'prisma', filePath);
 }
 

@@ -7,13 +7,8 @@ if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath });
 }
 
-if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('file:')) {
-  const dbFilePath = process.env.DATABASE_URL.replace('file:', '');
-  if (!path.isAbsolute(dbFilePath)) {
-    const absPath = path.resolve(process.cwd(), dbFilePath).replace(/\\/g, '/');
-    process.env.DATABASE_URL = `file:${absPath}`;
-  }
-}
+// 不修改 DATABASE_URL，让 Prisma 按自身规则解析相对路径
+// Prisma 对 SQLite 的 file:./dev.db 解析为相对于 schema.prisma 所在目录
 
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
@@ -24,23 +19,39 @@ async function main() {
   console.log('🌱 开始填充数据...');
 
   console.log('🧹 清理旧数据...');
-  await prisma.pointLog.deleteMany();
-  await prisma.userAchievement.deleteMany();
-  await prisma.submission.deleteMany();
-  await prisma.matchProblem.deleteMany();
-  await prisma.matchParticipant.deleteMany();
-  await prisma.match.deleteMany();
-  await prisma.examQuestion.deleteMany();
-  await prisma.examAttempt.deleteMany();
-  await prisma.exam.deleteMany();
-  await prisma.solution.deleteMany();
-  await prisma.problem.deleteMany();
-  await prisma.knowledgeTree.deleteMany();
-  await prisma.achievement.deleteMany();
-  await prisma.levelConfig.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.aIConfig.deleteMany();
+  // SQLite 禁用外键约束后批量删除，避免删除顺序导致的外键冲突
+  await prisma.$executeRawUnsafe('PRAGMA foreign_keys = OFF');
+  const tableNames = [
+    'UserPlanetCustomization', 'UserSpacePet', 'UserDailyChest', 'UserSkillSnapshot',
+    'TeamMember', 'ChallengeTeam', 'TeamChallenge', 'StarPathFriend',
+    'PlanetBuilding', 'UserEventParticipation', 'SeasonEvent',
+    'UserStoryProgress', 'StoryChapter', 'StoryArc',
+    'UserPlanetProgress', 'StarPlanet', 'StarRegion',
+    'UserDailyChallenge', 'DailyChallenge',
+    'DiscussionVote', 'Reply', 'Discussion',
+    'LearnerProfile',
+    'PricingPlan', 'PromotionUsage', 'Promotion',
+    'AIUsageLog', 'AIProviderConfig', 'AIFeatureConfig',
+    'ClassBattle', 'HomeworkSubmission', 'Homework',
+    'ClassJoinRequest', 'Order', 'Payment',
+    'ClassMember', 'Class',
+    'ExamRanking', 'ExamAttempt', 'ExamQuestion', 'Exam',
+    'MatchParticipant', 'MatchProblem', 'Match',
+    'Submission', 'Solution', 'Problem',
+    'UserAchievement', 'Achievement',
+    'PointLog', 'LevelConfig', 'KnowledgeTree',
+    'LearningAchievement', 'LearningPathStep', 'LearningPath',
+    'InterviewTemplate', 'BugScenario', 'SystemFeature',
+    'SystemConfig', 'Session', 'AIConfig', 'User',
+  ];
+  for (const table of tableNames) {
+    try {
+      await prisma.$executeRawUnsafe(`DELETE FROM "${table}"`);
+    } catch {
+      // 表可能不存在（新 schema push 后首次 seed），忽略
+    }
+  }
+  await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON');
 
   // ========== 1. 用户 ==========
   console.log('👤 创建用户...');
