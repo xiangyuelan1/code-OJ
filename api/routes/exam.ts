@@ -34,7 +34,11 @@ router.get('/', authMiddleware, async (req: Request, res: any): Promise<void> =>
 router.post('/', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
-    const { title, description, type, duration, startTime, endTime, enableProctoring, problemIds, points, classId, maxAttempts } = req.body;
+    const {
+      title, description, type, duration, startTime, endTime, enableProctoring,
+      problemIds, points, classId, maxAttempts,
+      scope, classIds, pointsReward, medalEnabled, showRanking, passScore,
+    } = req.body;
     const exam = await examService.createExam({
       title,
       description,
@@ -47,6 +51,12 @@ router.post('/', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, r
       points,
       classId,
       maxAttempts,
+      scope,
+      classIds,
+      pointsReward,
+      medalEnabled,
+      showRanking,
+      passScore,
       createdBy: userId
     });
     res.status(201).json({ success: true, data: exam });
@@ -81,7 +91,11 @@ router.get('/:id', authMiddleware, async (req: Request, res: any): Promise<void>
 router.put('/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
-    const { title, description, type, duration, startTime, endTime, enableProctoring, isActive, classId, maxAttempts, problemIds, points } = req.body;
+    const {
+      title, description, type, duration, startTime, endTime, enableProctoring,
+      isActive, classId, maxAttempts, problemIds, points,
+      scope, classIds, pointsReward, medalEnabled, showRanking, passScore,
+    } = req.body;
     const exam = await examService.updateExam(req.params.id, userId, {
       title,
       description,
@@ -94,7 +108,13 @@ router.put('/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request,
       classId,
       maxAttempts,
       problemIds,
-      points
+      points,
+      scope,
+      classIds,
+      pointsReward,
+      medalEnabled,
+      showRanking,
+      passScore,
     });
     res.json({ success: true, data: exam });
   } catch (error: any) {
