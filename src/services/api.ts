@@ -675,6 +675,37 @@ export const dailyAPI = {
   getStats: () => api.get('/api/daily-challenge/stats'),
 };
 
+/* ── 错题本 API ── */
+export const wrongRecordAPI = {
+  getAll: (params?: { mastered?: boolean; source?: string; knowledgeTreeId?: string; page?: number; pageSize?: number }) =>
+    api.get('/api/wrong-records', { params }),
+  getStats: () => api.get('/api/wrong-records/stats'),
+  getRecommendations: () => api.get('/api/wrong-records/recommendations'),
+  create: (data: { problemId: string; source?: string; wrongAnswer?: string; correctAnswer?: string }) =>
+    api.post('/api/wrong-records', data),
+  markMastered: (id: string) => api.put(`/api/wrong-records/${id}/master`),
+  retry: (id: string) => api.put(`/api/wrong-records/${id}/retry`),
+  delete: (id: string) => api.delete(`/api/wrong-records/${id}`),
+};
+
+/* ── 每日签到 API ── */
+export const checkinAPI = {
+  checkin: () => api.post('/api/checkin'),
+  getStatus: () => api.get('/api/checkin/status'),
+  getHistory: (month?: string) => api.get('/api/checkin/history', { params: { month } }),
+};
+
+/* ── 班级统计 API ── */
+export const classStatsAPI = {
+  getOverview: (classId: string) => api.get(`/api/class-stats/${classId}/overview`),
+  getLeaderboard: (classId: string, params?: { sortBy?: string; limit?: number }) =>
+    api.get(`/api/class-stats/${classId}/leaderboard`, { params }),
+  getProblemStats: (classId: string) => api.get(`/api/class-stats/${classId}/problem-stats`),
+  getStudentStats: (classId: string, userId: string) => api.get(`/api/class-stats/${classId}/student/${userId}`),
+  getExamStats: (classId: string) => api.get(`/api/class-stats/${classId}/exam-stats`),
+  getGlobalLeaderboard: () => api.get('/api/class-stats/leaderboard'),
+};
+
 export const learningAdminAPI = {
   getStats: () => api.get('/api/learning-admin/stats'),
   manageRegion: (data: any) => api.post('/api/learning-admin/region', data),

@@ -25,6 +25,7 @@ const PaymentPage = lazy(() => import("./pages/PaymentPage").then(m => ({ defaul
 const AppDownloadPage = lazy(() => import("./pages/AppDownload").then(m => ({ default: m.AppDownloadPage })));
 const TeacherClassesPage = lazy(() => import("./pages/teacher/TeacherClassesPage").then(m => ({ default: m.TeacherClassesPage })));
 const TeacherDashboardPage = lazy(() => import("./pages/teacher/TeacherDashboard").then(m => ({ default: m.TeacherDashboard })));
+const TeacherClassStatsPage = lazy(() => import("./pages/teacher/TeacherClassStatsPage").then(m => ({ default: m.TeacherClassStatsPage })));
 const DiscussionsPage = lazy(() => import("./pages/Discussions").then(m => ({ default: m.DiscussionsPage })));
 const DiscussionDetailPage = lazy(() => import("./pages/DiscussionDetail").then(m => ({ default: m.DiscussionDetailPage })));
 const StarPathPage = lazy(() => import("./pages/StarPath").then(m => ({ default: m.StarPathPage })));
@@ -40,6 +41,9 @@ const BugHunterPage = lazy(() => import("./pages/BugHunter").then(m => ({ defaul
 const LearningHub = lazy(() => import("./pages/LearningHub").then(m => ({ default: m.LearningHub })));
 const LearningPathPage = lazy(() => import("./pages/LearningPath").then(m => ({ default: m.LearningPathPage })));
 const LearningPathDetailPage = lazy(() => import("./pages/LearningPath").then(m => ({ default: m.LearningPathDetailPage })));
+const WrongRecordPage = lazy(() => import("./pages/WrongRecordPage").then(m => ({ default: m.WrongRecordPage })));
+const CheckInPage = lazy(() => import("./pages/CheckInPage").then(m => ({ default: m.CheckInPage })));
+const ClassLeaderboardPage = lazy(() => import("./pages/ClassLeaderboardPage").then(m => ({ default: m.ClassLeaderboardPage })));
 
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard").then(m => ({ default: m.AdminDashboard })));
 const AdminProblemsPage = lazy(() => import("./pages/admin/AdminProblemsPage").then(m => ({ default: m.AdminProblemsPage })));
@@ -251,6 +255,14 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/teacher/class-stats"
+                element={
+                  <ProtectedRoute allowedRole="TEACHER">
+                    <TeacherClassStatsPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/discussions" element={<DiscussionsPage />} />
               <Route path="/discussions/:id" element={<DiscussionDetailPage />} />
               <Route
@@ -354,6 +366,30 @@ export default function App() {
                 element={
                   <ProtectedRoute>
                     <BugHunterPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/wrong-records"
+                element={
+                  <ProtectedRoute>
+                    <WrongRecordPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/checkin"
+                element={
+                  <ProtectedRoute>
+                    <CheckInPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/class-leaderboard"
+                element={
+                  <ProtectedRoute>
+                    <ClassLeaderboardPage />
                   </ProtectedRoute>
                 }
               />

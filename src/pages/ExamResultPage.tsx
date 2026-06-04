@@ -112,6 +112,11 @@ export function ExamResultPage() {
   const correctCount = questionResults.filter((r: any) => r.isCorrect).length;
   const wrongCount = questionResults.filter((r: any) => !r.isCorrect).length;
 
+  // 根据考试设置决定是否显示正确答案
+  // NEVER: 不显示正确答案; AFTER_EXAM: 考后显示; ALWAYS: 始终显示
+  const showAnswerAfter = exam?.showAnswerAfter || 'NEVER';
+  const canShowCorrectAnswers = showAnswerAfter === 'AFTER_EXAM' || showAnswerAfter === 'ALWAYS';
+
   const wrongQuestions = questions.filter((q: any) => {
     const qr = questionResults.find((r: any) => r.problemId === q.problemId);
     return qr && !qr.isCorrect;
@@ -385,7 +390,7 @@ export function ExamResultPage() {
                               {q.problem?.type === 'CHOICE' && (
                                 <>
                                   <div>你的答案: <span className="text-white">{userAnswer || '未作答'}</span></div>
-                                  {qr?.detail?.correctAnswer && (
+                                  {canShowCorrectAnswers && qr?.detail?.correctAnswer && (
                                     <div>正确答案: <span className="text-green-400">{qr.detail.correctAnswer}</span></div>
                                   )}
                                 </>
@@ -395,7 +400,7 @@ export function ExamResultPage() {
                                   <div>你的答案: <span className="text-white">
                                     {Array.isArray(userAnswer) ? userAnswer.join(', ') : userAnswer || '未作答'}
                                   </span></div>
-                                  {qr?.detail?.correctAnswers && (
+                                  {canShowCorrectAnswers && qr?.detail?.correctAnswers && (
                                     <div>正确答案: <span className="text-green-400">{qr.detail.correctAnswers.join(', ')}</span></div>
                                   )}
                                 </>
@@ -406,6 +411,12 @@ export function ExamResultPage() {
                                 </div>
                               )}
                             </div>
+
+                            {!canShowCorrectAnswers && (
+                              <div className="mt-2 text-xs text-slate-500 italic">
+                                教师未开启考后答案展示
+                              </div>
+                            )}
 
                             {/* 查看解析 */}
                             <div className="mt-3">
@@ -530,7 +541,7 @@ export function ExamResultPage() {
                     <div className="text-slate-400">
                       你的答案: <span className="text-white">{userAnswer || '未作答'}</span>
                     </div>
-                    {!isCorrect && qr?.detail?.correctAnswer && (
+                    {!isCorrect && canShowCorrectAnswers && qr?.detail?.correctAnswer && (
                       <div className="text-slate-400">
                         正确答案: <span className="text-green-400">{qr.detail.correctAnswer}</span>
                       </div>
@@ -545,7 +556,7 @@ export function ExamResultPage() {
                         {Array.isArray(userAnswer) ? userAnswer.join(', ') : userAnswer || '未作答'}
                       </span>
                     </div>
-                    {!isCorrect && qr?.detail?.correctAnswers && (
+                    {!isCorrect && canShowCorrectAnswers && qr?.detail?.correctAnswers && (
                       <div className="text-slate-400">
                         正确答案: <span className="text-green-400">{qr.detail.correctAnswers.join(', ')}</span>
                       </div>

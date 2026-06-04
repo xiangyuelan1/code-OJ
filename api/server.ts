@@ -36,6 +36,7 @@ async function ensureSchemaColumns() {
     ['Exam', 'showRanking', 'BOOLEAN', '1'],
     ['Exam', 'passScore', 'INTEGER', '60'],
     ['Exam', 'maxAttempts', 'INTEGER', '1'],
+    ['Exam', 'showAnswerAfter', 'TEXT', "'NEVER'"],
     ['ExamAttempt', 'totalScore', 'INTEGER', 'NULL'],
     ['ExamAttempt', 'timeTaken', 'INTEGER', 'NULL'],
   ];
@@ -121,20 +122,26 @@ async function initDatabase() {
     await prisma.exam.findFirst();
     console.log('[DB] ✅ Database verification passed');
   } catch (e: any) {
-    console.log(`[DB] ⚠️  Verification failed: ${e.message}`);
-    console.log('[DB] Deleting old database and recreating...');
-    await prisma.$disconnect();
-
-    for (const p of [dbPath, dbPath.replace(/\.db$/, '-journal')]) {
-      if (existsSync(p)) {
-        try { unlinkSync(p); } catch { /* ignore */ }
-        console.log(`[DB] Deleted ${p}`);
+    console.log(`[DB] ⚠️  Verification failed after ensureSchemaColumns: ${e.message}`);
+    // 生产环境不自动删库，避免数据丢失
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[DB] ❌ CRITICAL: Database schema mismatch in production!');
+      console.error('[DB] Manual intervention required. NOT deleting database.');
+      // 仍然允许启动，ensureSchemaColumns 已尽力修复
+    } else {
+      // 开发环境：可以安全地删库重建
+      console.log('[DB] Dev mode: Deleting old database and recreating...');
+      await prisma.$disconnect();
+      for (const p of [dbPath, dbPath + '-journal', dbPath + '-wal', dbPath + '-shm']) {
+        if (existsSync(p)) {
+          try { unlinkSync(p); } catch { /* ignore */ }
+          console.log(`[DB] Deleted ${p}`);
+        }
       }
+      execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' });
+      await prisma.$connect();
+      console.log('[DB] ✅ Reconnected to fresh database');
     }
-
-    execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' });
-    await prisma.$connect();
-    console.log('[DB] ✅ Reconnected to fresh database');
   }
 
   // Seed if empty

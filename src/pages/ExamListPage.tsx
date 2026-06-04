@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { examAPI } from '../services/api';
-import { Clock, Users, FileText, Trophy, ArrowLeft, User, Save, AlertTriangle } from 'lucide-react';
+import { Clock, Users, FileText, User, Save, AlertTriangle } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { MarkdownRenderer } from '../components/MarkdownEditor';
 
@@ -24,15 +24,19 @@ export function ExamListPage() {
       if (response.success) {
         setExams(response.data || []);
       }
+    } catch (error: any) {
+      setError(error.error?.message || error.message || '获取考试列表失败');
+    }
+    // 单独请求我的尝试，失败不影响考试列表显示
+    try {
       const attemptsRes = await examAPI.getMyAttempts();
       if (attemptsRes.success) {
         setMyAttempts(attemptsRes.data || []);
       }
-    } catch (error: any) {
-      setError(error.error?.message || error.message || '获取考试列表失败');
-    } finally {
-      setLoading(false);
+    } catch {
+      // 获取尝试记录失败不影响主流程
     }
+    setLoading(false);
   };
 
   if (loading) {
@@ -70,7 +74,16 @@ export function ExamListPage() {
   };
 
   const getExamStatus = (exam: any) => {
-    const status = exam.status || 'active';
+    // 优先使用后端返回的 status
+    let status = exam.status;
+    // 兜底：如果后端未返回 status，前端自行计算
+    if (!status) {
+      const now = new Date();
+      if (!exam.isActive) status = 'inactive';
+      else if (exam.startTime && now < new Date(exam.startTime)) status = 'not_started';
+      else if (exam.endTime && now > new Date(exam.endTime)) status = 'ended';
+      else status = 'active';
+    }
     switch (status) {
       case 'inactive': return { label: '未开放', color: 'text-slate-400 bg-slate-700' };
       case 'not_started': return { label: '未开始', color: 'text-yellow-400 bg-yellow-500/20' };
@@ -381,7 +394,7 @@ export function ExamPage() {
     };
     const handlePaste = (e: ClipboardEvent) => {
       if (examId) {
-        e.preventDefault();
+        // 记录粘贴行为但不阻止，因为编程题需要粘贴代码
         examAPI.logProctoring(examId, 'PASTE_ATTEMPT').catch(() => {});
       }
     };
@@ -409,19 +422,46 @@ export function ExamPage() {
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       <div className="bg-slate-800 p-4 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-xl font-semibold text-cyan-400">{exam.title}</h1>
-          <div className="flex items-center gap-4">
-            {saving && <span className="text-xs text-slate-400">保存中...</span>}
-            {lastSaved && !saving && (
-              <span className="text-xs text-slate-500">上次保存: {lastSaved.toLocaleTimeString()}</span>
-            )}
-            <div className={`text-2xl font-mono flex items-center gap-2 ${
-              isTimeCritical ? 'text-red-400 animate-pulse' : isTimeWarning ? 'text-red-400' : 'text-green-400'
-            }`}>
-              {isTimeCritical && <AlertTriangle className="h-5 w-5" />}
-              {formatTime(timeLeft)}
+        <div className="max-w-7xl mx-auto">
+          <div className="flex justify-between items-center">
+            <h1 className="text-xl font-semibold text-cyan-400">{exam.title}</h1>
+            <div className="flex items-center gap-4">
+              {saving && <span className="text-xs text-slate-400">保存中...</span>}
+              {lastSaved && !saving && (
+                <span className="text-xs text-slate-500">上次保存: {lastSaved.toLocaleTimeString()}</span>
+              )}
+              <div className={`text-2xl font-mono flex items-center gap-2 ${
+                isTimeCritical ? 'text-red-400 animate-pulse' : isTimeWarning ? 'text-red-400' : 'text-green-400'
+              }`}>
+                {isTimeCritical && <AlertTriangle className="h-5 w-5" />}
+                {formatTime(timeLeft)}
+              </div>
             </div>
+          </div>
+          {/* 答题进度条 */}
+          <div className="mt-3 flex items-center gap-3">
+            <div className="flex-1 bg-slate-700 rounded-full h-2.5">
+              <div
+                className="h-2.5 rounded-full transition-all duration-300"
+                style={{
+                  width: `${questions.length > 0 ? (questions.filter((q: any) => {
+                    const hasAnswer = q.problem.type === 'PROGRAMMING'
+                      ? answers[q.problem.id]?.code?.trim()
+                      : answers[q.problem.id];
+                    return hasAnswer;
+                  }).length / questions.length) * 100 : 0}%`,
+                  backgroundColor: isTimeWarning ? '#ef4444' : '#06b6d4'
+                }}
+              />
+            </div>
+            <span className="text-xs text-slate-400 whitespace-nowrap">
+              已答 {questions.filter((q: any) => {
+                const hasAnswer = q.problem.type === 'PROGRAMMING'
+                  ? answers[q.problem.id]?.code?.trim()
+                  : answers[q.problem.id];
+                return hasAnswer;
+              }).length} / {questions.length}
+            </span>
           </div>
         </div>
       </div>

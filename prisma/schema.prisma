@@ -59,6 +59,8 @@ model User {
   dailyChests      UserDailyChest[]
   spacePet         UserSpacePet?
   planetCustoms    UserPlanetCustomization[]
+  wrongRecords     WrongRecord[]
+  dailyCheckIns    DailyCheckIn[]
 }
 
 model Session {
@@ -113,6 +115,7 @@ model Problem {
   matchProblems         MatchProblem[]
   discussions           Discussion[]
   dailyChallenges       DailyChallenge[]
+  wrongRecords          WrongRecord[]
 }
 
 model Solution {
@@ -205,6 +208,7 @@ model Exam {
   medalEnabled      Boolean  @default(false)
   showRanking       Boolean  @default(true)
   passScore         Int      @default(60)
+  showAnswerAfter   String   @default("NEVER")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   questions         ExamQuestion[]
@@ -948,4 +952,46 @@ model UserPlanetCustomization {
   updatedAt   DateTime @updatedAt
 
   @@unique([userId, planetId])
+}
+
+/// 错题记录 - 自动收集用户做错的题目，支持重做和标记掌握
+model WrongRecord {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  problemId       String
+  problem         Problem  @relation(fields: [problemId], references: [id])
+  /// 错误来源：EXAM / PRACTICE / MATCH / DAILY
+  source          String   @default("PRACTICE")
+  /// 用户的错误答案
+  wrongAnswer     String?
+  /// 正确答案
+  correctAnswer   String?
+  /// 重做次数
+  retryCount      Int      @default(0)
+  /// 是否已掌握
+  mastered        Boolean  @default(false)
+  /// 掌握时间
+  masteredAt      DateTime?
+  /// 最后一次重做时间
+  lastRetryAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, problemId])
+}
+
+/// 每日签到记录
+model DailyCheckIn {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  checkDate   String
+  /// 签到时连续天数
+  streakDays  Int      @default(1)
+  /// 本次签到获得积分
+  pointsEarned Int     @default(0)
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, checkDate])
 }

@@ -37,15 +37,15 @@ router.post('/', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, r
     const {
       title, description, type, duration, startTime, endTime, enableProctoring,
       problemIds, points, classId, maxAttempts,
-      scope, classIds, pointsReward, medalEnabled, showRanking, passScore,
+      scope, classIds, pointsReward, medalEnabled, showRanking, passScore, showAnswerAfter,
     } = req.body;
     const exam = await examService.createExam({
       title,
       description,
       type: type || 'PRACTICE',
       duration: duration || 60,
-      startTime: startTime ? new Date(startTime) : undefined,
-      endTime: endTime ? new Date(endTime) : undefined,
+      startTime: startTime === '' || startTime === null ? null : startTime ? new Date(startTime) : undefined,
+      endTime: endTime === '' || endTime === null ? null : endTime ? new Date(endTime) : undefined,
       enableProctoring,
       problemIds: problemIds || [],
       points,
@@ -57,6 +57,7 @@ router.post('/', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, r
       medalEnabled,
       showRanking,
       passScore,
+      showAnswerAfter,
       createdBy: userId
     });
     res.status(201).json({ success: true, data: exam });
@@ -94,15 +95,15 @@ router.put('/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request,
     const {
       title, description, type, duration, startTime, endTime, enableProctoring,
       isActive, classId, maxAttempts, problemIds, points,
-      scope, classIds, pointsReward, medalEnabled, showRanking, passScore,
+      scope, classIds, pointsReward, medalEnabled, showRanking, passScore, showAnswerAfter,
     } = req.body;
     const exam = await examService.updateExam(req.params.id, userId, {
       title,
       description,
       type,
       duration,
-      startTime: startTime ? new Date(startTime) : undefined,
-      endTime: endTime ? new Date(endTime) : undefined,
+      startTime: startTime === '' || startTime === null ? null : startTime ? new Date(startTime) : undefined,
+      endTime: endTime === '' || endTime === null ? null : endTime ? new Date(endTime) : undefined,
       enableProctoring,
       isActive,
       classId,
@@ -115,6 +116,7 @@ router.put('/:id', authMiddleware, roleMiddleware('ADMIN'), async (req: Request,
       medalEnabled,
       showRanking,
       passScore,
+      showAnswerAfter,
     });
     res.json({ success: true, data: exam });
   } catch (error: any) {

@@ -55,8 +55,9 @@ export class ExamService {
     medalEnabled?: boolean;
     showRanking?: boolean;
     passScore?: number;
+    showAnswerAfter?: string;
   }) {
-    const { problemIds = [], points: customPoints, classId, scope, classIds, pointsReward, medalEnabled, showRanking, passScore, ...examData } = data;
+    const { problemIds = [], points: customPoints, classId, scope, classIds, pointsReward, medalEnabled, showRanking, passScore, showAnswerAfter, ...examData } = data;
     const normalizedClassId = classId?.trim() || undefined;
 
     return await prisma.$transaction(async (tx) => {
@@ -71,6 +72,7 @@ export class ExamService {
           medalEnabled: medalEnabled || false,
           showRanking: showRanking !== false,
           passScore: passScore || 60,
+          showAnswerAfter: showAnswerAfter || 'NEVER',
         }
       });
 
@@ -108,6 +110,7 @@ export class ExamService {
     medalEnabled?: boolean;
     showRanking?: boolean;
     passScore?: number;
+    showAnswerAfter?: string;
   }) {
     const exam = await prisma.exam.findUnique({ where: { id: examId } });
     if (!exam) throw new Error('考试不存在');
@@ -119,7 +122,7 @@ export class ExamService {
       throw new Error('已有学生完成考试，无法修改题目和分值');
     }
 
-    const { problemIds, points: customPoints, classId, scope, classIds, pointsReward, medalEnabled, showRanking, passScore, ...examData } = data;
+    const { problemIds, points: customPoints, classId, scope, classIds, pointsReward, medalEnabled, showRanking, passScore, showAnswerAfter, ...examData } = data;
     const normalizedClassId = classId !== undefined ? (classId?.trim() || undefined) : undefined;
 
     return await prisma.$transaction(async (tx) => {
@@ -146,15 +149,19 @@ export class ExamService {
           ...(medalEnabled !== undefined && { medalEnabled }),
           ...(showRanking !== undefined && { showRanking }),
           ...(passScore !== undefined && { passScore }),
+          ...(showAnswerAfter !== undefined && { showAnswerAfter }),
         }
       });
     });
   }
 
   async deleteExam(examId: string) {
-    await prisma.examAttempt.deleteMany({ where: { examId } });
-    await prisma.examQuestion.deleteMany({ where: { examId } });
-    return await prisma.exam.delete({ where: { id: examId } });
+    return prisma.$transaction(async (tx) => {
+      await tx.examRanking.deleteMany({ where: { examId } });
+      await tx.examQuestion.deleteMany({ where: { examId } });
+      await tx.examAttempt.deleteMany({ where: { examId } });
+      await tx.exam.delete({ where: { id: examId } });
+    });
   }
 
   async getExam(examId: string) {
@@ -170,15 +177,9 @@ export class ExamService {
 
     if (!exam) return null;
 
-    const now = new Date();
-    let status = 'active';
-    if (!exam.isActive) status = 'inactive';
-    else if (exam.startTime && now < exam.startTime) status = 'not_started';
-    else if (exam.endTime && now > exam.endTime) status = 'ended';
-
     return {
       ...exam,
-      status,
+      status: this.computeExamStatus(exam),
       questions: exam.questions.map(q => ({
         ...q,
         problem: {
@@ -195,28 +196,24 @@ export class ExamService {
   async getExams(createdBy?: string, userId?: string, userRole?: string) {
     let where: any = createdBy ? { createdBy } : {};
 
-    if (userRole === 'STUDENT' && userId) {
-      // 查询学生所属班级
+    // 学生视角：先用宽松条件查 active 考试，再在应用层过滤可见性
+    const isStudentView = userRole === 'STUDENT' && userId;
+    let userClassIds: string[] = [];
+
+    if (isStudentView) {
       const memberships = await prisma.classMember.findMany({
         where: { userId },
         select: { classId: true }
       });
-      const userClassIds = memberships.map(m => m.classId);
-
-      // 学生可见：1) PUBLIC 考试；2) 自己所在班级的考试
-      const orConditions: any[] = [{ scope: 'PUBLIC' }];
-      if (userClassIds.length > 0) {
-        orConditions.push({ classId: { in: userClassIds } });
-      }
+      userClassIds = memberships.map(m => m.classId);
 
       where = {
         ...where,
         isActive: true,
-        OR: orConditions,
       };
     }
 
-    return await prisma.exam.findMany({
+    const exams = await prisma.exam.findMany({
       where,
       include: {
         creator: {
@@ -230,14 +227,40 @@ export class ExamService {
         }
       },
       orderBy: { createdAt: 'desc' }
-    }).then(exams => exams.map(exam => {
-      const now = new Date();
-      let status = 'active';
-      if (!exam.isActive) status = 'inactive';
-      else if (exam.startTime && now < exam.startTime) status = 'not_started';
-      else if (exam.endTime && now > exam.endTime) status = 'ended';
-      return { ...exam, status };
-    }));
+    });
+
+    // 计算状态并过滤学生可见性
+    let result = exams.map(exam => ({ ...exam, status: this.computeExamStatus(exam) }));
+
+    if (isStudentView) {
+      result = result.filter(exam => {
+        const scope = exam.scope || 'PUBLIC';
+        if (scope === 'PUBLIC') return true;
+        if (scope === 'CLASS_ONLY') {
+          // 检查 classId 是否在用户班级中
+          return exam.classId ? userClassIds.includes(exam.classId) : true;
+        }
+        if (scope === 'SELECTED_CLASSES') {
+          // 检查 classId 或解析 classIds JSON 是否包含用户班级
+          if (exam.classId && userClassIds.includes(exam.classId)) return true;
+          const examClassIds: string[] = safeJsonParse(exam.classIds, []);
+          return examClassIds.some(id => userClassIds.includes(id));
+        }
+        // 未知 scope（旧数据兼容）→ 可见
+        return true;
+      });
+    }
+
+    return result;
+  }
+
+  /** 根据考试的 isActive / startTime / endTime 计算当前状态 */
+  private computeExamStatus(exam: { isActive: boolean; startTime?: Date | null; endTime?: Date | null }): string {
+    const now = new Date();
+    if (!exam.isActive) return 'inactive';
+    if (exam.startTime && now < new Date(exam.startTime)) return 'not_started';
+    if (exam.endTime && now > new Date(exam.endTime)) return 'ended';
+    return 'active';
   }
 
   async startExam(examId: string, userId: string) {
@@ -317,6 +340,8 @@ export class ExamService {
   }
 
   async saveExamAnswers(examId: string, userId: string, answers: Record<string, any>) {
+    if (!answers) throw new Error('答案数据不能为空');
+
     const attempt = await prisma.examAttempt.findFirst({
       where: { examId, userId, status: 'IN_PROGRESS' }
     });
@@ -343,6 +368,10 @@ export class ExamService {
   }
 
   async submitExam(examId: string, userId: string, answers: Record<string, any>) {
+    if (!answers || typeof answers !== 'object') {
+      throw new Error('答案数据无效');
+    }
+
     const attempt = await prisma.examAttempt.findFirst({
       where: { examId, userId, status: 'IN_PROGRESS' },
       include: {
@@ -413,7 +442,14 @@ export class ExamService {
       }
     });
 
-    this.settleExamRanking(examId, userId, earnedScore, totalScore, timeTaken, attempt.exam).catch(() => {});
+    this.settleExamRanking(examId, userId, earnedScore, totalScore, timeTaken, attempt.exam).catch((e: any) => {
+      console.error('[Exam] settleExamRanking failed:', e.message);
+    });
+
+    // 自动记录错题到错题本
+    this.recordWrongAnswers(userId, questionResults, 'EXAM', attempt.exam.questions).catch((e: any) => {
+      console.error('[Exam] recordWrongAnswers failed:', e.message);
+    });
 
     return updatedAttempt;
   }
@@ -679,6 +715,10 @@ export class ExamService {
     const correctAnswers: string[] = safeJsonParse(problem.fillBlanks, []);
     const userAnswers: string[] = Array.isArray(answer) ? answer : [answer];
 
+    if (correctAnswers.length === 0) {
+      return { problemId, isCorrect: true, points, earnedPoints: points, type: 'FILL_BLANK', detail: { correctAnswers, userAnswers, correctCount: 0, totalCount: 0 } };
+    }
+
     let correctCount = 0;
     for (let i = 0; i < correctAnswers.length; i++) {
       if (userAnswers[i] && userAnswers[i].trim().toLowerCase() === correctAnswers[i]?.trim().toLowerCase()) {
@@ -719,7 +759,9 @@ export class ExamService {
         await pointsService.updateUserPoints(userId, pointsAwarded, 'EXAM_REWARD', {
           examId, score, totalScore, percentage, medal
         });
-      } catch {}
+      } catch (e: any) {
+        console.error('[Exam] settleExamRanking failed:', e.message);
+      }
     }
 
     await prisma.examRanking.upsert({
@@ -808,6 +850,49 @@ export class ExamService {
     }
 
     return { settled: true, count: gradedAttempts.length };
+  }
+
+  /**
+   * 自动记录错题到错题本
+   * 对答错的题目 upsert WrongRecord，已存在则递增 retryCount 并重置 mastered
+   */
+  private async recordWrongAnswers(
+    userId: string,
+    questionResults: QuestionResult[],
+    source: string,
+    questions: any[]
+  ) {
+    const wrongResults = questionResults.filter(r => !r.isCorrect);
+    if (wrongResults.length === 0) return;
+
+    for (const result of wrongResults) {
+      const question = questions.find(q => q.problemId === result.problemId);
+      const correctAnswer = question?.problem?.correctAnswer || null;
+      const wrongAnswer = result.detail?.selectedAnswer || result.detail?.userAnswers || null;
+
+      try {
+        await prisma.wrongRecord.upsert({
+          where: { userId_problemId: { userId, problemId: result.problemId } },
+          create: {
+            userId,
+            problemId: result.problemId,
+            source,
+            wrongAnswer: typeof wrongAnswer === 'string' ? wrongAnswer : JSON.stringify(wrongAnswer),
+            correctAnswer: correctAnswer,
+          },
+          update: {
+            source,
+            wrongAnswer: typeof wrongAnswer === 'string' ? wrongAnswer : JSON.stringify(wrongAnswer),
+            correctAnswer: correctAnswer,
+            retryCount: { increment: 1 },
+            mastered: false,
+            masteredAt: null,
+          }
+        });
+      } catch (e: any) {
+        console.error(`[Exam] Failed to record wrong answer for ${result.problemId}:`, e.message);
+      }
+    }
   }
 }
 

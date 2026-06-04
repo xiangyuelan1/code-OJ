@@ -30,6 +30,7 @@ export function AdminExamPage() {
     medalEnabled: false,
     showRanking: true,
     passScore: 60,
+    showAnswerAfter: 'NEVER',
   });
   const [classes, setClasses] = useState<any[]>([]);
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
@@ -39,6 +40,7 @@ export function AdminExamPage() {
   const [difficultyFilter, setDifficultyFilter] = useState<string>('');
   const [tagFilter, setTagFilter] = useState<string>('');
   const [aiGenerating, setAiGenerating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchExams();
@@ -180,7 +182,12 @@ export function AdminExamPage() {
       alert('请至少选择一道题目');
       return;
     }
+    if ((form.scope === 'CLASS_ONLY' || form.scope === 'SELECTED_CLASSES') && form.classIds.length === 0) {
+      alert('请至少选择一个目标班级');
+      return;
+    }
 
+    setSubmitting(true);
     try {
       const data: any = {
         title: form.title,
@@ -196,6 +203,7 @@ export function AdminExamPage() {
         medalEnabled: form.medalEnabled,
         showRanking: form.showRanking,
         passScore: form.passScore,
+        showAnswerAfter: form.showAnswerAfter,
       };
 
       if (form.startTime) {
@@ -231,10 +239,13 @@ export function AdminExamPage() {
         medalEnabled: false,
         showRanking: true,
         passScore: 60,
+        showAnswerAfter: 'NEVER',
       });
       fetchExams();
     } catch (error: any) {
       alert(error.error?.message || (editingExamId ? '更新考试失败' : '创建考试失败'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -259,6 +270,7 @@ export function AdminExamPage() {
           medalEnabled: exam.medalEnabled || false,
           showRanking: exam.showRanking !== false,
           passScore: exam.passScore || 60,
+          showAnswerAfter: exam.showAnswerAfter || 'NEVER',
         });
         setEditingExamId(examId);
         setShowForm(true);
@@ -503,6 +515,18 @@ export function AdminExamPage() {
                     className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">考后答案展示</label>
+                  <select
+                    value={form.showAnswerAfter}
+                    onChange={(e) => setForm({ ...form, showAnswerAfter: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  >
+                    <option value="NEVER">不展示</option>
+                    <option value="AFTER_EXAM">考后展示</option>
+                    <option value="ALWAYS">始终展示</option>
+                  </select>
+                </div>
               </div>
               <div className="flex items-center gap-6">
                 <label className="flex items-center text-slate-300 cursor-pointer">
@@ -675,10 +699,11 @@ export function AdminExamPage() {
             </button>
             <button
               onClick={handleCreateExam}
-              className="flex items-center bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              disabled={submitting}
+              className="flex items-center bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="h-5 w-5 mr-2" />
-              {editingExamId ? '保存修改' : '创建考试'}
+              {submitting ? '提交中...' : (editingExamId ? '保存修改' : '创建考试')}
             </button>
           </div>
         </div>
@@ -863,6 +888,7 @@ export function AdminExamPage() {
               medalEnabled: false,
               showRanking: true,
               passScore: 60,
+              showAnswerAfter: 'NEVER',
             });
             fetchProblems();
             fetchKnowledgeTree();

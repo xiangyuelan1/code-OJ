@@ -3,7 +3,7 @@ import { useAuthStore } from '../../stores/auth.store';
 import { usePointsStore } from '../../stores/points.store';
 import { useSocketStore } from '../../services/socket';
 import { classAPI, featureAPI } from '../../services/api';
-import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone, LayoutDashboard, Sparkles } from 'lucide-react';
+import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone, LayoutDashboard, Sparkles, BookX, CalendarCheck } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 
 interface VisibleFeature {
@@ -107,6 +107,18 @@ export function Navbar() {
             {isAuthenticated && isVisible('exams') && (
               <Link to="/exams" className="hover:text-cyan-400 transition-colors">
                 考试
+              </Link>
+            )}
+            {isAuthenticated && (
+              <Link to="/wrong-records" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
+                <BookX className="h-4 w-4" />
+                <span>错题本</span>
+              </Link>
+            )}
+            {isAuthenticated && (
+              <Link to="/checkin" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
+                <CalendarCheck className="h-4 w-4" />
+                <span>签到</span>
               </Link>
             )}
             <Link to="/app-download" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
@@ -263,6 +275,26 @@ export function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 考试
+              </Link>
+            )}
+            {isAuthenticated && (
+              <Link
+                to="/wrong-records"
+                className="flex items-center space-x-1 hover:text-cyan-400"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <BookX className="h-4 w-4" />
+                <span>错题本</span>
+              </Link>
+            )}
+            {isAuthenticated && (
+              <Link
+                to="/checkin"
+                className="flex items-center space-x-1 hover:text-cyan-400"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <CalendarCheck className="h-4 w-4" />
+                <span>签到</span>
               </Link>
             )}
             <Link
