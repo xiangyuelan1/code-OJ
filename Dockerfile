@@ -24,7 +24,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/api ./api
 COPY --from=builder /app/public ./public
 
-RUN mkdir -p uploads temp && chmod 777 uploads temp
+RUN mkdir -p uploads temp data && chmod 777 uploads temp data
 
 ENV NODE_ENV=production
 ENV PORT=5000
