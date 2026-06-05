@@ -29,6 +29,26 @@ router.get('/my', authMiddleware, async (req: Request, res: any): Promise<void> 
   }
 });
 
+router.get('/effects', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const data = await starPathBuildingService.getActiveBuildingEffects(userId);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/passive-income/collect', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const data = await starPathBuildingService.collectPassiveIncome(userId);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
 router.post('/build', authMiddleware, async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;

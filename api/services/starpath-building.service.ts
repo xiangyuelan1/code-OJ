@@ -1,12 +1,43 @@
 import prisma from '../lib/prisma';
+import { pointsService } from './points.service';
 
-function safeJsonParse<T>(json: string, fallback: T): T {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return fallback;
-  }
+// 建筑汇总效果：用户所有建筑产生的综合能力
+export interface BuildingEffects {
+  extraProblems: number;          // 额外练习题数量 (来自实验室 Lv1+)
+  hasHints: boolean;              // 是否有题目提示 (实验室 Lv2+)
+  hasAISolution: boolean;         // 是否有AI解题思路 (实验室 Lv3)
+  hasSolutions: boolean;          // 是否可看题解 (图书馆 Lv1+)
+  hasKnowledgeSummary: boolean;   // 是否有知识总结 (图书馆 Lv2+)
+  seasonPointsBonus: number;      // 赛季积分加成百分比 (竞技场 Lv3: 20%)
+  dailyPassiveIncome: number;     // 每日被动积分收入 (指挥部产出)
+  friendProgressVisible: boolean; // 好友进度可见 (天文台 Lv1+)
+  hasSkillRadar: boolean;         // 技能雷达图 (天文台 Lv2+)
+  hasLearningPath: boolean;       // 学习路径推荐 (天文台 Lv3)
 }
+
+// 被动收入收取结果
+export interface PassiveIncomeResult {
+  collectedPoints: number;  // 本次收取的积分总量
+  daysAccumulated: number;  // 累积天数
+  buildings: Array<{        // 各指挥部的产出明细
+    planetId: string;
+    level: number;
+    contribution: number;
+  }>;
+}
+
+// 指挥部每日被动积分产出配置
+const HEADQUARTERS_DAILY_INCOME: Record<number, number> = {
+  1: 0,
+  2: 3,
+  3: 8
+};
+
+// 被动收入最大累积天数
+const MAX_ACCUMULATION_DAYS = 3;
+
+// 被动收入收取的 PointLog reason 标识
+const PASSIVE_INCOME_REASON = 'BUILDING_PASSIVE_INCOME';
 
 const BUILDING_CONFIGS: Record<string, Record<number, { name: string; description: string; cost: number; effect: string }>> = {
   HEADQUARTERS: {
@@ -77,17 +108,20 @@ export class StarPathBuildingService {
     }
 
     const config = BUILDING_CONFIGS[buildingType][1];
-    if (config.cost > 0) {
+
+    // 应用等级折扣计算实际费用
+    const actualCost = await this.calculateDiscountedCost(userId, config.cost);
+
+    if (actualCost > 0) {
       const user = await prisma.user.findUnique({ where: { id: userId } });
-      if (!user || user.points < config.cost) {
-        throw new Error(`积分不足，需要 ${config.cost} 积分`);
+      if (!user || user.points < actualCost) {
+        throw new Error(`积分不足，需要 ${actualCost} 积分`);
       }
-      await prisma.user.update({
-        where: { id: userId },
-        data: { points: { decrement: config.cost } },
-      });
-      await prisma.pointLog.create({
-        data: { userId, delta: -config.cost, reason: `建造${config.name}` },
+      await pointsService.updateUserPoints(userId, -actualCost, `建造${config.name}`, {
+        planetId,
+        buildingType,
+        baseCost: config.cost,
+        actualCost,
       });
     }
 
@@ -115,17 +149,20 @@ export class StarPathBuildingService {
       throw new Error('无效的升级等级');
     }
 
+    // 应用等级折扣计算实际费用
+    const actualCost = await this.calculateDiscountedCost(userId, config.cost);
+
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || user.points < config.cost) {
-      throw new Error(`积分不足，需要 ${config.cost} 积分`);
+    if (!user || user.points < actualCost) {
+      throw new Error(`积分不足，需要 ${actualCost} 积分`);
     }
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: { points: { decrement: config.cost } },
-    });
-    await prisma.pointLog.create({
-      data: { userId, delta: -config.cost, reason: `升级${config.name}` },
+    await pointsService.updateUserPoints(userId, -actualCost, `升级${config.name}`, {
+      planetId,
+      buildingType,
+      baseCost: config.cost,
+      actualCost,
+      nextLevel,
     });
 
     return prisma.planetBuilding.update({
@@ -154,6 +191,7 @@ export class StarPathBuildingService {
     }));
   }
 
+  // 查询指定星球上是否具有某种效果（保留向后兼容）
   async getBuildingEffect(planetId: string, userId: string, effectType: string): Promise<boolean> {
     const buildings = await prisma.planetBuilding.findMany({
       where: { userId, planetId },
@@ -166,6 +204,156 @@ export class StarPathBuildingService {
       }
     }
     return false;
+  }
+
+  // 获取用户所有建筑的汇总效果
+  async getActiveBuildingEffects(userId: string): Promise<BuildingEffects> {
+    const buildings = await prisma.planetBuilding.findMany({
+      where: { userId },
+    });
+
+    // 初始化默认效果
+    const effects: BuildingEffects = {
+      extraProblems: 0,
+      hasHints: false,
+      hasAISolution: false,
+      hasSolutions: false,
+      hasKnowledgeSummary: false,
+      seasonPointsBonus: 0,
+      dailyPassiveIncome: 0,
+      friendProgressVisible: false,
+      hasSkillRadar: false,
+      hasLearningPath: false,
+    };
+
+    for (const b of buildings) {
+      switch (b.buildingType) {
+        case 'LABORATORY':
+          // 实验室：等级越高功能越多，低等级功能包含在高等级中
+          effects.extraProblems += 2; // 每个实验室提供 +2 题
+          if (b.level >= 2) effects.hasHints = true;
+          if (b.level >= 3) effects.hasAISolution = true;
+          break;
+
+        case 'LIBRARY':
+          if (b.level >= 1) effects.hasSolutions = true;
+          if (b.level >= 2) effects.hasKnowledgeSummary = true;
+          break;
+
+        case 'ARENA':
+          // 竞技场 Lv3 提供赛季积分加成，多个竞技场不叠加
+          if (b.level >= 3) effects.seasonPointsBonus = 20;
+          break;
+
+        case 'HEADQUARTERS':
+          // 指挥部每日被动收入按等级累加
+          effects.dailyPassiveIncome += HEADQUARTERS_DAILY_INCOME[b.level] ?? 0;
+          break;
+
+        case 'OBSERVATORY':
+          if (b.level >= 1) effects.friendProgressVisible = true;
+          if (b.level >= 2) effects.hasSkillRadar = true;
+          if (b.level >= 3) effects.hasLearningPath = true;
+          break;
+      }
+    }
+
+    return effects;
+  }
+
+  /**
+   * 收取被动积分收入
+   * 
+   * 规则：
+   * - 指挥部 Lv2 每天产出 3 积分，Lv3 每天产出 8 积分
+   * - 最多累积 3 天未收取的产出
+   * - 通过查询 PointLog 中最后一次被动收入记录确定起始时间
+   * - 若从未收取过，则从建造/升级时间开始计算
+   */
+  async collectPassiveIncome(userId: string): Promise<PassiveIncomeResult> {
+    // 查询用户所有指挥部建筑
+    const headquarters = await prisma.planetBuilding.findMany({
+      where: { userId, buildingType: 'HEADQUARTERS' },
+    });
+
+    // 筛选出有产出能力的指挥部（Lv2+）
+    const productiveHQs = headquarters.filter(hq => hq.level >= 2);
+    if (productiveHQs.length === 0) {
+      return { collectedPoints: 0, daysAccumulated: 0, buildings: [] };
+    }
+
+    // 查询最后一次被动收入收取记录
+    const lastCollection = await prisma.pointLog.findFirst({
+      where: { userId, reason: PASSIVE_INCOME_REASON },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const now = new Date();
+    let totalPoints = 0;
+    let maxDays = 0;
+    const buildingDetails: PassiveIncomeResult['buildings'] = [];
+
+    for (const hq of productiveHQs) {
+      const dailyIncome = HEADQUARTERS_DAILY_INCOME[hq.level] ?? 0;
+      if (dailyIncome === 0) continue;
+
+      // 确定该建筑的产出起始时间：取"上次收取时间"和"建筑升级到有产出等级的时间"中较晚者
+      const buildingActiveTime = hq.upgradedAt ?? hq.builtAt;
+      const startTime = lastCollection
+        ? new Date(Math.max(lastCollection.createdAt.getTime(), buildingActiveTime.getTime()))
+        : buildingActiveTime;
+
+      // 计算累积天数（向下取整，未满一天不计）
+      const elapsedMs = now.getTime() - startTime.getTime();
+      const elapsedDays = Math.floor(elapsedMs / (24 * 60 * 60 * 1000));
+      // 限制最多累积天数
+      const effectiveDays = Math.min(elapsedDays, MAX_ACCUMULATION_DAYS);
+
+      if (effectiveDays <= 0) continue;
+
+      const contribution = dailyIncome * effectiveDays;
+      totalPoints += contribution;
+      maxDays = Math.max(maxDays, effectiveDays);
+
+      buildingDetails.push({
+        planetId: hq.planetId,
+        level: hq.level,
+        contribution,
+      });
+    }
+
+    // 无可收取积分时直接返回
+    if (totalPoints <= 0) {
+      return { collectedPoints: 0, daysAccumulated: 0, buildings: [] };
+    }
+
+    // 发放积分并记录日志
+    await pointsService.updateUserPoints(userId, totalPoints, PASSIVE_INCOME_REASON, {
+      buildings: buildingDetails,
+      daysAccumulated: maxDays,
+    });
+
+    return {
+      collectedPoints: totalPoints,
+      daysAccumulated: maxDays,
+      buildings: buildingDetails,
+    };
+  }
+
+  // 根据用户等级折扣计算建筑实际费用
+  private async calculateDiscountedCost(userId: string, baseCost: number): Promise<number> {
+    if (baseCost <= 0) return 0;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { level: true },
+    });
+
+    if (!user) return baseCost;
+
+    const privileges = pointsService.getLevelPrivileges(user.level);
+    // 折扣后向下取整，确保不为负
+    return Math.max(0, Math.floor(baseCost * (1 - privileges.buildingDiscount)));
   }
 }
 

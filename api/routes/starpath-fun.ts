@@ -98,4 +98,24 @@ router.post('/collect-star', authMiddleware, async (req: Request, res: any): Pro
   }
 });
 
+router.post('/pet/train', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const result = await starPathFunService.trainPet(userId);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.get('/pet/bonuses', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const data = await starPathFunService.getPetBonuses(userId);
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
 export default router;

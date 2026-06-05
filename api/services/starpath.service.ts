@@ -1,5 +1,7 @@
 import prisma from '../lib/prisma';
 import { aiService } from './ai.service';
+import { starPathFunService } from './starpath-fun.service';
+import { pointsService } from './points.service';
 
 /** 安全解析 JSON 字符串，解析失败时返回默认值 */
 function safeJsonParse<T>(json: string, fallback: T): T {
@@ -424,19 +426,25 @@ export class StarPathService {
     let pointsEarned = 0;
     if (correct) {
       const difficultyPoints: Record<string, number> = { EASY: 5, MEDIUM: 10, HARD: 20 };
-      pointsEarned = difficultyPoints[problem.difficulty] || 10;
+      const basePoints = difficultyPoints[problem.difficulty] || 10;
 
-      await prisma.user.update({
-        where: { id: userId },
-        data: { points: { increment: pointsEarned } },
-      });
+      // 应用等级积分倍率（含建筑竞技场加成）
+      const multiplier = await pointsService.getEffectivePointsMultiplier(userId);
 
-      await prisma.pointLog.create({
-        data: {
-          userId,
-          delta: pointsEarned,
-          reason: `编程星途挑战: ${problem.title}`,
-        },
+      // 应用宠物做题加成
+      const petBonuses = await starPathFunService.getPetBonuses(userId);
+      const petMultiplier = 1 + (petBonuses.pointsBonus / 100);
+
+      // 最终积分 = 基础 × 等级倍率 × 宠物加成
+      pointsEarned = Math.round(basePoints * multiplier * petMultiplier);
+
+      await pointsService.updateUserPoints(userId, pointsEarned, `编程星途挑战: ${problem.title}`, {
+        planetId,
+        problemId: problem.id,
+        difficulty: problem.difficulty,
+        base: basePoints,
+        multiplier,
+        petMultiplier,
       });
     }
 

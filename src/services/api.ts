@@ -130,6 +130,7 @@ export const pointsAPI = {
   getLevels: () => api.get('/api/points/levels'),
   getLeaderboard: (limit?: number) => api.get('/api/points/leaderboard', { params: { limit } }),
   getLogs: (limit?: number) => api.get('/api/points/logs', { params: { limit } }),
+  getPrivileges: () => api.get('/api/points/privileges'),
 };
 
 export const knowledgeTreeAPI = {
@@ -628,6 +629,9 @@ export const starpathBuildingAPI = {
   getMyBuildings: () => api.get('/api/starpath/building/my'),
   build: (planetId: string, buildingType: string) => api.post('/api/starpath/building/build', { planetId, buildingType }),
   upgrade: (planetId: string, buildingType: string) => api.post('/api/starpath/building/upgrade', { planetId, buildingType }),
+  collectIncome: () => api.post('/api/starpath/building/collect-income'),
+  getEffects: () => api.get('/api/starpath/building/effects'),
+  collectPassiveIncome: () => api.post('/api/starpath/building/passive-income/collect'),
 };
 
 export const starpathSocialAPI = {
@@ -660,6 +664,8 @@ export const starpathFunAPI = {
   getChestStatus: () => api.get('/api/starpath/fun/chest/status'),
   getPet: () => api.get('/api/starpath/fun/pet'),
   feedPet: () => api.post('/api/starpath/fun/pet/feed'),
+  trainPet: () => api.post('/api/starpath/fun/pet/train'),
+  getPetBonuses: () => api.get('/api/starpath/fun/pet/bonuses'),
   changePetType: (petType: string) => api.post('/api/starpath/fun/pet/type', { petType }),
   renamePet: (petName: string) => api.post('/api/starpath/fun/pet/rename', { petName }),
   getPetTypes: () => api.get('/api/starpath/fun/pet/types'),
@@ -667,6 +673,13 @@ export const starpathFunAPI = {
     api.post('/api/starpath/fun/planet/customize', { planetId, ...data }),
   getPlanetCustomizations: () => api.get('/api/starpath/fun/planet/customizations'),
   collectStar: (starType: string) => api.post('/api/starpath/fun/collect-star', { starType }),
+};
+
+export const starpathExplorationAPI = {
+  getMissions: () => api.get('/api/starpath/exploration/missions'),
+  start: (missionId: string) => api.post('/api/starpath/exploration/start', { missionId }),
+  getStatus: () => api.get('/api/starpath/exploration/status'),
+  claim: () => api.post('/api/starpath/exploration/claim'),
 };
 
 export const dailyAPI = {

@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { starpathAPI, starpathStoryAPI, starpathAchievementAPI, starpathFunAPI, type StarMapData, type StarMapRegion, type SeasonEventData, type RecommendedPlanet } from '../services/api';
+import { starpathAPI, starpathStoryAPI, starpathAchievementAPI, starpathFunAPI, starpathBuildingAPI, starpathExplorationAPI, type StarMapData, type StarMapRegion, type SeasonEventData, type RecommendedPlanet } from '../services/api';
 import {
   Sparkles, MessageSquare, ChevronRight,
   Globe, Flame, Trophy, Loader2,
   Building2, Users, Award, Zap,
-  Gift, Heart, Star, Edit3, X,
+  Gift, Heart, Star, Edit3,
+  Rocket, Pickaxe, Dumbbell, Clock, Lock,
 } from 'lucide-react';
 import { GuideChatPanel } from '../components/GuideChatPanel';
 
@@ -241,10 +242,12 @@ function SpacePet() {
   const [pet, setPet] = useState<any>(null);
   const [petTypes, setPetTypes] = useState<Record<string, any>>({});
   const [feeding, setFeeding] = useState(false);
+  const [training, setTraining] = useState(false);
   const [showTypes, setShowTypes] = useState(false);
   const [showRename, setShowRename] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [feedResult, setFeedResult] = useState<any>(null);
+  const [trainResult, setTrainResult] = useState<any>(null);
   const [bounce, setBounce] = useState(false);
 
   useEffect(() => { loadPet(); loadTypes(); }, []);
@@ -276,8 +279,25 @@ function SpacePet() {
         loadPet();
       }
     } catch (e: any) {
-      alert(e.response?.data?.error?.message || '喂食失败');
+      alert(e.error?.message || e.response?.data?.error?.message || '喂食失败');
     } finally { setFeeding(false); }
+  };
+
+  const handleTrain = async () => {
+    if (training || !canTrain) return;
+    setTraining(true);
+    setBounce(true);
+    setTimeout(() => setBounce(false), 400);
+    try {
+      const res = await starpathFunAPI.trainPet();
+      if (res.success && res.data) {
+        setTrainResult(res.data);
+        setTimeout(() => setTrainResult(null), 3000);
+        loadPet();
+      }
+    } catch (e: any) {
+      alert(e.error?.message || e.response?.data?.error?.message || '训练失败');
+    } finally { setTraining(false); }
   };
 
   const handleChangeType = async (type: string) => {
@@ -301,6 +321,9 @@ function SpacePet() {
 
   const moodBar = pet.mood >= 80 ? 'bg-green-400' : pet.mood >= 50 ? 'bg-yellow-400' : 'bg-red-400';
   const expPct = Math.min(100, Math.round((pet.exp / pet.expToNext) * 100));
+  const canTrain = pet.stage?.unlocks?.includes('训练') ?? false;
+  const abilities = Array.isArray(pet.abilities) ? pet.abilities : [];
+  const unlocks = Array.isArray(pet.stage?.unlocks) ? pet.stage.unlocks : [];
 
   return (
     <div className="glass-card rounded-2xl p-5 border-violet-400/20">
@@ -352,9 +375,48 @@ function SpacePet() {
         </div>
       )}
 
+      <div className="mb-3 rounded-xl bg-violet-500/10 border border-violet-400/15 p-3">
+        <div className="flex items-center gap-2 mb-2 text-xs font-medium text-violet-200">
+          <Sparkles className="h-3.5 w-3.5" /> 宠物能力
+        </div>
+        {abilities.length > 0 ? (
+          <div className="space-y-2">
+            {abilities.map((ability: any, index: number) => (
+              <div key={`${ability.name}-${index}`} className="flex items-start justify-between gap-3 text-xs">
+                <div>
+                  <div className="text-white">{ability.name}</div>
+                  <div className="text-slate-400">{ability.description}</div>
+                </div>
+                <span className="shrink-0 rounded-full bg-cyan-500/15 px-2 py-0.5 text-cyan-300">+{ability.effectiveValue}%</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">当前阶段暂无可生效能力</p>
+        )}
+      </div>
+
+      <div className="mb-3 rounded-xl bg-slate-900/50 border border-white/10 p-3">
+        <div className="flex items-center gap-2 mb-2 text-xs font-medium text-slate-200">
+          <Lock className="h-3.5 w-3.5 text-amber-300" /> {pet.stage?.name || pet.levelTitle}阶段解锁
+        </div>
+        {unlocks.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {unlocks.map((unlock: string) => (
+              <span key={unlock} className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">{unlock}</span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">Lv5 进入成长阶段后解锁训练</p>
+        )}
+      </div>
+
       <div className="flex gap-2">
         <button onClick={handleFeed} disabled={feeding} className="flex-1 py-2 rounded-lg bg-pink-500/15 text-pink-300 text-sm hover:bg-pink-500/25 transition-colors disabled:opacity-50">
           {feeding ? '喂食中...' : '🍖 喂食 (10积分)'}
+        </button>
+        <button onClick={handleTrain} disabled={!canTrain || training} title={canTrain ? '消耗5积分训练宠物' : 'Lv5 解锁训练'} className="flex-1 py-2 rounded-lg bg-cyan-500/15 text-cyan-300 text-sm hover:bg-cyan-500/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          <span className="inline-flex items-center justify-center gap-1"><Dumbbell className="h-3.5 w-3.5" />{training ? '训练中...' : canTrain ? '训练 (5积分)' : 'Lv5 解锁训练'}</span>
         </button>
         <button onClick={() => setShowTypes(!showTypes)} className="px-3 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition-colors">
           🔄 换宠
@@ -364,6 +426,12 @@ function SpacePet() {
       {feedResult && (
         <div className={`mt-3 text-center text-sm ${feedResult.leveledUp ? 'text-amber-400 animate-bounce' : 'text-green-400'}`}>
           {feedResult.leveledUp ? `🎉 升级到 Lv.${feedResult.level}！` : `心情 +20，经验 +15`}
+        </div>
+      )}
+
+      {trainResult && (
+        <div className={`mt-3 text-center text-sm ${trainResult.leveledUp ? 'text-amber-400 animate-bounce' : 'text-cyan-300'}`}>
+          训练完成：经验 +{trainResult.expGained}{trainResult.isEpiphany ? '，触发顿悟！' : ''}{trainResult.leveledUp ? ` 升级到 Lv.${trainResult.level}！` : ''}
         </div>
       )}
 
@@ -379,6 +447,189 @@ function SpacePet() {
               <div className="text-[10px] text-slate-300">{info.name}</div>
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════
+   建筑收益汇总
+   ═══════════════════════════════════════ */
+
+function BuildingIncomeCard() {
+  const [effects, setEffects] = useState<any>(null);
+  const [collecting, setCollecting] = useState(false);
+  const [result, setResult] = useState<any>(null);
+
+  useEffect(() => { loadEffects(); }, []);
+
+  const loadEffects = async () => {
+    try {
+      const res = await starpathBuildingAPI.getEffects();
+      if (res.success && res.data) setEffects(res.data);
+    } catch { /* ignore */ }
+  };
+
+  const handleCollect = async () => {
+    if (collecting) return;
+    setCollecting(true);
+    try {
+      const res = await starpathBuildingAPI.collectPassiveIncome();
+      if (res.success && res.data) {
+        setResult(res.data);
+        loadEffects();
+      }
+    } catch (e: any) {
+      alert(e.error?.message || e.response?.data?.error?.message || '收取建设收益失败');
+    } finally { setCollecting(false); }
+  };
+
+  const effectItems = effects ? [
+    { label: '每日被动收入', value: `+${effects.dailyPassiveIncome || 0} 积分/天`, active: (effects.dailyPassiveIncome || 0) > 0 },
+    { label: '额外题目', value: `+${effects.extraProblems || 0} 题`, active: (effects.extraProblems || 0) > 0 },
+    { label: '提示', value: effects.hasHints ? '已解锁' : '未解锁', active: effects.hasHints },
+    { label: 'AI题解', value: effects.hasAISolution ? '已解锁' : '未解锁', active: effects.hasAISolution },
+    { label: '题解', value: effects.hasSolutions ? '已解锁' : '未解锁', active: effects.hasSolutions },
+    { label: '赛季积分加成', value: `+${effects.seasonPointsBonus || 0}%`, active: (effects.seasonPointsBonus || 0) > 0 },
+  ] : [];
+
+  return (
+    <div className="glass-card rounded-2xl p-5 border-cyan-400/20">
+      <div className="flex items-center gap-2 mb-4">
+        <Pickaxe className="h-5 w-5 text-cyan-400" />
+        <h3 className="text-base font-semibold text-white">建设收益</h3>
+        <span className="ml-auto text-xs text-cyan-300 bg-cyan-500/15 px-2 py-0.5 rounded-full">建筑加成</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        {effectItems.length > 0 ? effectItems.map((item) => (
+          <div key={item.label} className={`rounded-xl border p-3 ${item.active ? 'bg-cyan-500/10 border-cyan-400/20' : 'bg-slate-900/40 border-white/10'}`}>
+            <div className="text-[11px] text-slate-400 mb-1">{item.label}</div>
+            <div className={`text-sm font-medium ${item.active ? 'text-cyan-200' : 'text-slate-500'}`}>{item.value}</div>
+          </div>
+        )) : (
+          <div className="col-span-2 rounded-xl bg-slate-900/40 border border-white/10 p-4 text-sm text-slate-400">正在同步建筑效果...</div>
+        )}
+      </div>
+
+      <button onClick={handleCollect} disabled={collecting} className="w-full py-2.5 rounded-xl bg-cyan-500/15 text-cyan-300 text-sm hover:bg-cyan-500/25 transition-colors disabled:opacity-50">
+        {collecting ? '收取中...' : '收取建设收益'}
+      </button>
+
+      {result && (
+        <div className={`mt-3 text-center text-sm ${result.collectedPoints > 0 ? 'text-amber-400 animate-bounce' : 'text-slate-400'}`}>
+          {result.collectedPoints > 0
+            ? `获得 ${result.collectedPoints} 积分，累计 ${result.daysAccumulated} 天收益`
+            : '暂无可收取收益，指挥部 Lv2+ 每天产出积分'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════
+   宠物探险
+   ═══════════════════════════════════════ */
+
+function ExplorationCard() {
+  const [missions, setMissions] = useState<any[]>([]);
+  const [status, setStatus] = useState<any>({ state: 'idle' });
+  const [reward, setReward] = useState<any>(null);
+  const [actingId, setActingId] = useState<string | null>(null);
+
+  useEffect(() => { loadExploration(); }, []);
+
+  const loadExploration = async () => {
+    try {
+      const [statusRes, missionsRes] = await Promise.all([
+        starpathExplorationAPI.getStatus(),
+        starpathExplorationAPI.getMissions(),
+      ]);
+      if (statusRes.success && statusRes.data) setStatus(statusRes.data);
+      if (missionsRes.success && missionsRes.data) setMissions(missionsRes.data as any[]);
+    } catch { /* ignore */ }
+  };
+
+  const handleStart = async (mission: any) => {
+    if (!mission.unlocked || actingId) return;
+    setActingId(mission.id);
+    setReward(null);
+    try {
+      const res = await starpathExplorationAPI.start(mission.id);
+      if (res.success) loadExploration();
+    } catch (e: any) {
+      alert(e.error?.message || e.response?.data?.error?.message || '开始探险失败');
+    } finally { setActingId(null); }
+  };
+
+  const handleClaim = async () => {
+    if (actingId) return;
+    setActingId('claim');
+    try {
+      const res = await starpathExplorationAPI.claim();
+      if (res.success && res.data) {
+        setReward(res.data);
+        loadExploration();
+      }
+    } catch (e: any) {
+      alert(e.error?.message || e.response?.data?.error?.message || '收取探险奖励失败');
+    } finally { setActingId(null); }
+  };
+
+  const currentMission = status?.mission;
+
+  return (
+    <div className="glass-card rounded-2xl p-5 border-indigo-400/20">
+      <div className="flex items-center gap-2 mb-4">
+        <Rocket className="h-5 w-5 text-indigo-400" />
+        <h3 className="text-base font-semibold text-white">星际探险</h3>
+        <span className="ml-auto text-xs text-indigo-300 bg-indigo-500/15 px-2 py-0.5 rounded-full">宠物行动</span>
+      </div>
+
+      {status?.state === 'in_progress' && currentMission ? (
+        <div className="rounded-xl bg-indigo-500/10 border border-indigo-400/20 p-4 text-center">
+          <Clock className="h-6 w-6 text-indigo-300 mx-auto mb-2" />
+          <div className="text-sm font-medium text-white mb-1">{currentMission.name}</div>
+          <div className="text-xs text-slate-400">剩余约 {status.remainingMinutes} 分钟</div>
+        </div>
+      ) : status?.state === 'claimable' && currentMission ? (
+        <div className="rounded-xl bg-amber-500/10 border border-amber-400/20 p-4 text-center">
+          <div className="text-sm font-medium text-white mb-1">{currentMission.name}</div>
+          <p className="text-xs text-slate-400 mb-3">探险完成，奖励等待收取</p>
+          <button onClick={handleClaim} disabled={actingId === 'claim'} className="px-4 py-2 rounded-lg bg-amber-500/20 text-amber-300 text-sm hover:bg-amber-500/30 transition-colors disabled:opacity-50">
+            {actingId === 'claim' ? '收取中...' : '收取探险奖励'}
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+          {missions.map((mission) => (
+            <button
+              key={mission.id}
+              onClick={() => handleStart(mission)}
+              disabled={!mission.unlocked || !!actingId}
+              className={`w-full text-left rounded-xl border p-3 transition-all ${mission.unlocked ? 'bg-indigo-500/10 border-indigo-400/20 hover:border-indigo-300/40' : 'bg-slate-900/40 border-white/10 opacity-60 cursor-not-allowed'}`}
+            >
+              <div className="flex items-start justify-between gap-3 mb-1">
+                <div className="text-sm font-medium text-white">{mission.name}</div>
+                <span className="shrink-0 text-[11px] text-slate-400">{mission.duration}分钟</span>
+              </div>
+              <p className="text-xs text-slate-400 mb-2">{mission.description}</p>
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="text-amber-300">{mission.rewards.points[0]}-{mission.rewards.points[1]}积分</span>
+                <span className="text-violet-300">宠物经验 +{mission.rewards.petExp}</span>
+                {!mission.unlocked && <span className="text-slate-500">{mission.lockReason}</span>}
+                {actingId === mission.id && <span className="text-indigo-300">出发中...</span>}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {reward && (
+        <div className="mt-3 rounded-xl bg-emerald-500/10 border border-emerald-400/20 p-3 text-sm text-emerald-300">
+          <div className="font-medium mb-1">奖励已收取：总积分 +{reward.totalPoints}</div>
+          <div className="text-xs text-slate-300">宠物经验 +{reward.petExp}{reward.bonusTriggered ? `，触发额外奖励 +${reward.bonusPoints}` : '，未触发额外奖励'}</div>
         </div>
       )}
     </div>
@@ -611,6 +862,11 @@ export function StarPathPage() {
       <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
         <DailyChest onOpen={loadData} />
         <SpacePet />
+      </div>
+
+      <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
+        <BuildingIncomeCard />
+        <ExplorationCard />
       </div>
 
       {/* 星域卡片网格 */}
