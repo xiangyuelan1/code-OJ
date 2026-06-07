@@ -170,6 +170,16 @@ export const knowledgeTreeAPI = {
     api.get(`/api/knowledge-tree/node/${nodeId}/problems`),
   autoCompose: (description: string) =>
     api.post('/api/knowledge-tree/auto-compose', { description }),
+  classifyUnassignedProblems: (limit?: number) =>
+    api.post('/api/knowledge-tree/ai/classify-unassigned', { limit }),
+  getClassificationSuggestions: () => api.get('/api/knowledge-tree/ai/suggestions'),
+  applyClassificationSuggestion: (id: string) => api.post(`/api/knowledge-tree/ai/suggestions/${id}/apply`),
+  skipClassificationSuggestion: (id: string) => api.post(`/api/knowledge-tree/ai/suggestions/${id}/skip`),
+  confirmTemporaryNode: (id: string) => api.post(`/api/knowledge-tree/ai/nodes/${id}/confirm`),
+  findProblemsForNode: (id: string, data: { scope?: 'unassigned' | 'all'; limit?: number }) =>
+    api.post(`/api/knowledge-tree/ai/nodes/${id}/find-problems`, data),
+  attachProblemsToNode: (id: string, problemIds: string[]) =>
+    api.post(`/api/knowledge-tree/ai/nodes/${id}/attach-problems`, { problemIds }),
 };
 
 export const enhancedAiAPI = {

@@ -82,11 +82,14 @@ model KnowledgeTree {
   parentId    String?
   level       Int      @default(1)
   order       Int      @default(0)
+  isTemporary Boolean  @default(false)
+  source      String   @default("MANUAL")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   parent      KnowledgeTree?  @relation("KnowledgeTreeRelation", fields: [parentId], references: [id])
   children    KnowledgeTree[] @relation("KnowledgeTreeRelation")
   problems    Problem[]
+  classificationSuggestions AIClassificationSuggestion[] @relation("SuggestedKnowledgeNode")
   starRegion  StarRegion?
 }
 
@@ -120,6 +123,26 @@ model Problem {
   wrongRecords          WrongRecord[]
   favorites             UserProblemFavorite[]
   listItems             UserProblemListItem[]
+  aiClassificationSuggestions AIClassificationSuggestion[]
+}
+
+model AIClassificationSuggestion {
+  id                       String   @id @default(uuid())
+  problemId                String
+  problem                  Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  suggestedNodeId          String?
+  suggestedNode            KnowledgeTree? @relation("SuggestedKnowledgeNode", fields: [suggestedNodeId], references: [id], onDelete: SetNull)
+  temporaryNodeName        String?
+  temporaryNodeDescription String?
+  temporaryParentId        String?
+  confidence               Int      @default(0)
+  reason                   String
+  status                   String   @default("PENDING")
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@index([problemId])
+  @@index([status])
 }
 
 model Solution {

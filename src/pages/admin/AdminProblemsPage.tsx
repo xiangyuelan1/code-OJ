@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { problemsAPI, enhancedAiAPI, aiAPI } from '../../services/api';
+import { problemsAPI, enhancedAiAPI, aiAPI, knowledgeTreeAPI } from '../../services/api';
 import { Plus, Edit, Trash2, Code, CheckCircle, PenTool, Search, Upload, Loader2, X, Tags, ChevronDown, Calendar, AlertTriangle, Clock, Filter, Sparkles } from 'lucide-react';
 
 type BatchDeleteMode = 'selected' | 'byTimeGroup' | 'all' | null;
@@ -11,6 +11,18 @@ interface TimeGroup {
   label: string;
   count: number;
   ids: string[];
+}
+
+interface ClassificationSuggestion {
+  id: string;
+  problemId: string;
+  problemTitle?: string;
+  suggestedNodeId?: string | null;
+  suggestedNodeName?: string | null;
+  suggestedNodeTemporary: boolean;
+  confidence: number;
+  reason: string;
+  status: 'PENDING' | 'APPLIED' | 'SKIPPED';
 }
 
 function getStartOfDay(date: Date): Date {
@@ -96,6 +108,10 @@ export function AdminProblemsPage() {
   const [batchMode, setBatchMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [classifyLoading, setClassifyLoading] = useState(false);
+  const [showClassificationSuggestions, setShowClassificationSuggestions] = useState(false);
+  const [classificationSuggestions, setClassificationSuggestions] = useState<ClassificationSuggestion[]>([]);
+  const [suggestionActionId, setSuggestionActionId] = useState<string | null>(null);
+  const [batchApplyingSuggestions, setBatchApplyingSuggestions] = useState(false);
 
   const [showAiGenerate, setShowAiGenerate] = useState(false);
   const [aiKeywords, setAiKeywords] = useState('');
@@ -359,6 +375,77 @@ export function AdminProblemsPage() {
     }
   };
 
+  const loadClassificationSuggestions = async () => {
+    const res = await knowledgeTreeAPI.getClassificationSuggestions();
+    if (res.success) {
+      setClassificationSuggestions((res.data || []).filter((suggestion: ClassificationSuggestion) => suggestion.status === 'PENDING'));
+    }
+  };
+
+  const handleClassifyUnassignedProblems = async () => {
+    setClassifyLoading(true);
+    setShowClassificationSuggestions(true);
+    try {
+      const res = await knowledgeTreeAPI.classifyUnassignedProblems(20);
+      if (res.success && Array.isArray(res.data)) {
+        setClassificationSuggestions(res.data.filter((suggestion: ClassificationSuggestion) => suggestion.status === 'PENDING'));
+      } else {
+        await loadClassificationSuggestions();
+      }
+    } catch (error: any) {
+      alert(error.error?.message || 'AI归类未分类题目失败');
+    } finally {
+      setClassifyLoading(false);
+    }
+  };
+
+  const handleApplySuggestion = async (id: string) => {
+    setSuggestionActionId(id);
+    try {
+      await knowledgeTreeAPI.applyClassificationSuggestion(id);
+      await loadClassificationSuggestions();
+      await loadProblems();
+    } catch (error: any) {
+      alert(error.error?.message || '确认建议失败');
+    } finally {
+      setSuggestionActionId(null);
+    }
+  };
+
+  const handleSkipSuggestion = async (id: string) => {
+    setSuggestionActionId(id);
+    try {
+      await knowledgeTreeAPI.skipClassificationSuggestion(id);
+      await loadClassificationSuggestions();
+      await loadProblems();
+    } catch (error: any) {
+      alert(error.error?.message || '跳过建议失败');
+    } finally {
+      setSuggestionActionId(null);
+    }
+  };
+
+  const handleApplyHighConfidenceSuggestions = async () => {
+    const highConfidenceSuggestions = classificationSuggestions.filter(suggestion => suggestion.confidence >= 80);
+    if (highConfidenceSuggestions.length === 0) {
+      alert('暂无置信度不低于 80 的待确认建议');
+      return;
+    }
+
+    setBatchApplyingSuggestions(true);
+    try {
+      for (const suggestion of highConfidenceSuggestions) {
+        await knowledgeTreeAPI.applyClassificationSuggestion(suggestion.id);
+      }
+      await loadClassificationSuggestions();
+      await loadProblems();
+    } catch (error: any) {
+      alert(error.error?.message || '批量确认失败');
+    } finally {
+      setBatchApplyingSuggestions(false);
+    }
+  };
+
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'PROGRAMMING':
@@ -550,6 +637,14 @@ export function AdminProblemsPage() {
             批量导入
           </button>
           <button
+            onClick={handleClassifyUnassignedProblems}
+            disabled={classifyLoading}
+            className="flex items-center bg-purple-500 hover:bg-purple-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {classifyLoading ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Sparkles className="h-5 w-5 mr-2" />}
+            {classifyLoading ? 'AI归类中...' : 'AI归类未分类'}
+          </button>
+          <button
             onClick={() => { setShowAiGenerate(true); setAiGeneratedProblems([]); }}
             className="flex items-center bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
           >
@@ -662,6 +757,81 @@ export function AdminProblemsPage() {
             )}
             — 共 <strong>{selectedTimeGroupIds.size}</strong> 道题目
           </span>
+        </div>
+      )}
+
+      {showClassificationSuggestions && (
+        <div className="bg-slate-800 rounded-xl p-6 shadow-lg mb-6 border border-purple-500/30">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-purple-400" />
+                AI归类建议
+              </h2>
+              <p className="text-slate-400 text-sm mt-1">请确认 AI 为未分类题目推荐的知识树节点。</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleApplyHighConfidenceSuggestions}
+                disabled={batchApplyingSuggestions || classificationSuggestions.filter(suggestion => suggestion.confidence >= 80).length === 0}
+                className="flex items-center px-4 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {batchApplyingSuggestions && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                批量确认高置信度（≥80）
+              </button>
+              <button
+                onClick={() => setShowClassificationSuggestions(false)}
+                className="p-2 text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {classificationSuggestions.length === 0 ? (
+            <div className="text-center py-8 text-slate-400">暂无待确认建议</div>
+          ) : (
+            <div className="space-y-3">
+              {classificationSuggestions.map(suggestion => (
+                <div key={suggestion.id} className="bg-slate-700/70 rounded-lg p-4 border border-slate-600">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-2">
+                        <span className="text-white font-medium">{suggestion.problemTitle || suggestion.problemId}</span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400">
+                          推荐：{suggestion.suggestedNodeName || '未知节点'}
+                        </span>
+                        {suggestion.suggestedNodeTemporary && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">AI临时节点</span>
+                        )}
+                        <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">
+                          置信度 {suggestion.confidence}%
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-400 leading-relaxed">{suggestion.reason || '暂无推荐理由'}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => handleApplySuggestion(suggestion.id)}
+                        disabled={suggestionActionId === suggestion.id || batchApplyingSuggestions}
+                        className="flex items-center px-3 py-1.5 bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 text-sm disabled:opacity-50"
+                      >
+                        {suggestionActionId === suggestion.id ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-1" />}
+                        确认
+                      </button>
+                      <button
+                        onClick={() => handleSkipSuggestion(suggestion.id)}
+                        disabled={suggestionActionId === suggestion.id || batchApplyingSuggestions}
+                        className="px-3 py-1.5 bg-slate-600 text-slate-300 rounded hover:bg-slate-500 text-sm disabled:opacity-50"
+                      >
+                        跳过
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

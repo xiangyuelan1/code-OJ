@@ -24,6 +24,8 @@ async function ensureSchemaColumns() {
     ['Exam', 'maxAttempts', 'INTEGER', '1'],
     ['ExamAttempt', 'totalScore', 'INTEGER', 'NULL'],
     ['ExamAttempt', 'timeTaken', 'INTEGER', 'NULL'],
+    ['KnowledgeTree', 'isTemporary', 'BOOLEAN', '0'],
+    ['KnowledgeTree', 'source', 'TEXT', "'MANUAL'"],
   ];
 
   let addedCount = 0;
@@ -54,6 +56,7 @@ async function ensureRequiredTables() {
     'UserProblemFavorite',
     'UserProblemList',
     'UserProblemListItem',
+    'AIClassificationSuggestion',
   ];
 
   for (const table of requiredTables) {

@@ -35,6 +35,14 @@ export interface AiJudgeResult {
   suggestions: string[];
 }
 
+export interface KnowledgeClassificationSuggestion {
+  mode: 'EXISTING_NODE' | 'TEMPORARY_NODE' | 'UNCERTAIN';
+  nodeId?: string;
+  temporaryNode?: { name: string; description: string; parentId?: string };
+  confidence: number;
+  reason: string;
+}
+
 export class AIService {
   async getConfig() {
     const config = await prisma.aIConfig.findFirst();
@@ -542,6 +550,154 @@ ${JSON.stringify(knowledgeTree, null, 2)}
     }
 
     return { nodeIds: [], reason: '无法确定分类' };
+  }
+
+  async suggestKnowledgeClassification(
+    params: { title: string; description: string; type: string; difficulty: string; tags: string[] },
+    knowledgeTree: KnowledgeNode[],
+    userId?: string,
+  ): Promise<KnowledgeClassificationSuggestion> {
+    if (!(await this.isFeatureEnabled('classify-problem'))) {
+      throw new Error('AI功能或题目分类功能未启用');
+    }
+
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      throw new Error('AI API未配置，无法生成知识树分类建议');
+    }
+
+    const prompt = `你是 OJ 系统的知识树分类助手。请根据题目信息和现有知识树，给出一个分类建议。
+
+题目信息：
+${JSON.stringify(params, null, 2)}
+
+现有知识树：
+${JSON.stringify(knowledgeTree, null, 2)}
+
+分类规则：
+1. 如果现有知识树中有明确匹配节点，返回 mode="EXISTING_NODE"，并填写 nodeId。
+2. 如果没有合适节点，但能明确判断应新增哪个知识点，返回 mode="TEMPORARY_NODE"，填写 temporaryNode.name、temporaryNode.description；如果能判断相近父节点则填写 temporaryNode.parentId。
+3. 如果无法可靠判断，返回 mode="UNCERTAIN"。
+4. confidence 必须是 0 到 100 的整数。
+5. 只能返回 JSON 对象，不要使用 Markdown，不要添加任何额外文字。
+
+返回结构：
+{
+  "mode": "EXISTING_NODE" | "TEMPORARY_NODE" | "UNCERTAIN",
+  "nodeId": "现有节点ID，可选",
+  "temporaryNode": { "name": "临时节点名称", "description": "临时节点描述", "parentId": "相近父节点ID，可选" },
+  "confidence": 0,
+  "reason": "简要说明推荐理由"
+}`;
+
+    const response = await this.callAI(prompt, config, 'classify-problem', userId);
+
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('AI响应不包含JSON对象');
+      const parsed = JSON.parse(jsonMatch[0]);
+      const validModes = ['EXISTING_NODE', 'TEMPORARY_NODE', 'UNCERTAIN'];
+      const mode = validModes.includes(parsed.mode) ? parsed.mode : 'UNCERTAIN';
+      const confidence = Math.max(0, Math.min(100, Math.round(Number(parsed.confidence) || 0)));
+      const temporaryNode = parsed.temporaryNode && typeof parsed.temporaryNode.name === 'string'
+        ? {
+            name: parsed.temporaryNode.name.trim(),
+            description: String(parsed.temporaryNode.description || '').trim(),
+            ...(typeof parsed.temporaryNode.parentId === 'string' && parsed.temporaryNode.parentId.trim()
+              ? { parentId: parsed.temporaryNode.parentId.trim() }
+              : {}),
+          }
+        : undefined;
+
+      if (mode === 'EXISTING_NODE') {
+        return {
+          mode,
+          ...(typeof parsed.nodeId === 'string' && parsed.nodeId.trim() ? { nodeId: parsed.nodeId.trim() } : {}),
+          confidence,
+          reason: String(parsed.reason || 'AI建议使用现有知识节点'),
+        };
+      }
+
+      if (mode === 'TEMPORARY_NODE' && temporaryNode?.name) {
+        return {
+          mode,
+          temporaryNode,
+          confidence,
+          reason: String(parsed.reason || 'AI建议创建临时知识节点'),
+        };
+      }
+
+      return {
+        mode: 'UNCERTAIN',
+        confidence,
+        reason: String(parsed.reason || 'AI未能给出明确分类建议'),
+      };
+    } catch (e: any) {
+      console.error('解析AI知识树分类建议失败:', e);
+      return {
+        mode: 'UNCERTAIN',
+        confidence: 0,
+        reason: `AI响应解析失败：${e.message}`,
+      };
+    }
+  }
+
+  async findProblemsForKnowledgeNode(
+    params: { node: { id: string; name: string; description?: string }; limit: number },
+    candidates: Array<{ id: string; title: string; description: string; type: string; difficulty: string; tags: string[]; currentKnowledgeTreeName?: string | null }>,
+    userId?: string,
+  ): Promise<Array<{ problemId: string; confidence: number; reason: string }>> {
+    if (!(await this.isFeatureEnabled('classify-problem'))) {
+      throw new Error('AI功能或题目分类功能未启用');
+    }
+
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      throw new Error('AI API未配置，无法为知识节点查找题目');
+    }
+
+    const limit = Math.max(1, Math.min(30, Math.floor(params.limit || 20)));
+    const candidateIds = new Set(candidates.map(candidate => candidate.id));
+    const prompt = `你是 OJ 系统的知识树题目匹配助手。请从候选题目中找出最匹配指定知识节点的题目。
+
+目标知识节点：
+${JSON.stringify(params.node, null, 2)}
+
+最多返回 ${limit} 道题。
+
+候选题目：
+${JSON.stringify(candidates, null, 2)}
+
+匹配要求：
+1. 只选择确实属于该知识节点的题目，按匹配度从高到低排列。
+2. confidence 必须是 0 到 100 的整数。
+3. problemId 必须来自候选题目 id。
+4. 只能返回 JSON 数组，不要使用 Markdown，不要添加任何额外文字。
+
+返回结构：
+[
+  { "problemId": "候选题目ID", "confidence": 0, "reason": "简要说明匹配理由" }
+]`;
+
+    try {
+      const response = await this.callAI(prompt, config, 'classify-problem', userId);
+      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) return [];
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (!Array.isArray(parsed)) return [];
+
+      return parsed
+        .filter(item => item && typeof item.problemId === 'string' && candidateIds.has(item.problemId))
+        .slice(0, limit)
+        .map(item => ({
+          problemId: item.problemId,
+          confidence: Math.max(0, Math.min(100, Math.round(Number(item.confidence) || 0))),
+          reason: String(item.reason || 'AI判断该题与知识节点匹配'),
+        }));
+    } catch (e) {
+      console.error('解析AI知识节点找题响应失败:', e);
+      return [];
+    }
   }
 
   parseTxtToProblems(content: string): any[] {

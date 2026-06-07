@@ -23,6 +23,77 @@ router.get('/stats', authMiddleware, roleMiddleware('ADMIN'), async (_req: Reque
   }
 });
 
+router.post('/ai/classify-unassigned', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user?.id;
+    const result = await knowledgeTreeService.suggestClassifyUnassignedProblems(userId, req.body?.limit);
+    res.status(201).json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.get('/ai/suggestions', authMiddleware, roleMiddleware('ADMIN'), async (_req: Request, res: any): Promise<void> => {
+  try {
+    const suggestions = await knowledgeTreeService.getPendingClassificationSuggestions();
+    res.json({ success: true, data: suggestions });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/ai/suggestions/:id/apply', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const result = await knowledgeTreeService.applyClassificationSuggestion(req.params.id);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/ai/suggestions/:id/skip', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const result = await knowledgeTreeService.skipClassificationSuggestion(req.params.id);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/ai/nodes/:id/confirm', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const node = await knowledgeTreeService.confirmTemporaryNode(req.params.id);
+    res.json({ success: true, data: node });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/ai/nodes/:id/find-problems', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user?.id;
+    const scope = req.body?.scope === 'all' ? 'all' : 'unassigned';
+    const result = await knowledgeTreeService.findProblemsForNode(req.params.id, scope, userId, req.body?.limit);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/ai/nodes/:id/attach-problems', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const { problemIds } = req.body;
+    if (!Array.isArray(problemIds)) {
+      res.status(400).json({ success: false, error: { message: 'problemIds必须是数组' } });
+      return;
+    }
+    const result = await knowledgeTreeService.attachProblemsToNode(req.params.id, problemIds);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
 router.post('/', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
     const node = await knowledgeTreeService.createNode(req.body);

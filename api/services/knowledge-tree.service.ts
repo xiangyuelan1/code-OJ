@@ -38,6 +38,8 @@ export class KnowledgeTreeService {
         parentId: node.parentId,
         level: node.level,
         order: node.order,
+        isTemporary: node.isTemporary,
+        source: node.source,
         problemCount: node._count.problems,
         children: []
       });
@@ -60,6 +62,34 @@ export class KnowledgeTreeService {
     return roots;
   }
 
+  private buildAiTree(nodes: any[]) {
+    const map = new Map();
+    const roots: any[] = [];
+
+    nodes.forEach(node => {
+      map.set(node.id, {
+        id: node.id,
+        name: node.name,
+        description: node.description,
+        parentId: node.parentId,
+        level: node.level,
+        children: []
+      });
+    });
+
+    nodes.forEach(node => {
+      const current = map.get(node.id);
+      if (node.parentId) {
+        const parent = map.get(node.parentId);
+        if (parent) parent.children.push(current);
+      } else {
+        roots.push(current);
+      }
+    });
+
+    return roots;
+  }
+
   /** 递归聚合子节点的题目数到父节点，使一级分类显示包含所有子分类的题目 */
   private aggregateProblemCounts(nodes: any[]): number {
     let total = 0;
@@ -69,6 +99,33 @@ export class KnowledgeTreeService {
       total += node.problemCount;
     }
     return total;
+  }
+
+  private parseProblemTags(tags: string): string[] {
+    try {
+      const parsed = JSON.parse(tags || '[]');
+      return Array.isArray(parsed) ? parsed.map(tag => String(tag)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private clampLimit(limit: number, max = 30) {
+    return Math.max(1, Math.min(max, Math.floor(Number(limit) || 20)));
+  }
+
+  private formatSuggestion(suggestion: any) {
+    return {
+      id: suggestion.id,
+      problemId: suggestion.problemId,
+      problemTitle: suggestion.problem?.title,
+      suggestedNodeId: suggestion.suggestedNodeId,
+      suggestedNodeName: suggestion.suggestedNode?.name ?? suggestion.temporaryNodeName ?? null,
+      suggestedNodeTemporary: suggestion.suggestedNode?.isTemporary ?? false,
+      confidence: suggestion.confidence,
+      reason: suggestion.reason,
+      status: suggestion.status,
+    };
   }
 
   async createNode(data: KnowledgeNodeInput) {
@@ -221,6 +278,269 @@ export class KnowledgeTreeService {
       where: { knowledgeTreeId: nodeId },
       orderBy: { createdAt: 'desc' }
     });
+  }
+
+  async getOrCreateAiPendingRoot() {
+    const existing = await prisma.knowledgeTree.findFirst({
+      where: { name: 'AI待确认分类', parentId: null }
+    });
+
+    if (existing) return existing;
+
+    const rootCount = await prisma.knowledgeTree.count({ where: { parentId: null } });
+    return prisma.knowledgeTree.create({
+      data: {
+        name: 'AI待确认分类',
+        description: 'AI 无法确定相近父节点时创建的临时分类根节点，需管理员确认后再转为正式知识节点。',
+        level: 1,
+        order: rootCount,
+        isTemporary: true,
+        source: 'AI',
+      },
+    });
+  }
+
+  async getKnowledgeTreeForAi() {
+    const nodes = await prisma.knowledgeTree.findMany({
+      orderBy: [
+        { level: 'asc' },
+        { order: 'asc' },
+      ],
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        level: true,
+        parentId: true,
+      },
+    });
+
+    return this.buildAiTree(nodes);
+  }
+
+  async suggestClassifyUnassignedProblems(userId: string, limit = 20) {
+    const take = this.clampLimit(limit);
+    const knowledgeTree = await this.getKnowledgeTreeForAi();
+    const problems = await prisma.problem.findMany({
+      where: { knowledgeTreeId: null },
+      orderBy: { createdAt: 'desc' },
+      take,
+    });
+
+    const suggestions: any[] = [];
+
+    for (const problem of problems) {
+      const aiResult = await aiService.suggestKnowledgeClassification({
+        title: problem.title,
+        description: problem.description,
+        type: problem.type,
+        difficulty: problem.difficulty,
+        tags: this.parseProblemTags(problem.tags),
+      }, knowledgeTree, userId);
+
+      let suggestedNodeId: string | undefined;
+      let temporaryNodeName: string | undefined;
+      let temporaryNodeDescription: string | undefined;
+      let temporaryParentId: string | undefined;
+
+      if (aiResult.mode === 'EXISTING_NODE' && aiResult.nodeId) {
+        const existingNode = await prisma.knowledgeTree.findUnique({ where: { id: aiResult.nodeId } });
+        if (existingNode) suggestedNodeId = existingNode.id;
+      }
+
+      if (aiResult.mode === 'TEMPORARY_NODE' && aiResult.temporaryNode) {
+        const aiParentId = aiResult.temporaryNode.parentId;
+        const parent = aiParentId
+          ? await prisma.knowledgeTree.findUnique({ where: { id: aiParentId } })
+          : null;
+        const parentNode = parent ?? await this.getOrCreateAiPendingRoot();
+        const siblingCount = await prisma.knowledgeTree.count({ where: { parentId: parentNode.id } });
+        const temporaryNode = await prisma.knowledgeTree.findFirst({
+          where: {
+            parentId: parentNode.id,
+            name: aiResult.temporaryNode.name,
+            isTemporary: true,
+          },
+        }) ?? await prisma.knowledgeTree.create({
+          data: {
+            name: aiResult.temporaryNode.name,
+            description: aiResult.temporaryNode.description,
+            parentId: parentNode.id,
+            level: parentNode.level + 1,
+            order: siblingCount,
+            isTemporary: true,
+            source: 'AI',
+          },
+        });
+
+        suggestedNodeId = temporaryNode.id;
+        temporaryNodeName = aiResult.temporaryNode.name;
+        temporaryNodeDescription = aiResult.temporaryNode.description;
+        temporaryParentId = parentNode.id;
+      }
+
+      await prisma.aIClassificationSuggestion.updateMany({
+        where: { problemId: problem.id, status: 'PENDING' },
+        data: { status: 'SKIPPED' },
+      });
+
+      const suggestion = await prisma.aIClassificationSuggestion.create({
+        data: {
+          problemId: problem.id,
+          suggestedNodeId,
+          temporaryNodeName,
+          temporaryNodeDescription,
+          temporaryParentId,
+          confidence: aiResult.confidence,
+          reason: aiResult.reason,
+          status: 'PENDING',
+        },
+        include: {
+          problem: { select: { id: true, title: true } },
+          suggestedNode: { select: { id: true, name: true, isTemporary: true } },
+        },
+      });
+
+      suggestions.push(this.formatSuggestion(suggestion));
+    }
+
+    return suggestions;
+  }
+
+  async getPendingClassificationSuggestions() {
+    const suggestions = await prisma.aIClassificationSuggestion.findMany({
+      where: { status: 'PENDING' },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        problem: { select: { id: true, title: true } },
+        suggestedNode: { select: { id: true, name: true, isTemporary: true } },
+      },
+    });
+
+    return suggestions.map(suggestion => this.formatSuggestion(suggestion));
+  }
+
+  async applyClassificationSuggestion(id: string) {
+    const suggestion = await prisma.aIClassificationSuggestion.findFirst({
+      where: { id, status: 'PENDING' },
+      include: {
+        problem: { select: { id: true, title: true } },
+        suggestedNode: { select: { id: true, name: true, isTemporary: true } },
+      },
+    });
+
+    if (!suggestion) throw new Error('待处理分类建议不存在');
+    if (!suggestion.suggestedNodeId) throw new Error('该建议没有可绑定的知识树节点');
+
+    const updated = await prisma.$transaction(async tx => {
+      await tx.problem.update({
+        where: { id: suggestion.problemId },
+        data: { knowledgeTreeId: suggestion.suggestedNodeId },
+      });
+
+      return tx.aIClassificationSuggestion.update({
+        where: { id },
+        data: { status: 'APPLIED' },
+        include: {
+          problem: { select: { id: true, title: true } },
+          suggestedNode: { select: { id: true, name: true, isTemporary: true } },
+        },
+      });
+    });
+
+    return this.formatSuggestion(updated);
+  }
+
+  async skipClassificationSuggestion(id: string) {
+    const suggestion = await prisma.aIClassificationSuggestion.findFirst({
+      where: { id, status: 'PENDING' },
+    });
+
+    if (!suggestion) throw new Error('待处理分类建议不存在');
+
+    const updated = await prisma.aIClassificationSuggestion.update({
+      where: { id },
+      data: { status: 'SKIPPED' },
+      include: {
+        problem: { select: { id: true, title: true } },
+        suggestedNode: { select: { id: true, name: true, isTemporary: true } },
+      },
+    });
+
+    return this.formatSuggestion(updated);
+  }
+
+  async confirmTemporaryNode(id: string) {
+    return prisma.knowledgeTree.update({
+      where: { id },
+      data: { isTemporary: false, source: 'MANUAL' },
+    });
+  }
+
+  async findProblemsForNode(nodeId: string, scope: 'unassigned' | 'all', userId: string, limit = 20) {
+    const take = this.clampLimit(limit);
+    const node = await prisma.knowledgeTree.findUnique({
+      where: { id: nodeId },
+      select: { id: true, name: true, description: true },
+    });
+
+    if (!node) throw new Error('节点不存在');
+
+    const where = scope === 'all'
+      ? { NOT: { knowledgeTreeId: nodeId } }
+      : { knowledgeTreeId: null };
+
+    const candidates = await prisma.problem.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 80,
+      include: {
+        knowledgeTree: { select: { id: true, name: true } },
+      },
+    });
+
+    const candidatePayload = candidates.map(problem => ({
+      id: problem.id,
+      title: problem.title,
+      description: problem.description,
+      type: problem.type,
+      difficulty: problem.difficulty,
+      tags: this.parseProblemTags(problem.tags),
+      currentKnowledgeTreeName: problem.knowledgeTree?.name ?? null,
+    }));
+
+    const matches = await aiService.findProblemsForKnowledgeNode({ node, limit: take }, candidatePayload, userId);
+    const problemMap = new Map(candidates.map(problem => [problem.id, problem]));
+
+    return matches.map(match => {
+      const problem = problemMap.get(match.problemId)!;
+      return {
+        problemId: problem.id,
+        title: problem.title,
+        type: problem.type,
+        difficulty: problem.difficulty,
+        tags: this.parseProblemTags(problem.tags),
+        currentKnowledgeTreeId: problem.knowledgeTreeId,
+        currentKnowledgeTreeName: problem.knowledgeTree?.name ?? null,
+        confidence: match.confidence,
+        reason: match.reason,
+      };
+    });
+  }
+
+  async attachProblemsToNode(nodeId: string, problemIds: string[]) {
+    const node = await prisma.knowledgeTree.findUnique({ where: { id: nodeId }, select: { id: true } });
+    if (!node) throw new Error('节点不存在');
+
+    const uniqueProblemIds = [...new Set(problemIds.filter(id => typeof id === 'string' && id.trim()).map(id => id.trim()))];
+    if (uniqueProblemIds.length === 0) return { updatedCount: 0 };
+
+    const result = await prisma.problem.updateMany({
+      where: { id: { in: uniqueProblemIds } },
+      data: { knowledgeTreeId: nodeId },
+    });
+
+    return { updatedCount: result.count };
   }
 
   /**

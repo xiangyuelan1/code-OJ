@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { knowledgeTreeAPI, problemsAPI } from '../../services/api';
-import { Plus, Trash2, Edit3, ChevronRight, ChevronDown, FolderTree, Save, X, BookOpen, Link2, Eye, Unlink, Sparkles, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Edit3, ChevronRight, ChevronDown, FolderTree, Save, X, BookOpen, Link2, Eye, Unlink, Sparkles, Loader2, CheckCircle } from 'lucide-react';
 
 interface TreeNode {
   id: string;
@@ -10,6 +10,8 @@ interface TreeNode {
   level: number;
   order: number;
   problemCount: number;
+  isTemporary?: boolean;
+  source?: string;
   children: TreeNode[];
 }
 
@@ -26,6 +28,19 @@ interface AutoComposeResult {
   totalProblems: number;
   title: string;
   description: string;
+}
+
+type FindProblemScope = 'unassigned' | 'all';
+
+interface FindProblemResult {
+  problemId: string;
+  title: string;
+  type: string;
+  difficulty: string;
+  currentKnowledgeTreeId?: string | null;
+  currentKnowledgeTreeName?: string | null;
+  confidence: number;
+  reason: string;
 }
 
 const EXAMPLE_PROMPTS = [
@@ -53,6 +68,14 @@ export function AdminKnowledgeTreePage() {
   const [autoComposeInput, setAutoComposeInput] = useState('');
   const [autoComposing, setAutoComposing] = useState(false);
   const [autoComposeResult, setAutoComposeResult] = useState<AutoComposeResult | null>(null);
+
+  const [confirmingNodeId, setConfirmingNodeId] = useState<string | null>(null);
+  const [findProblemNode, setFindProblemNode] = useState<TreeNode | null>(null);
+  const [findProblemScope, setFindProblemScope] = useState<FindProblemScope>('unassigned');
+  const [findProblemResults, setFindProblemResults] = useState<FindProblemResult[]>([]);
+  const [selectedProblemIds, setSelectedProblemIds] = useState<Set<string>>(new Set());
+  const [findProblemLoading, setFindProblemLoading] = useState(false);
+  const [attachProblemLoading, setAttachProblemLoading] = useState(false);
 
   useEffect(() => {
     loadTree();
@@ -252,6 +275,77 @@ export function AdminKnowledgeTreePage() {
     setAutoComposing(false);
   };
 
+  const confirmTemporaryNode = async (id: string) => {
+    setConfirmingNodeId(id);
+    try {
+      await knowledgeTreeAPI.confirmTemporaryNode(id);
+      await loadTree();
+      await loadStats();
+    } catch (error: any) {
+      alert(error.error?.message || '确认节点失败');
+    } finally {
+      setConfirmingNodeId(null);
+    }
+  };
+
+  const queryProblemsForNode = async (node: TreeNode, scope: FindProblemScope) => {
+    setFindProblemLoading(true);
+    try {
+      const res = await knowledgeTreeAPI.findProblemsForNode(node.id, { scope, limit: 20 });
+      if (res.success) {
+        setFindProblemResults(res.data || []);
+        setSelectedProblemIds(new Set());
+      }
+    } catch (error: any) {
+      alert(error.error?.message || 'AI找题失败');
+    } finally {
+      setFindProblemLoading(false);
+    }
+  };
+
+  const openFindProblemPanel = async (node: TreeNode) => {
+    setFindProblemNode(node);
+    setFindProblemScope('unassigned');
+    setFindProblemResults([]);
+    setSelectedProblemIds(new Set());
+    await queryProblemsForNode(node, 'unassigned');
+  };
+
+  const changeFindProblemScope = async (scope: FindProblemScope) => {
+    if (!findProblemNode || findProblemScope === scope) return;
+    setFindProblemScope(scope);
+    await queryProblemsForNode(findProblemNode, scope);
+  };
+
+  const toggleSelectedProblem = (problemId: string) => {
+    setSelectedProblemIds(prev => {
+      const next = new Set(prev);
+      if (next.has(problemId)) next.delete(problemId);
+      else next.add(problemId);
+      return next;
+    });
+  };
+
+  const attachSelectedProblems = async () => {
+    if (!findProblemNode || selectedProblemIds.size === 0) return;
+    setAttachProblemLoading(true);
+    try {
+      await knowledgeTreeAPI.attachProblemsToNode(findProblemNode.id, Array.from(selectedProblemIds));
+      await Promise.all([loadTree(), loadStats(), viewNodeProblems(findProblemNode.id)]);
+      await queryProblemsForNode(findProblemNode, findProblemScope);
+    } catch (error: any) {
+      alert(error.error?.message || '加入当前节点失败');
+    } finally {
+      setAttachProblemLoading(false);
+    }
+  };
+
+  const closeFindProblemPanel = () => {
+    setFindProblemNode(null);
+    setFindProblemResults([]);
+    setSelectedProblemIds(new Set());
+  };
+
   const renderNode = useCallback((node: TreeNode, depth: number = 0) => {
     const isExpanded = expandedIds.has(node.id);
     const isEditingThis = editing?.id === node.id;
@@ -307,6 +401,9 @@ export function AdminKnowledgeTreePage() {
           ) : (
             <>
               <span className="text-white text-sm font-medium flex-1">{node.name}</span>
+              {node.isTemporary && (
+                <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">AI待确认</span>
+              )}
               {node.description && (
                 <span className="text-slate-500 text-xs truncate max-w-[200px]">{node.description}</span>
               )}
@@ -329,6 +426,23 @@ export function AdminKnowledgeTreePage() {
                 >
                   <Link2 className="h-3.5 w-3.5" />
                 </button>
+                <button
+                  onClick={() => openFindProblemPanel(node)}
+                  className="p-1 text-purple-400 hover:text-purple-300"
+                  title="AI找题"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                </button>
+                {node.isTemporary && (
+                  <button
+                    onClick={() => confirmTemporaryNode(node.id)}
+                    disabled={confirmingNodeId === node.id}
+                    className="p-1 text-amber-400 hover:text-amber-300 disabled:opacity-50"
+                    title="确认节点"
+                  >
+                    {confirmingNodeId === node.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                  </button>
+                )}
                 {node.level === 1 && (
                   <button
                     onClick={() => startCreate(node.id)}
@@ -401,7 +515,7 @@ export function AdminKnowledgeTreePage() {
         )}
       </div>
     );
-  }, [expandedIds, editing, isCreating, createParentId]);
+  }, [expandedIds, editing, isCreating, createParentId, confirmingNodeId, findProblemNode]);
 
   if (loading) {
     return (
@@ -589,6 +703,99 @@ export function AdminKnowledgeTreePage() {
                     </button>
                   </div>
                 ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {findProblemNode && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-xl p-6 max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-purple-400" />
+                <h2 className="text-xl font-semibold text-white">AI找题：{findProblemNode.name}</h2>
+              </div>
+              <button onClick={closeFindProblemPanel} className="text-slate-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex bg-slate-700 rounded-lg p-1">
+                <button
+                  onClick={() => changeFindProblemScope('unassigned')}
+                  disabled={findProblemLoading}
+                  className={`px-3 py-1.5 rounded text-sm transition-colors ${findProblemScope === 'unassigned' ? 'bg-cyan-500 text-white' : 'text-slate-300 hover:bg-slate-600'}`}
+                >
+                  未分类题目
+                </button>
+                <button
+                  onClick={() => changeFindProblemScope('all')}
+                  disabled={findProblemLoading}
+                  className={`px-3 py-1.5 rounded text-sm transition-colors ${findProblemScope === 'all' ? 'bg-cyan-500 text-white' : 'text-slate-300 hover:bg-slate-600'}`}
+                >
+                  全部题目
+                </button>
+              </div>
+              <button
+                onClick={attachSelectedProblems}
+                disabled={attachProblemLoading || selectedProblemIds.size === 0}
+                className="flex items-center px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {attachProblemLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Link2 className="h-4 w-4 mr-2" />}
+                加入当前节点 ({selectedProblemIds.size})
+              </button>
+            </div>
+
+            {findProblemScope === 'all' && (
+              <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-sm">
+                已分类题目会移动到当前节点。
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto space-y-2">
+              {findProblemLoading ? (
+                <div className="flex items-center justify-center py-12 text-slate-400">
+                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                  AI正在查找候选题...
+                </div>
+              ) : findProblemResults.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">暂无候选题</div>
+              ) : (
+                findProblemResults.map(problem => (
+                  <label key={problem.problemId} className="flex gap-3 p-3 bg-slate-700 rounded-lg border border-slate-600 cursor-pointer hover:bg-slate-650">
+                    <input
+                      type="checkbox"
+                      checked={selectedProblemIds.has(problem.problemId)}
+                      onChange={() => toggleSelectedProblem(problem.problemId)}
+                      className="mt-1 rounded border-slate-500 bg-slate-600 text-cyan-500 focus:ring-cyan-500"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-2">
+                        <span className="text-white font-medium">{problem.title}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          problem.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400' :
+                          problem.difficulty === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
+                          'bg-red-500/20 text-red-400'
+                        }`}>
+                          {problem.difficulty === 'EASY' ? '简单' : problem.difficulty === 'MEDIUM' ? '中等' : '困难'}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-slate-600 text-slate-300">
+                          {problem.type === 'PROGRAMMING' ? '编程' : problem.type === 'CHOICE' ? '选择' : '填空'}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">
+                          置信度 {problem.confidence}%
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          当前分类：{problem.currentKnowledgeTreeName || '未分类'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-400 leading-relaxed">{problem.reason || '暂无推荐理由'}</p>
+                    </div>
+                  </label>
+                ))
+              )}
             </div>
           </div>
         </div>
