@@ -3,7 +3,7 @@ import { useAuthStore } from '../../stores/auth.store';
 import { usePointsStore } from '../../stores/points.store';
 import { useSocketStore } from '../../services/socket';
 import { classAPI, featureAPI } from '../../services/api';
-import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone, LayoutDashboard, Sparkles, BookX, CalendarCheck, BookMarked } from 'lucide-react';
+import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone, LayoutDashboard, Sparkles, BookX, CalendarCheck, BookMarked, LibraryBig } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 
 interface VisibleFeature {
@@ -113,6 +113,12 @@ export function Navbar() {
               <Link to="/my-library" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
                 <BookMarked className="h-4 w-4" />
                 <span>我的题库</span>
+              </Link>
+            )}
+            {isAuthenticated && (
+              <Link to="/problem-lists" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
+                <LibraryBig className="h-4 w-4" />
+                <span>题单广场</span>
               </Link>
             )}
             {isAuthenticated && (
@@ -291,6 +297,16 @@ export function Navbar() {
               >
                 <BookMarked className="h-4 w-4" />
                 <span>我的题库</span>
+              </Link>
+            )}
+            {isAuthenticated && (
+              <Link
+                to="/problem-lists"
+                className="flex items-center space-x-1 hover:text-cyan-400"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <LibraryBig className="h-4 w-4" />
+                <span>题单广场</span>
               </Link>
             )}
             {isAuthenticated && (

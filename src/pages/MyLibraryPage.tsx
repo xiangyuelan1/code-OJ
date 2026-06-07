@@ -12,6 +12,8 @@ import {
   Star,
   Trash2,
   XCircle,
+  Globe2,
+  Lock,
 } from 'lucide-react';
 import { myLibraryAPI, submissionsAPI, wrongRecordAPI } from '../services/api';
 import { getDifficultyBadge, getDifficultyName, getStatusBg, getStatusName, getTypeLabel } from '../lib/labels';
@@ -161,6 +163,7 @@ export function MyLibraryPage() {
   const [error, setError] = useState<string | null>(null);
   const [newListTitle, setNewListTitle] = useState('');
   const [newListDescription, setNewListDescription] = useState('');
+  const [newListIsPublic, setNewListIsPublic] = useState(false);
 
   const loadActiveTab = useCallback(async () => {
     setLoading(true);
@@ -243,10 +246,12 @@ export function MyLibraryPage() {
       const res = await myLibraryAPI.createList({
         title,
         description: newListDescription.trim() || undefined,
+        isPublic: newListIsPublic,
       });
       if (res.success) {
         setNewListTitle('');
         setNewListDescription('');
+        setNewListIsPublic(false);
         await loadActiveTab();
       }
     } catch (err: unknown) {
@@ -283,6 +288,23 @@ export function MyLibraryPage() {
       setError(getErrorMessage(err, '加载题单详情失败'));
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  const handleToggleListVisibility = async (list: ProblemListSummary) => {
+    setActionLoading(`visibility:${list.id}`);
+    setError(null);
+    try {
+      const nextIsPublic = !list.isPublic;
+      const res = await myLibraryAPI.updateList(list.id, { isPublic: nextIsPublic });
+      if (res.success) {
+        setLists((items) => items.map((item) => item.id === list.id ? { ...item, isPublic: nextIsPublic } : item));
+        setSelectedList((current) => current?.id === list.id ? { ...current, isPublic: nextIsPublic } : current);
+      }
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '切换题单可见性失败'));
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -422,9 +444,13 @@ export function MyLibraryPage() {
           <FilePlus2 className="h-5 w-5 text-cyan-400" />
           <h2 className="font-semibold">创建题单</h2>
         </div>
-        <div className="grid gap-3 md:grid-cols-[1fr_2fr_auto]">
+        <div className="grid gap-3 md:grid-cols-[1fr_2fr_auto_auto]">
           <input value={newListTitle} onChange={(event) => setNewListTitle(event.target.value)} placeholder="题单标题（必填）" className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-2 text-white outline-none focus:border-cyan-500" />
           <input value={newListDescription} onChange={(event) => setNewListDescription(event.target.value)} placeholder="描述（可选）" className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-2 text-white outline-none focus:border-cyan-500" />
+          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-4 py-2 text-sm text-slate-300 transition-colors hover:border-cyan-500/60">
+            <input type="checkbox" checked={newListIsPublic} onChange={(event) => setNewListIsPublic(event.target.checked)} className="h-4 w-4 accent-cyan-500" />
+            公开发布
+          </label>
           <button onClick={handleCreateList} disabled={actionLoading === 'create-list'} className="rounded-xl bg-cyan-500 px-5 py-2 font-semibold text-white transition-colors hover:bg-cyan-400 disabled:opacity-50">创建</button>
         </div>
       </div>
@@ -446,8 +472,12 @@ export function MyLibraryPage() {
                   <div className="flex justify-between text-sm text-slate-400"><span>{list.solvedCount}/{list.problemCount} 已解决</span><span>{progress}%</span></div>
                   <div className="h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-green-400" style={{ width: `${progress}%` }} /></div>
                 </div>
-                <div className="mt-5 flex gap-2">
+                <div className="mt-5 flex flex-wrap gap-2">
                   <button onClick={() => handleViewList(list.id)} className="rounded-xl bg-cyan-500/15 px-4 py-2 text-sm font-semibold text-cyan-300 transition-colors hover:bg-cyan-500/25">查看</button>
+                  <button onClick={() => handleToggleListVisibility(list)} disabled={actionLoading === `visibility:${list.id}`} className="flex items-center gap-1 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-300 transition-colors hover:bg-slate-700 disabled:opacity-50">
+                    {list.isPublic ? <Lock className="h-4 w-4" /> : <Globe2 className="h-4 w-4" />}
+                    {list.isPublic ? '转为私有' : '公开发布'}
+                  </button>
                   <button onClick={() => handleDeleteList(list.id)} disabled={actionLoading === list.id} className="flex items-center gap-1 rounded-xl bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"><Trash2 className="h-4 w-4" /> 删除</button>
                 </div>
               </div>

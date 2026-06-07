@@ -91,6 +91,10 @@ export const myLibraryAPI = {
   addFavorite: (problemId: string) => api.post(`/api/my-library/favorites/${problemId}`),
   removeFavorite: (problemId: string) => api.delete(`/api/my-library/favorites/${problemId}`),
   getLists: () => api.get('/api/my-library/lists'),
+  getPublicLists: (params?: { keyword?: string; sort?: 'latest' | 'popular' | 'largest' }) =>
+    api.get('/api/my-library/public-lists', { params }),
+  getPublicList: (id: string) => api.get(`/api/my-library/public-lists/${id}`),
+  copyPublicList: (id: string) => api.post(`/api/my-library/public-lists/${id}/copy`),
   createList: (data: { title: string; description?: string; isPublic?: boolean }) => api.post('/api/my-library/lists', data),
   getList: (id: string) => api.get(`/api/my-library/lists/${id}`),
   updateList: (id: string, data: { title?: string; description?: string; isPublic?: boolean }) => api.put(`/api/my-library/lists/${id}`, data),

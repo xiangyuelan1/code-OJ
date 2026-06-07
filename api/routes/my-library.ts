@@ -32,6 +32,164 @@ const findOwnedList = async (id: string, userId: string) => {
   });
 };
 
+const toPublicAuthor = (user: { id: string; username: string; avatar?: string | null }) => ({
+  id: user.id,
+  username: user.username,
+  avatar: user.avatar ?? null,
+});
+
+const toDifficultyStats = (items: Array<{ problem: { difficulty: string } }>) => items.reduce(
+  (stats, item) => {
+    if (item.problem.difficulty === 'EASY') stats.easy += 1;
+    if (item.problem.difficulty === 'MEDIUM') stats.medium += 1;
+    if (item.problem.difficulty === 'HARD') stats.hard += 1;
+    return stats;
+  },
+  { easy: 0, medium: 0, hard: 0 },
+);
+
+router.get('/public-lists', async (req: Request, res: any): Promise<void> => {
+  try {
+    const keyword = typeof req.query.keyword === 'string' ? req.query.keyword.trim() : '';
+    const sort = req.query.sort === 'popular' || req.query.sort === 'largest' ? req.query.sort : 'latest';
+    const lists = await prisma.userProblemList.findMany({
+      where: {
+        isPublic: true,
+        ...(keyword
+          ? {
+              OR: [
+                { title: { contains: keyword } },
+                { description: { contains: keyword } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } },
+        items: { select: { id: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    const sortedLists = [...lists];
+    if (sort === 'largest' || sort === 'popular') {
+      sortedLists.sort((left, right) => {
+        const countDiff = right.items.length - left.items.length;
+        if (countDiff !== 0) return countDiff;
+        return right.updatedAt.getTime() - left.updatedAt.getTime();
+      });
+    }
+
+    res.json({
+      success: true,
+      data: sortedLists.map((list) => ({
+        id: list.id,
+        title: list.title,
+        description: list.description,
+        author: toPublicAuthor(list.user),
+        problemCount: list.items.length,
+        createdAt: list.createdAt,
+        updatedAt: list.updatedAt,
+      })),
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.get('/public-lists/:id', async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    const list = await prisma.userProblemList.findFirst({
+      where: { id: req.params.id, isPublic: true },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } },
+        items: {
+          include: {
+            problem: { include: { knowledgeTree: true } },
+          },
+          orderBy: { order: 'asc' },
+        },
+      },
+    });
+
+    if (!list) {
+      res.status(404).json({ success: false, error: { message: '公开题单不存在' } });
+      return;
+    }
+
+    const acceptedSubmissions = await prisma.submission.findMany({
+      where: { userId, status: 'ACCEPTED', problemId: { in: list.items.map((item) => item.problemId) } },
+      select: { problemId: true },
+    });
+    const solvedProblemIds = new Set(acceptedSubmissions.map((submission) => submission.problemId));
+
+    res.json({
+      success: true,
+      data: {
+        id: list.id,
+        title: list.title,
+        description: list.description,
+        author: toPublicAuthor(list.user),
+        isPublic: list.isPublic,
+        createdAt: list.createdAt,
+        updatedAt: list.updatedAt,
+        difficultyStats: toDifficultyStats(list.items),
+        items: list.items.map((item) => ({
+          id: item.id,
+          order: item.order,
+          createdAt: item.createdAt,
+          solved: solvedProblemIds.has(item.problemId),
+          problem: toProblemInfo(item.problem),
+        })),
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/public-lists/:id/copy', async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+    const sourceList = await prisma.userProblemList.findFirst({
+      where: { id: req.params.id, isPublic: true },
+      include: {
+        items: {
+          select: { problemId: true, order: true },
+          orderBy: { order: 'asc' },
+        },
+      },
+    });
+
+    if (!sourceList) {
+      res.status(404).json({ success: false, error: { message: '公开题单不存在' } });
+      return;
+    }
+
+    const copiedTitle = `${sourceList.title} - 副本`.slice(0, 50);
+    const newList = await prisma.userProblemList.create({
+      data: {
+        userId,
+        title: copiedTitle,
+        description: sourceList.description,
+        isPublic: false,
+        items: {
+          create: sourceList.items.map((item, index) => ({
+            problemId: item.problemId,
+            order: index,
+          })),
+        },
+      },
+      select: { id: true, title: true },
+    });
+
+    res.status(201).json({ success: true, data: newList });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
 router.get('/favorites', async (req: Request, res: any): Promise<void> => {
   try {
     const userId = getUserId(req);

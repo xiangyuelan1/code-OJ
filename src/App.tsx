@@ -43,6 +43,7 @@ const LearningPathPage = lazy(() => import("./pages/LearningPath").then(m => ({ 
 const LearningPathDetailPage = lazy(() => import("./pages/LearningPath").then(m => ({ default: m.LearningPathDetailPage })));
 const WrongRecordPage = lazy(() => import("./pages/WrongRecordPage").then(m => ({ default: m.WrongRecordPage })));
 const MyLibraryPage = lazy(() => import("./pages/MyLibraryPage").then(m => ({ default: m.MyLibraryPage })));
+const ProblemListSquarePage = lazy(() => import("./pages/ProblemListSquarePage").then(m => ({ default: m.ProblemListSquarePage })));
 const CheckInPage = lazy(() => import("./pages/CheckInPage").then(m => ({ default: m.CheckInPage })));
 const ClassLeaderboardPage = lazy(() => import("./pages/ClassLeaderboardPage").then(m => ({ default: m.ClassLeaderboardPage })));
 
@@ -383,6 +384,14 @@ export default function App() {
                 element={
                   <ProtectedRoute>
                     <MyLibraryPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/problem-lists"
+                element={
+                  <ProtectedRoute>
+                    <ProblemListSquarePage />
                   </ProtectedRoute>
                 }
               />
