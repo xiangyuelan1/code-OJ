@@ -47,6 +47,27 @@ async function ensureSchemaColumns() {
   }
 }
 
+async function ensureRequiredTables() {
+  const requiredTables = [
+    'DailyCheckIn',
+    'WrongRecord',
+    'UserProblemFavorite',
+    'UserProblemList',
+    'UserProblemListItem',
+  ];
+
+  for (const table of requiredTables) {
+    try {
+      await prisma.$queryRawUnsafe(`SELECT 1 FROM "${table}" LIMIT 1`);
+    } catch {
+      console.log(`[DB] ⚠️  Table ${table} missing, running prisma db push...`);
+      execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' });
+      console.log('[DB] ✅ Missing tables repaired');
+      return;
+    }
+  }
+}
+
 async function startServer() {
   // 同步数据库 schema
   console.log('[DB] Syncing database schema...');
@@ -67,8 +88,9 @@ async function startServer() {
     process.exit(1);
   }
 
-  // 兜底：直接 SQL 补齐缺失列
+  // 兜底：直接 SQL 补齐缺失列，并校验新增业务表确实存在。
   await ensureSchemaColumns();
+  await ensureRequiredTables();
 
   const httpServer = createServer(app);
   setupSocketIO(httpServer);

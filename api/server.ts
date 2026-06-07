@@ -67,31 +67,54 @@ async function ensureSchemaColumns() {
 }
 
 /**
- * 确保缺失的表存在（通过 db push 创建）
+ * 同步 Prisma schema 到运行时数据库。
+ * Docker 构建阶段访问不到挂载的生产数据库，因此必须在容器启动时同步。
+ */
+function syncPrismaSchema() {
+  try {
+    execSync('npx prisma db push --skip-generate', { stdio: 'inherit' });
+    console.log('[DB] ✅ Prisma schema synced');
+  } catch (error) {
+    console.error('[DB] ❌ Prisma schema sync failed');
+    throw error;
+  }
+}
+
+/**
+ * 确保核心业务表存在，避免旧 volume 数据库未同步时页面运行时报错。
  */
 async function ensureMissingTables() {
-  const requiredTables = ['ExamRanking', 'PricingPlan', 'Promotion', 'PromotionUsage'];
+  const requiredTables = [
+    'ExamRanking',
+    'PricingPlan',
+    'Promotion',
+    'PromotionUsage',
+    'DailyCheckIn',
+    'WrongRecord',
+    'UserProblemFavorite',
+    'UserProblemList',
+    'UserProblemListItem',
+  ];
+
   for (const table of requiredTables) {
     try {
       await prisma.$queryRawUnsafe(`SELECT 1 FROM "${table}" LIMIT 1`);
     } catch {
-      console.log(`[DB] ⚠️  Table ${table} missing, running db push...`);
-      try {
-        execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' });
-        console.log(`[DB] ✅ Table ${table} created`);
-        return; // db push 会创建所有缺失的表，一次就够了
-      } catch {
-        console.warn(`[DB] ⚠️  db push failed for missing table ${table}`);
-      }
-      break;
+      console.log(`[DB] ⚠️  Table ${table} missing after schema sync`);
+      throw new Error(`Database table ${table} is missing after prisma db push`);
     }
   }
+
+  console.log('[DB] ✅ Required business tables exist');
 }
 
 async function initDatabase() {
   const dbPath = resolveDbPath();
   console.log(`[DB] Database file path: ${dbPath}`);
   console.log(`[DB] DATABASE_URL: ${process.env.DATABASE_URL}`);
+
+  // 每次服务启动时同步运行时数据库，确保 Docker volume 中的旧库跟上最新 schema。
+  syncPrismaSchema();
 
   // 连接数据库
   try {
