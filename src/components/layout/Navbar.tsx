@@ -3,7 +3,30 @@ import { useAuthStore } from '../../stores/auth.store';
 import { usePointsStore } from '../../stores/points.store';
 import { useSocketStore } from '../../services/socket';
 import { classAPI, featureAPI } from '../../services/api';
-import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone, LayoutDashboard, Sparkles, BookX, CalendarCheck, BookMarked, LibraryBig } from 'lucide-react';
+import {
+  Award,
+  BookMarked,
+  BookOpen,
+  BookX,
+  CalendarCheck,
+  ChevronDown,
+  Crown,
+  FileCheck,
+  Gamepad2,
+  GraduationCap,
+  LayoutDashboard,
+  LibraryBig,
+  LogOut,
+  Menu,
+  MessageSquare,
+  MonitorSmartphone,
+  ScrollText,
+  Sparkles,
+  Trophy,
+  User,
+  Users,
+  X,
+} from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 
 interface VisibleFeature {
@@ -13,12 +36,112 @@ interface VisibleFeature {
   order: number;
 }
 
+interface NavItem {
+  label: string;
+  to: string;
+  icon: typeof BookOpen;
+  description: string;
+  auth?: boolean;
+  featureKey?: string;
+  roles?: Array<'ADMIN' | 'TEACHER' | 'STUDENT'>;
+  badge?: number;
+}
+
+interface NavGroup {
+  label: string;
+  icon: typeof BookOpen;
+  accent: string;
+  items: NavItem[];
+}
+
+function canShowItem(
+  item: NavItem,
+  params: {
+    isAuthenticated: boolean;
+    role?: string;
+    isVisible: (featureKey: string) => boolean;
+  },
+) {
+  if (item.auth && !params.isAuthenticated) return false;
+  if (item.featureKey && !params.isVisible(item.featureKey)) return false;
+  if (item.roles && !item.roles.includes(params.role as 'ADMIN' | 'TEACHER' | 'STUDENT')) return false;
+  return true;
+}
+
+function DesktopGroup({ group, onNavigate }: { group: NavGroup; onNavigate: () => void }) {
+  const [open, setOpen] = useState(false);
+  const Icon = group.icon;
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="group flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-800 hover:text-white"
+      >
+        <Icon className={`h-4 w-4 ${group.accent}`} />
+        <span>{group.label}</span>
+        <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full w-72 pt-3">
+          <div className="overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-950/95 shadow-2xl shadow-cyan-950/30 backdrop-blur-xl">
+            <div className="border-b border-slate-800 px-4 py-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                <Icon className={`h-4 w-4 ${group.accent}`} />
+                {group.label}
+              </div>
+            </div>
+            <div className="p-2">
+              {group.items.map((item) => {
+                const ItemIcon = item.icon;
+                return (
+                  <Link
+                    key={`${group.label}-${item.to}`}
+                    to={item.to}
+                    onClick={() => {
+                      setOpen(false);
+                      onNavigate();
+                    }}
+                    className="group/item flex items-start gap-3 rounded-xl px-3 py-3 transition hover:bg-slate-800/90"
+                  >
+                    <span className="mt-0.5 rounded-lg bg-slate-800 p-2 text-cyan-300 transition group-hover/item:bg-cyan-500/15">
+                      <ItemIcon className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2 text-sm font-medium text-slate-100">
+                        {item.label}
+                        {!!item.badge && item.badge > 0 && (
+                          <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] leading-none text-white">
+                            {item.badge > 9 ? '9+' : item.badge}
+                          </span>
+                        )}
+                      </span>
+                      <span className="mt-0.5 block text-xs leading-5 text-slate-400">{item.description}</span>
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Navbar() {
   const { user, isAuthenticated, logout } = useAuthStore();
   const { points, levelName, rank, fetchMyPoints } = usePointsStore();
   const { onlineCount, disconnect } = useSocketStore();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [visibleFeatures, setVisibleFeatures] = useState<string[]>([]);
 
@@ -73,369 +196,281 @@ export function Navbar() {
     navigate('/');
   };
 
+  const navGroups: NavGroup[] = [
+    {
+      label: '学习',
+      icon: GraduationCap,
+      accent: 'text-cyan-300',
+      items: [
+        { label: '题目练习', to: '/', icon: BookOpen, description: '按难度和题型开始刷题', featureKey: 'problems' },
+        { label: '知识树刷题', to: '/categories', icon: ScrollText, description: '沿知识结构系统练习' },
+        { label: '多元学习', to: '/learning', icon: Sparkles, description: '项目、路径和能力训练', auth: true, featureKey: 'learning' },
+        { label: '编程星途', to: '/starpath', icon: Trophy, description: '星图探索、伙伴和星球建设', auth: true, featureKey: 'starpath' },
+        { label: '每日一题', to: '/checkin', icon: CalendarCheck, description: '签到、连续学习和每日挑战', auth: true },
+      ],
+    },
+    {
+      label: '题库',
+      icon: LibraryBig,
+      accent: 'text-emerald-300',
+      items: [
+        { label: '我的题库', to: '/my-library', icon: BookMarked, description: '最近做过、收藏和自建题单', auth: true },
+        { label: '错题本', to: '/wrong-records', icon: BookX, description: '复盘错题和薄弱知识点', auth: true },
+        { label: '我的提交', to: '/submissions', icon: FileCheck, description: '查看提交记录和判题结果', auth: true, roles: ['STUDENT', 'TEACHER'] },
+        { label: '已解决题目', to: '/solved', icon: Trophy, description: '查看已经通过的题目', auth: true },
+        { label: '题单广场', to: '/problem-lists', icon: LibraryBig, description: '浏览和复制公开题单', auth: true },
+      ],
+    },
+    {
+      label: '竞赛',
+      icon: Gamepad2,
+      accent: 'text-amber-300',
+      items: [
+        { label: '在线对战', to: '/match', icon: Gamepad2, description: '实时刷题对战和挑战', auth: true, featureKey: 'match' },
+        { label: '考试中心', to: '/exams', icon: ScrollText, description: '参加考试和查看结果', auth: true, featureKey: 'exams' },
+        { label: '成就中心', to: '/achievements', icon: Award, description: '查看徽章、积分和成长记录', auth: true },
+      ],
+    },
+    {
+      label: '社区',
+      icon: MessageSquare,
+      accent: 'text-violet-300',
+      items: [
+        { label: '讨论区', to: '/discussions', icon: MessageSquare, description: '交流题解、经验和问题', auth: true, roles: ['STUDENT', 'TEACHER'], featureKey: 'discussions' },
+      ],
+    },
+    {
+      label: '工作台',
+      icon: LayoutDashboard,
+      accent: 'text-rose-300',
+      items: [
+        { label: '管理后台', to: '/admin', icon: LayoutDashboard, description: '题目、用户、考试和系统管理', auth: true, roles: ['ADMIN'], badge: pendingCount },
+        { label: '教师工作台', to: '/teacher/dashboard', icon: LayoutDashboard, description: '班级数据和教学概览', auth: true, roles: ['TEACHER'] },
+        { label: '班级管理', to: '/teacher/classes', icon: Users, description: '学生、班级和加入申请', auth: true, roles: ['TEACHER'], badge: pendingCount },
+      ],
+    },
+  ];
+
+  const visibleGroups = navGroups
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => canShowItem(item, {
+        isAuthenticated,
+        role: user?.role,
+        isVisible,
+      })),
+    }))
+    .filter(group => group.items.length > 0);
+
+  const userMenuItems: NavItem[] = [
+    { label: '个人中心', to: '/profile', icon: User, description: '资料、能力画像和学习统计', auth: true },
+    { label: '签到', to: '/checkin', icon: CalendarCheck, description: '领取连续学习奖励', auth: true },
+    { label: '下载 App', to: '/app-download', icon: MonitorSmartphone, description: '移动端访问和安装说明' },
+  ];
+
   return (
-    <nav className="bg-slate-900 text-white shadow-lg sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center">
-            <Link to="/" className="flex items-center space-x-2">
-              <BookOpen className="h-8 w-8 text-cyan-400" />
-              <span className="text-xl font-bold">Code OJ</span>
-            </Link>
+    <nav className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 text-white shadow-2xl shadow-slate-950/40 backdrop-blur-xl">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 items-center justify-between gap-4">
+          <Link to="/" className="flex shrink-0 items-center gap-2">
+            <span className="rounded-xl bg-cyan-500/10 p-2 ring-1 ring-cyan-400/25">
+              <BookOpen className="h-6 w-6 text-cyan-300" />
+            </span>
+            <span className="leading-tight">
+              <span className="block text-sm font-black tracking-wide">Code</span>
+              <span className="block text-xs font-semibold text-slate-300">OJ</span>
+            </span>
+          </Link>
+
+          <div className="hidden flex-1 items-center justify-center gap-1 lg:flex">
+            {visibleGroups.map(group => (
+              <DesktopGroup key={group.label} group={group} onNavigate={() => setUserMenuOpen(false)} />
+            ))}
           </div>
 
-          <div className="hidden md:flex items-center space-x-6">
-            {isVisible('problems') && (
-              <Link to="/" className="hover:text-cyan-400 transition-colors">
-                题目
-              </Link>
-            )}
-            <Link to="/categories" className="hover:text-cyan-400 transition-colors">
-              题单
-            </Link>
-            {isAuthenticated && isVisible('match') && (
-              <Link to="/match" className="hover:text-cyan-400 transition-colors">
-                对战
-              </Link>
-            )}
-            {isAuthenticated && isVisible('learning') && (
-              <Link to="/learning" className="flex items-center space-x-1 transition-colors">
-                <Sparkles className="h-4 w-4" />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 font-medium">多元学习</span>
-              </Link>
-            )}
-            {isAuthenticated && isVisible('exams') && (
-              <Link to="/exams" className="hover:text-cyan-400 transition-colors">
-                考试
-              </Link>
-            )}
-            {isAuthenticated && (
-              <Link to="/my-library" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
-                <BookMarked className="h-4 w-4" />
-                <span>我的题库</span>
-              </Link>
-            )}
-            {isAuthenticated && (
-              <Link to="/problem-lists" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
-                <LibraryBig className="h-4 w-4" />
-                <span>题单广场</span>
-              </Link>
-            )}
-            {isAuthenticated && (
-              <Link to="/wrong-records" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
-                <BookX className="h-4 w-4" />
-                <span>错题本</span>
-              </Link>
-            )}
-            {isAuthenticated && (
-              <Link to="/checkin" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
-                <CalendarCheck className="h-4 w-4" />
-                <span>签到</span>
-              </Link>
-            )}
-            <Link to="/app-download" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
-              <Smartphone className="h-4 w-4" />
-              <span>下载App</span>
-            </Link>
-            {isAuthenticated && (user?.role === 'STUDENT' || user?.role === 'TEACHER') && isVisible('discussions') && (
-              <Link to="/discussions" className="hover:text-cyan-400 transition-colors">
-                社区
-              </Link>
-            )}
-            {isAuthenticated && (user?.role === 'STUDENT' || user?.role === 'TEACHER') && (
-              <Link to="/submissions" className="hover:text-cyan-400 transition-colors">
-                我的提交
-              </Link>
-            )}
-            {user?.role === 'ADMIN' && (
-              <Link to="/admin" className="hover:text-cyan-400 transition-colors relative">
-                管理后台
-                {pendingCount > 0 && (
-                  <span className="absolute -top-2 -right-4 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-                    {pendingCount > 9 ? '9+' : pendingCount}
-                  </span>
-                )}
-              </Link>
-            )}
-            {isAuthenticated && user?.role === 'TEACHER' && (
-              <Link to="/teacher/dashboard" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
-                <LayoutDashboard className="h-4 w-4" />
-                <span>工作台</span>
-              </Link>
-            )}
-            {isAuthenticated && user?.role === 'TEACHER' && (
-              <Link to="/teacher/classes" className="hover:text-cyan-400 transition-colors relative">
-                班级管理
-                {pendingCount > 0 && (
-                  <span className="absolute -top-2 -right-4 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-                    {pendingCount > 9 ? '9+' : pendingCount}
-                  </span>
-                )}
-              </Link>
-            )}
-
+          <div className="hidden items-center gap-3 lg:flex">
             {isAuthenticated ? (
               <>
-                <div className="flex items-center space-x-3 px-3 py-1.5 bg-slate-800 rounded-lg border border-slate-700">
-                  <div className="flex items-center space-x-1">
-                    <Users className="h-4 w-4 text-green-400" />
-                    <span className="text-xs text-green-400">{onlineCount}</span>
-                  </div>
-                  <div className="w-px h-4 bg-slate-600"></div>
-                  <div className="flex items-center space-x-1">
-                    <Award className="h-4 w-4 text-yellow-400" />
-                    <span className="text-sm font-medium text-yellow-400">{points}</span>
-                  </div>
-                  <div className="w-px h-4 bg-slate-600"></div>
-                  <div className="flex items-center space-x-1">
-                    {levelName === '王者' ? (
-                      <Crown className="h-4 w-4 text-purple-400" />
-                    ) : (
-                      <span className="text-sm">🏅</span>
-                    )}
-                    <span className="text-sm font-medium text-cyan-400">{levelName}</span>
-                  </div>
-                  {rank > 0 && (
-                    <>
-                      <div className="w-px h-4 bg-slate-600"></div>
-                      <span className="text-xs text-slate-400">排名 #{rank}</span>
-                    </>
-                  )}
+                <div className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm">
+                  <Award className="h-4 w-4 text-yellow-300" />
+                  <span className="font-semibold text-yellow-200">{points}</span>
+                  <span className="text-slate-600">/</span>
+                  {levelName === '王者' ? <Crown className="h-4 w-4 text-purple-300" /> : null}
+                  <span className="text-cyan-200">{levelName}</span>
                 </div>
 
-                <Link to="/profile" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
-                  <User className="h-4 w-4" />
-                  <span>{user?.username}</span>
-                </Link>
-                <button
-                  onClick={handleLogout}
-                  className="hover:text-red-400 transition-colors flex items-center space-x-1"
-                >
-                  <LogOut className="h-4 w-4" />
-                  <span>登出</span>
-                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setUserMenuOpen(value => !value)}
+                    className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm transition hover:border-cyan-400/50 hover:bg-slate-800"
+                  >
+                    <User className="h-4 w-4 text-slate-300" />
+                    <span className="max-w-24 truncate">{user?.username}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition ${userMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {userMenuOpen && (
+                    <div className="absolute right-0 top-full w-72 pt-3">
+                      <div className="overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-950/95 shadow-2xl shadow-cyan-950/30 backdrop-blur-xl">
+                        <div className="border-b border-slate-800 px-4 py-3">
+                          <div className="text-sm font-semibold text-white">{user?.username}</div>
+                          <div className="mt-1 flex items-center gap-3 text-xs text-slate-400">
+                            <span>在线 {onlineCount}</span>
+                            {rank > 0 && <span>排名 #{rank}</span>}
+                          </div>
+                        </div>
+                        <div className="p-2">
+                          {userMenuItems.map(item => {
+                            const ItemIcon = item.icon;
+                            return (
+                              <Link
+                                key={item.to}
+                                to={item.to}
+                                onClick={() => setUserMenuOpen(false)}
+                                className="flex items-start gap-3 rounded-xl px-3 py-3 transition hover:bg-slate-800/90"
+                              >
+                                <ItemIcon className="mt-0.5 h-4 w-4 text-cyan-300" />
+                                <span>
+                                  <span className="block text-sm font-medium text-slate-100">{item.label}</span>
+                                  <span className="mt-0.5 block text-xs text-slate-400">{item.description}</span>
+                                </span>
+                              </Link>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUserMenuOpen(false);
+                              handleLogout();
+                            }}
+                            className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-red-500/10"
+                          >
+                            <LogOut className="mt-0.5 h-4 w-4 text-red-300" />
+                            <span>
+                              <span className="block text-sm font-medium text-red-200">登出</span>
+                              <span className="mt-0.5 block text-xs text-slate-400">退出当前账号</span>
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <>
-                <Link
-                  to="/login"
-                  className="hover:text-cyan-400 transition-colors"
-                >
+                <Link to="/login" className="rounded-full px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800 hover:text-white">
                   登录
                 </Link>
-                <Link
-                  to="/register"
-                  className="bg-cyan-500 hover:bg-cyan-600 px-4 py-2 rounded-lg transition-colors"
-                >
+                <Link to="/register" className="rounded-full bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300">
                   注册
                 </Link>
               </>
             )}
           </div>
 
-          <div className="md:hidden flex items-center">
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="text-white hover:text-cyan-400"
-            >
-              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="rounded-xl border border-slate-700 p-2 text-white hover:border-cyan-400/50 hover:text-cyan-300 lg:hidden"
+          >
+            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </button>
         </div>
 
         {mobileMenuOpen && (
-          <div className="md:hidden py-4 space-y-3">
-            {isVisible('problems') && (
-              <Link
-                to="/"
-                className="block hover:text-cyan-400"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                题目列表
-              </Link>
-            )}
-            <Link
-              to="/categories"
-              className="block hover:text-cyan-400"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              题单
-            </Link>
-            {isAuthenticated && isVisible('match') && (
-              <Link
-                to="/match"
-                className="block hover:text-cyan-400"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                对战
-              </Link>
-            )}
-            {isAuthenticated && isVisible('learning') && (
-              <Link
-                to="/learning"
-                className="flex items-center space-x-1 hover:text-cyan-400"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <Sparkles className="h-4 w-4" />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 font-medium">多元学习</span>
-              </Link>
-            )}
-            {isAuthenticated && isVisible('exams') && (
-              <Link
-                to="/exams"
-                className="block hover:text-cyan-400"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                考试
-              </Link>
-            )}
-            {isAuthenticated && (
-              <Link
-                to="/my-library"
-                className="flex items-center space-x-1 hover:text-cyan-400"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <BookMarked className="h-4 w-4" />
-                <span>我的题库</span>
-              </Link>
-            )}
-            {isAuthenticated && (
-              <Link
-                to="/problem-lists"
-                className="flex items-center space-x-1 hover:text-cyan-400"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <LibraryBig className="h-4 w-4" />
-                <span>题单广场</span>
-              </Link>
-            )}
-            {isAuthenticated && (
-              <Link
-                to="/wrong-records"
-                className="flex items-center space-x-1 hover:text-cyan-400"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <BookX className="h-4 w-4" />
-                <span>错题本</span>
-              </Link>
-            )}
-            {isAuthenticated && (
-              <Link
-                to="/checkin"
-                className="flex items-center space-x-1 hover:text-cyan-400"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <CalendarCheck className="h-4 w-4" />
-                <span>签到</span>
-              </Link>
-            )}
-            <Link
-              to="/app-download"
-              className="block hover:text-cyan-400 flex items-center space-x-1"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              <Smartphone className="h-4 w-4" />
-              <span>下载App</span>
-            </Link>
-            {isAuthenticated ? (
-              <>
-                {(user?.role === 'STUDENT' || user?.role === 'TEACHER') && isVisible('discussions') && (
-                  <Link
-                    to="/discussions"
-                    className="block hover:text-cyan-400"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    社区
-                  </Link>
-                )}
-                {(user?.role === 'STUDENT' || user?.role === 'TEACHER') && (
-                  <Link
-                    to="/submissions"
-                    className="block hover:text-cyan-400"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    我的提交
-                  </Link>
-                )}
-                {user?.role === 'ADMIN' && (
-                  <Link
-                    to="/admin"
-                    className="block hover:text-cyan-400 relative"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    管理后台
-                    {pendingCount > 0 && (
-                      <span className="inline-block ml-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 text-center leading-4">
-                        {pendingCount > 9 ? '9+' : pendingCount}
-                      </span>
-                    )}
-                  </Link>
-                )}
-                {user?.role === 'TEACHER' && (
-                  <Link
-                    to="/teacher/dashboard"
-                    className="block hover:text-cyan-400 flex items-center space-x-1"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    <LayoutDashboard className="h-4 w-4" />
-                    <span>工作台</span>
-                  </Link>
-                )}
-                {user?.role === 'TEACHER' && (
-                  <Link
-                    to="/teacher/classes"
-                    className="block hover:text-cyan-400 relative"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    班级管理
-                    {pendingCount > 0 && (
-                      <span className="inline-block ml-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 text-center leading-4">
-                        {pendingCount > 9 ? '9+' : pendingCount}
-                      </span>
-                    )}
-                  </Link>
-                )}
-                <div className="flex items-center space-x-4 px-3 py-2 bg-slate-800 rounded-lg">
-                  <div className="flex items-center space-x-1">
-                    <Award className="h-4 w-4 text-yellow-400" />
-                    <span className="text-sm font-medium text-yellow-400">{points} 积分</span>
+          <div className="space-y-4 border-t border-slate-800 py-4 lg:hidden">
+            {visibleGroups.map(group => {
+              const Icon = group.icon;
+              return (
+                <section key={group.label} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                  <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+                    <Icon className={`h-4 w-4 ${group.accent}`} />
+                    {group.label}
                   </div>
-                  <span className="text-sm">🏅 {levelName}</span>
+                  <div className="grid gap-1 sm:grid-cols-2">
+                    {group.items.map(item => {
+                      const ItemIcon = item.icon;
+                      return (
+                        <Link
+                          key={`${group.label}-${item.to}`}
+                          to={item.to}
+                          className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 hover:text-white"
+                          onClick={() => setMobileMenuOpen(false)}
+                        >
+                          <ItemIcon className="h-4 w-4 text-cyan-300" />
+                          <span>{item.label}</span>
+                          {!!item.badge && item.badge > 0 && (
+                            <span className="ml-auto rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] leading-none text-white">
+                              {item.badge > 9 ? '9+' : item.badge}
+                            </span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
+
+            {isAuthenticated ? (
+              <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-white">{user?.username}</div>
+                    <div className="mt-1 text-xs text-slate-400">在线 {onlineCount}{rank > 0 ? ` · 排名 #${rank}` : ''}</div>
+                  </div>
+                  <div className="flex items-center gap-1 rounded-full bg-slate-800 px-3 py-1.5 text-sm text-yellow-200">
+                    <Award className="h-4 w-4" />
+                    {points} · {levelName}
+                  </div>
                 </div>
-                <Link
-                  to="/profile"
-                  className="block hover:text-cyan-400"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  个人中心
-                </Link>
-                <button
-                  onClick={() => {
-                    handleLogout();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="block text-red-400 hover:text-red-300"
-                >
-                  登出
-                </button>
-              </>
+                <div className="grid gap-1 sm:grid-cols-2">
+                  {userMenuItems.map(item => {
+                    const ItemIcon = item.icon;
+                    return (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 hover:text-white"
+                        onClick={() => setMobileMenuOpen(false)}
+                      >
+                        <ItemIcon className="h-4 w-4 text-cyan-300" />
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleLogout();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-red-200 hover:bg-red-500/10"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    登出
+                  </button>
+                </div>
+              </section>
             ) : (
-              <>
+              <div className="grid grid-cols-2 gap-3">
                 <Link
                   to="/login"
-                  className="block hover:text-cyan-400"
+                  className="rounded-xl border border-slate-700 px-4 py-2 text-center text-sm text-slate-200"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   登录
                 </Link>
                 <Link
                   to="/register"
-                  className="block hover:text-cyan-400"
+                  className="rounded-xl bg-cyan-500 px-4 py-2 text-center text-sm font-semibold text-slate-950"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   注册
                 </Link>
-              </>
+              </div>
             )}
           </div>
         )}
