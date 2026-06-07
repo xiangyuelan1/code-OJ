@@ -84,6 +84,21 @@ export const submissionsAPI = {
   getSolvedProblems: () => api.get('/api/submissions/solved-problems'),
 };
 
+export const myLibraryAPI = {
+  getRecent: (limit?: number) => api.get('/api/my-library/recent', { params: { limit } }),
+  getFavorites: () => api.get('/api/my-library/favorites'),
+  checkFavorite: (problemId: string) => api.get(`/api/my-library/favorites/check/${problemId}`),
+  addFavorite: (problemId: string) => api.post(`/api/my-library/favorites/${problemId}`),
+  removeFavorite: (problemId: string) => api.delete(`/api/my-library/favorites/${problemId}`),
+  getLists: () => api.get('/api/my-library/lists'),
+  createList: (data: { title: string; description?: string; isPublic?: boolean }) => api.post('/api/my-library/lists', data),
+  getList: (id: string) => api.get(`/api/my-library/lists/${id}`),
+  updateList: (id: string, data: { title?: string; description?: string; isPublic?: boolean }) => api.put(`/api/my-library/lists/${id}`, data),
+  deleteList: (id: string) => api.delete(`/api/my-library/lists/${id}`),
+  addProblemToList: (id: string, problemId: string) => api.post(`/api/my-library/lists/${id}/problems`, { problemId }),
+  removeProblemFromList: (id: string, problemId: string) => api.delete(`/api/my-library/lists/${id}/problems/${problemId}`),
+};
+
 export const solutionsAPI = {
   getByProblemId: (problemId: string) =>
     api.get(`/api/solutions/problem/${problemId}`),
@@ -534,6 +549,8 @@ export interface PlanetBuildingData {
   planetId: string;
   buildingType: string;
   level: number;
+  posX: number;
+  posY: number;
   builtAt: string;
   upgradedAt: string | null;
   config: BuildingConfig | null;
@@ -627,8 +644,9 @@ export const starpathBuildingAPI = {
   getConfigs: () => api.get('/api/starpath/building/configs'),
   getPlanetBuildings: (planetId: string) => api.get(`/api/starpath/building/planet/${planetId}`),
   getMyBuildings: () => api.get('/api/starpath/building/my'),
-  build: (planetId: string, buildingType: string) => api.post('/api/starpath/building/build', { planetId, buildingType }),
+  build: (planetId: string, buildingType: string, layout?: { posX: number; posY: number }) => api.post('/api/starpath/building/build', { planetId, buildingType, ...layout }),
   upgrade: (planetId: string, buildingType: string) => api.post('/api/starpath/building/upgrade', { planetId, buildingType }),
+  updateLayout: (buildingId: string, posX: number, posY: number) => api.patch('/api/starpath/building/layout', { buildingId, posX, posY }),
   collectIncome: () => api.post('/api/starpath/building/collect-income'),
   getEffects: () => api.get('/api/starpath/building/effects'),
   collectPassiveIncome: () => api.post('/api/starpath/building/passive-income/collect'),

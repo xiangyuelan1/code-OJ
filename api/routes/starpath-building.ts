@@ -52,8 +52,20 @@ router.post('/passive-income/collect', authMiddleware, async (req: Request, res:
 router.post('/build', authMiddleware, async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
-    const { planetId, buildingType } = req.body;
-    const building = await starPathBuildingService.buildOnPlanet(planetId, userId, buildingType);
+    const { planetId, buildingType, posX, posY } = req.body;
+    const layout = typeof posX === 'number' && typeof posY === 'number' ? { posX, posY } : undefined;
+    const building = await starPathBuildingService.buildOnPlanet(planetId, userId, buildingType, layout);
+    res.json({ success: true, data: building });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.patch('/layout', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { buildingId, posX, posY } = req.body;
+    const building = await starPathBuildingService.updateBuildingLayout(userId, buildingId, Number(posX), Number(posY));
     res.json({ success: true, data: building });
   } catch (error: any) {
     res.status(400).json({ success: false, error: { message: error.message } });

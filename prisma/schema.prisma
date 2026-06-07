@@ -60,6 +60,8 @@ model User {
   spacePet         UserSpacePet?
   planetCustoms    UserPlanetCustomization[]
   wrongRecords     WrongRecord[]
+  problemFavorites UserProblemFavorite[]
+  problemLists     UserProblemList[]
   dailyCheckIns    DailyCheckIn[]
 }
 
@@ -116,6 +118,8 @@ model Problem {
   discussions           Discussion[]
   dailyChallenges       DailyChallenge[]
   wrongRecords          WrongRecord[]
+  favorites             UserProblemFavorite[]
+  listItems             UserProblemListItem[]
 }
 
 model Solution {
@@ -841,6 +845,8 @@ model PlanetBuilding {
   planet       StarPlanet @relation(fields: [planetId], references: [id])
   buildingType String
   level        Int      @default(1)
+  posX         Int      @default(0)
+  posY         Int      @default(0)
   builtAt      DateTime @default(now())
   upgradedAt   DateTime?
 
@@ -979,6 +985,42 @@ model WrongRecord {
   updatedAt       DateTime @updatedAt
 
   @@unique([userId, problemId])
+}
+
+model UserProblemFavorite {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  problemId String
+  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, problemId])
+}
+
+model UserProblemList {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  title       String
+  description String   @default("")
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  items       UserProblemListItem[]
+}
+
+model UserProblemListItem {
+  id        String   @id @default(uuid())
+  listId    String
+  list      UserProblemList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  problemId String
+  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([listId, problemId])
 }
 
 /// 每日签到记录

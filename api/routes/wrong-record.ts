@@ -50,10 +50,27 @@ router.get('/', async (req: Request, res: any): Promise<void> => {
       }),
     ]);
 
+    const flatRecords = records.map((record) => ({
+      id: record.id,
+      problemId: record.problemId,
+      problemTitle: record.problem.title,
+      source: record.source,
+      difficulty: record.problem.difficulty,
+      knowledgeTreeId: record.problem.knowledgeTreeId,
+      knowledgeTreeName: record.problem.knowledgeTree?.name ?? '未分类',
+      wrongAnswer: record.wrongAnswer,
+      correctAnswer: record.correctAnswer,
+      retryCount: record.retryCount,
+      mastered: record.mastered,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    }));
+
     res.json({
       success: true,
       data: {
-        records,
+        records: flatRecords,
+        total,
         pagination: {
           page: pageNum,
           pageSize: size,
@@ -110,7 +127,7 @@ router.get('/stats', async (req: Request, res: any): Promise<void> => {
     }
 
     // 按错题数量降序排列，薄弱知识点优先展示
-    const breakdown = Array.from(breakdownMap.values()).sort((a, b) => b.wrongCount - a.wrongCount);
+    const byKnowledge = Array.from(breakdownMap.values()).sort((a, b) => b.wrongCount - a.wrongCount);
 
     res.json({
       success: true,
@@ -118,7 +135,7 @@ router.get('/stats', async (req: Request, res: any): Promise<void> => {
         total: totalCount,
         mastered: masteredCount,
         unmastered: unmasteredCount,
-        breakdown,
+        byKnowledge,
       },
     });
   } catch (error: any) {
@@ -184,7 +201,17 @@ router.get('/recommendations', async (req: Request, res: any): Promise<void> => 
       orderBy: { difficulty: 'asc' },  // 优先推荐简单题目，循序渐进
     });
 
-    res.json({ success: true, data: candidateProblems });
+    const recommendations = candidateProblems.map((problem) => ({
+      id: problem.id,
+      title: problem.title,
+      type: problem.type,
+      difficulty: problem.difficulty,
+      knowledgeTreeId: problem.knowledgeTreeId,
+      knowledgeTreeName: problem.knowledgeTree?.name ?? '未分类',
+      tags: JSON.parse(problem.tags || '[]'),
+    }));
+
+    res.json({ success: true, data: recommendations });
   } catch (error: any) {
     res.status(500).json({ success: false, error: { message: error.message } });
   }

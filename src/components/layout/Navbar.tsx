@@ -3,7 +3,7 @@ import { useAuthStore } from '../../stores/auth.store';
 import { usePointsStore } from '../../stores/points.store';
 import { useSocketStore } from '../../services/socket';
 import { classAPI, featureAPI } from '../../services/api';
-import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone, LayoutDashboard, Sparkles, BookX, CalendarCheck } from 'lucide-react';
+import { BookOpen, User, LogOut, Menu, X, Award, Crown, Users, Smartphone, LayoutDashboard, Sparkles, BookX, CalendarCheck, BookMarked } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 
 interface VisibleFeature {
@@ -107,6 +107,12 @@ export function Navbar() {
             {isAuthenticated && isVisible('exams') && (
               <Link to="/exams" className="hover:text-cyan-400 transition-colors">
                 考试
+              </Link>
+            )}
+            {isAuthenticated && (
+              <Link to="/my-library" className="hover:text-cyan-400 transition-colors flex items-center space-x-1">
+                <BookMarked className="h-4 w-4" />
+                <span>我的题库</span>
               </Link>
             )}
             {isAuthenticated && (
@@ -275,6 +281,16 @@ export function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 考试
+              </Link>
+            )}
+            {isAuthenticated && (
+              <Link
+                to="/my-library"
+                className="flex items-center space-x-1 hover:text-cyan-400"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <BookMarked className="h-4 w-4" />
+                <span>我的题库</span>
               </Link>
             )}
             {isAuthenticated && (

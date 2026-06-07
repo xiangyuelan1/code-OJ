@@ -38,6 +38,7 @@ import starpathAchievementRoutes from './routes/starpath-achievement';
 import starpathFunRoutes from './routes/starpath-fun';
 import starpathExplorationRoutes from './routes/starpath-exploration';
 import wrongRecordRoutes from './routes/wrong-record';
+import myLibraryRoutes from './routes/my-library';
 import checkinRoutes from './routes/checkin';
 import classStatsRoutes from './routes/class-stats';
 
@@ -91,6 +92,7 @@ app.use('/api/starpath/achievement', starpathAchievementRoutes);
 app.use('/api/starpath/fun', starpathFunRoutes);
 app.use('/api/starpath/exploration', starpathExplorationRoutes);
 app.use('/api/wrong-records', wrongRecordRoutes);
+app.use('/api/my-library', myLibraryRoutes);
 app.use('/api/checkin', checkinRoutes);
 app.use('/api/class-stats', classStatsRoutes);
 

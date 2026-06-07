@@ -226,6 +226,66 @@ export class SubmissionService {
     this.executor = new CodeExecutor();
   }
 
+  private async syncWrongRecordAfterSubmission(params: {
+    userId: string;
+    problemId: string;
+    source: string;
+    isCorrect: boolean;
+    wrongAnswer?: string | null;
+    correctAnswer?: string | null;
+  }) {
+    try {
+      if (!params.isCorrect) {
+        await prisma.wrongRecord.upsert({
+          where: {
+            userId_problemId: {
+              userId: params.userId,
+              problemId: params.problemId,
+            },
+          },
+          update: {
+            retryCount: { increment: 1 },
+            mastered: false,
+            masteredAt: null,
+            source: params.source,
+            wrongAnswer: params.wrongAnswer,
+            correctAnswer: params.correctAnswer,
+          },
+          create: {
+            userId: params.userId,
+            problemId: params.problemId,
+            source: params.source,
+            wrongAnswer: params.wrongAnswer,
+            correctAnswer: params.correctAnswer,
+          },
+        });
+        return;
+      }
+
+      const existing = await prisma.wrongRecord.findUnique({
+        where: {
+          userId_problemId: {
+            userId: params.userId,
+            problemId: params.problemId,
+          },
+        },
+      });
+
+      if (existing) {
+        await prisma.wrongRecord.update({
+          where: { id: existing.id },
+          data: {
+            mastered: true,
+            masteredAt: new Date(),
+            lastRetryAt: new Date(),
+          },
+        });
+      }
+    } catch (error: any) {
+      console.warn(`同步错题记录失败: ${error.message}`);
+    }
+  }
+
   async submitProgramming(problemId: string, userId: string, code: string, language: string) {
     const problem = await prisma.problem.findUnique({
       where: { id: problemId }
@@ -306,6 +366,15 @@ export class SubmissionService {
       }
     });
 
+    await this.syncWrongRecordAfterSubmission({
+      userId,
+      problemId,
+      source: 'PRACTICE',
+      isCorrect: result.status === 'ACCEPTED',
+      wrongAnswer: result.status === 'ACCEPTED' ? null : code.slice(0, 2000),
+      correctAnswer: null,
+    });
+
     return updatedSubmission;
   }
 
@@ -332,6 +401,15 @@ export class SubmissionService {
         score: isCorrect ? 100 : 0,
         pointsEarned: 0
       }
+    });
+
+    await this.syncWrongRecordAfterSubmission({
+      userId,
+      problemId,
+      source: 'PRACTICE',
+      isCorrect,
+      wrongAnswer: answer,
+      correctAnswer: problem.correctAnswer,
     });
 
     let pointsEarned = 0;
@@ -395,6 +473,15 @@ export class SubmissionService {
         score,
         pointsEarned: 0
       }
+    });
+
+    await this.syncWrongRecordAfterSubmission({
+      userId,
+      problemId,
+      source: 'PRACTICE',
+      isCorrect,
+      wrongAnswer: JSON.stringify(answers),
+      correctAnswer: JSON.stringify(correctAnswers),
     });
 
     let pointsEarned = 0;

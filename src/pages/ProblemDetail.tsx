@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { problemsAPI, solutionsAPI, submissionsAPI } from '../services/api';
+import { myLibraryAPI, problemsAPI, solutionsAPI, submissionsAPI } from '../services/api';
 import { useAuthStore } from '../stores/auth.store';
-import { ArrowLeft, Clock, MemoryStick, BookOpen, CheckCircle, Code, Lightbulb, Lock } from 'lucide-react';
+import { ArrowLeft, Clock, MemoryStick, BookOpen, CheckCircle, Code, Lightbulb, Lock, Star } from 'lucide-react';
 import { MarkdownRenderer } from '../components/MarkdownEditor';
 
 export function ProblemDetailPage() {
@@ -13,6 +13,9 @@ export function ProblemDetailPage() {
   const [solutions, setSolutions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasAC, setHasAC] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -38,6 +41,13 @@ export function ProblemDetailPage() {
         const acRes = await submissionsAPI.checkAC(id);
         if (acRes.success) {
           setHasAC(acRes.data.hasAC);
+        }
+      } catch {}
+
+      try {
+        const favoriteRes = await myLibraryAPI.checkFavorite(id);
+        if (favoriteRes.success) {
+          setIsFavorite(Boolean(favoriteRes.data?.favorited));
         }
       } catch {}
 
@@ -89,6 +99,25 @@ export function ProblemDetailPage() {
     }
   };
 
+  const handleToggleFavorite = async () => {
+    if (!id || favoriteLoading) return;
+    setFavoriteLoading(true);
+    setFavoriteError(null);
+    try {
+      const res = isFavorite
+        ? await myLibraryAPI.removeFavorite(id)
+        : await myLibraryAPI.addFavorite(id);
+      if (res.success) {
+        setIsFavorite((current) => !current);
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '收藏操作失败';
+      setFavoriteError(message);
+    } finally {
+      setFavoriteLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center py-20">
@@ -135,14 +164,34 @@ export function ProblemDetailPage() {
           </div>
           
           {isAuthenticated && (
-            <Link
-              to={`/problem/${id}/solve`}
-              className="bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold py-4 px-10 rounded-xl text-lg shadow-lg shadow-cyan-500/25 animate-glow-pulse transition-all hover:scale-105"
-            >
-              立即作答
-            </Link>
+            <div className="flex shrink-0 items-center gap-3">
+              <button
+                onClick={handleToggleFavorite}
+                disabled={favoriteLoading}
+                className={`flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all disabled:opacity-60 ${
+                  isFavorite
+                    ? 'bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30'
+                    : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                }`}
+              >
+                <Star className={`h-4 w-4 ${isFavorite ? 'fill-yellow-300' : ''}`} />
+                {isFavorite ? '已收藏' : '收藏'}
+              </button>
+              <Link
+                to={`/problem/${id}/solve`}
+                className="bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-bold py-4 px-10 rounded-xl text-lg shadow-lg shadow-cyan-500/25 animate-glow-pulse transition-all hover:scale-105"
+              >
+                立即作答
+              </Link>
+            </div>
           )}
         </div>
+
+        {favoriteError && (
+          <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-300">
+            {favoriteError}
+          </div>
+        )}
 
         <div className="flex items-center space-x-6 text-sm text-slate-400 mb-6">
           <span className="flex items-center">

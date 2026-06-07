@@ -67,6 +67,9 @@ const BUILDING_CONFIGS: Record<string, Record<number, { name: string; descriptio
   },
 };
 
+const BASE_GRID_WIDTH = 12;
+const BASE_GRID_HEIGHT = 8;
+
 export class StarPathBuildingService {
 
   getBuildingConfigs() {
@@ -84,7 +87,7 @@ export class StarPathBuildingService {
     }));
   }
 
-  async buildOnPlanet(planetId: string, userId: string, buildingType: string) {
+  async buildOnPlanet(planetId: string, userId: string, buildingType: string, layout?: { posX: number; posY: number }) {
     const validTypes = Object.keys(BUILDING_CONFIGS);
     if (!validTypes.includes(buildingType)) {
       throw new Error(`无效的建筑类型: ${buildingType}`);
@@ -125,8 +128,11 @@ export class StarPathBuildingService {
       });
     }
 
+    const position = this.normalizeLayout(layout ?? this.getDefaultPosition(buildingType));
+    await this.ensurePositionAvailable(userId, planetId, position.posX, position.posY);
+
     return prisma.planetBuilding.create({
-      data: { userId, planetId, buildingType, level: 1 },
+      data: { userId, planetId, buildingType, level: 1, ...position },
     });
   }
 
@@ -186,6 +192,8 @@ export class StarPathBuildingService {
       buildingType: b.buildingType,
       level: b.level,
       builtAt: b.builtAt,
+      posX: b.posX,
+      posY: b.posY,
       upgradedAt: b.upgradedAt,
       config: BUILDING_CONFIGS[b.buildingType]?.[b.level] || null,
     }));
@@ -338,6 +346,58 @@ export class StarPathBuildingService {
       daysAccumulated: maxDays,
       buildings: buildingDetails,
     };
+  }
+
+  async updateBuildingLayout(userId: string, buildingId: string, posX: number, posY: number) {
+    const position = this.normalizeLayout({ posX, posY });
+    const building = await prisma.planetBuilding.findFirst({
+      where: { id: buildingId, userId },
+    });
+
+    if (!building) {
+      throw new Error('建筑不存在或无权操作');
+    }
+
+    await this.ensurePositionAvailable(userId, building.planetId, position.posX, position.posY, building.id);
+
+    return prisma.planetBuilding.update({
+      where: { id: building.id },
+      data: position,
+    });
+  }
+
+  private normalizeLayout(layout: { posX: number; posY: number }) {
+    return {
+      posX: Math.min(BASE_GRID_WIDTH - 1, Math.max(0, Math.round(layout.posX))),
+      posY: Math.min(BASE_GRID_HEIGHT - 1, Math.max(0, Math.round(layout.posY))),
+    };
+  }
+
+  private getDefaultPosition(buildingType: string) {
+    const defaults: Record<string, { posX: number; posY: number }> = {
+      HEADQUARTERS: { posX: 5, posY: 3 },
+      LABORATORY: { posX: 3, posY: 2 },
+      LIBRARY: { posX: 7, posY: 2 },
+      ARENA: { posX: 3, posY: 5 },
+      OBSERVATORY: { posX: 7, posY: 5 },
+    };
+    return defaults[buildingType] ?? { posX: 5, posY: 4 };
+  }
+
+  private async ensurePositionAvailable(userId: string, planetId: string, posX: number, posY: number, exceptId?: string) {
+    const existing = await prisma.planetBuilding.findFirst({
+      where: {
+        userId,
+        planetId,
+        posX,
+        posY,
+        ...(exceptId ? { id: { not: exceptId } } : {}),
+      },
+    });
+
+    if (existing) {
+      throw new Error('该位置已有建筑，请选择其他地块');
+    }
   }
 
   // 根据用户等级折扣计算建筑实际费用
