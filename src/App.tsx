@@ -47,6 +47,7 @@ const MyLibraryPage = lazy(() => import("./pages/MyLibraryPage").then(m => ({ de
 const ProblemListSquarePage = lazy(() => import("./pages/ProblemListSquarePage").then(m => ({ default: m.ProblemListSquarePage })));
 const CheckInPage = lazy(() => import("./pages/CheckInPage").then(m => ({ default: m.CheckInPage })));
 const ClassLeaderboardPage = lazy(() => import("./pages/ClassLeaderboardPage").then(m => ({ default: m.ClassLeaderboardPage })));
+const ClassDetailPage = lazy(() => import("./pages/ClassDetailPage").then(m => ({ default: m.ClassDetailPage })));
 const ArchitecturePage = lazy(() => import("./pages/ArchitecturePage").then(m => ({ default: m.ArchitecturePage })));
 
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard").then(m => ({ default: m.AdminDashboard })));
@@ -419,6 +420,14 @@ export default function App() {
                 element={
                   <ProtectedRoute>
                     <ClassLeaderboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/class/:id"
+                element={
+                  <ProtectedRoute>
+                    <ClassDetailPage />
                   </ProtectedRoute>
                 }
               />

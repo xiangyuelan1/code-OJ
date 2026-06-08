@@ -5,6 +5,7 @@ import prisma from '../lib/prisma';
 import { pointsService } from './points.service';
 import { judge0Service } from './judge0.service';
 import { starpathCraftService } from './starpath-craft.service';
+import { classService } from './class.service';
 
 export interface TestCase {
   input: string;
@@ -227,6 +228,24 @@ export class SubmissionService {
     this.executor = new CodeExecutor();
   }
 
+  /**
+   * 用户 AC 后记录班级动态（不阻塞主流程）
+   */
+  private async recordClassActivityOnAC(userId: string, problemId: string, problemTitle: string, difficulty: string) {
+    try {
+      // 查询用户所属的所有班级
+      const memberships = await prisma.classMember.findMany({
+        where: { userId },
+        select: { classId: true },
+      });
+      if (memberships.length === 0) return;
+      const content = JSON.stringify({ problemId, problemTitle, difficulty });
+      for (const m of memberships) {
+        classService.recordActivity(m.classId, userId, 'PROBLEM_AC', content);
+      }
+    } catch { /* 记录动态失败不影响主流程 */ }
+  }
+
   private async syncWrongRecordAfterSubmission(params: {
     userId: string;
     problemId: string;
@@ -382,6 +401,8 @@ export class SubmissionService {
       try {
         materialDrops = await starpathCraftService.calculateDrop(userId, problem.difficulty, problem.type, true);
       } catch { /* 掉落失败不影响提交 */ }
+      // 记录班级动态
+      this.recordClassActivityOnAC(userId, problemId, problem.title, problem.difficulty);
     }
 
     return { ...updatedSubmission, materialDrops };
@@ -447,6 +468,8 @@ export class SubmissionService {
       try {
         materialDrops = await starpathCraftService.calculateDrop(userId, problem.difficulty, problem.type, true);
       } catch { /* 掉落失败不影响提交 */ }
+      // 记录班级动态
+      this.recordClassActivityOnAC(userId, problemId, problem.title, problem.difficulty);
     }
 
     return { ...submission, pointsEarned, materialDrops };
@@ -523,6 +546,8 @@ export class SubmissionService {
       try {
         materialDrops = await starpathCraftService.calculateDrop(userId, problem.difficulty, problem.type, true);
       } catch { /* 掉落失败不影响提交 */ }
+      // 记录班级动态
+      this.recordClassActivityOnAC(userId, problemId, problem.title, problem.difficulty);
     }
 
     return { ...submission, pointsEarned, materialDrops };

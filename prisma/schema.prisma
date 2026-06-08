@@ -65,6 +65,10 @@ model User {
   dailyCheckIns    DailyCheckIn[]
   userMaterials    UserMaterial[]
   craftHistory     UserCraftHistory[]
+  classDiscussions      ClassDiscussion[]
+  classDiscussionReplies ClassDiscussionReply[]
+  classActivities       ClassActivity[]
+  classAnnouncements    ClassAnnouncement[]
 }
 
 model Session {
@@ -376,6 +380,9 @@ model Class {
   exams         Exam[]
   initiatorBattles  ClassBattle[] @relation("InitiatorBattles")
   challengerBattles ClassBattle[] @relation("ChallengerBattles")
+  discussions   ClassDiscussion[]
+  activities    ClassActivity[]
+  announcements ClassAnnouncement[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -474,6 +481,9 @@ model HomeworkSubmission {
   problemId   String
   status      String    @default("PENDING")
   score       Int?
+  feedback    String?
+  reviewedAt  DateTime?
+  reviewedBy  String?
   submittedAt DateTime?
   createdAt   DateTime  @default(now())
 
@@ -1127,4 +1137,60 @@ model UserCraftHistory {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+/// 班级讨论帖
+model ClassDiscussion {
+  id        String   @id @default(uuid())
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  content   String
+  isPinned  Boolean  @default(false)
+  replies   ClassDiscussionReply[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([classId])
+}
+
+/// 班级讨论回复
+model ClassDiscussionReply {
+  id           String          @id @default(uuid())
+  discussionId String
+  discussion   ClassDiscussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content      String
+  createdAt    DateTime        @default(now())
+  @@index([discussionId])
+}
+
+/// 班级动态流
+model ClassActivity {
+  id        String   @id @default(uuid())
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  content   String
+  createdAt DateTime @default(now())
+  @@index([classId, createdAt])
+}
+
+/// 班级公告
+model ClassAnnouncement {
+  id        String   @id @default(uuid())
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  content   String
+  isPinned  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([classId])
 }

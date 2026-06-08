@@ -479,6 +479,325 @@ router.get('/:id/members/:userId/detail', authMiddleware, async (req: Request, r
 });
 
 // ========================
+// 班级讨论区
+// ========================
+
+router.get('/:id/discussions', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const classId = req.params.id;
+    const isMember = await classService.isClassMember(classId, userId);
+    if (!isMember) {
+      res.status(403).json({ success: false, error: { message: '只有班级成员可以查看讨论' } });
+      return;
+    }
+    const discussions = await classService.getClassDiscussions(classId);
+    res.json({ success: true, data: discussions });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/:id/discussions', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const classId = req.params.id;
+    const isMember = await classService.isClassMember(classId, userId);
+    if (!isMember) {
+      res.status(403).json({ success: false, error: { message: '只有班级成员可以发布讨论' } });
+      return;
+    }
+    const { title, content } = req.body;
+    if (!title || !content) {
+      res.status(400).json({ success: false, error: { message: '标题和内容为必填项' } });
+      return;
+    }
+    const discussion = await classService.createClassDiscussion(classId, userId, title, content);
+    res.status(201).json({ success: true, data: discussion });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.get('/discussions/:discussionId', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const discussionId = req.params.discussionId;
+    const discussion = await classService.getClassDiscussionDetail(discussionId);
+    if (!discussion) {
+      res.status(404).json({ success: false, error: { message: '讨论不存在' } });
+      return;
+    }
+    // 验证访问者是班级成员
+    const userId = (req as any).user.userId;
+    const isMember = await classService.isClassMember(discussion.classId, userId);
+    if (!isMember) {
+      res.status(403).json({ success: false, error: { message: '只有班级成员可以查看讨论详情' } });
+      return;
+    }
+    res.json({ success: true, data: discussion });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/discussions/:discussionId/reply', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const discussionId = req.params.discussionId;
+    const discussion = await classService.getClassDiscussionDetail(discussionId);
+    if (!discussion) {
+      res.status(404).json({ success: false, error: { message: '讨论不存在' } });
+      return;
+    }
+    const isMember = await classService.isClassMember(discussion.classId, userId);
+    if (!isMember) {
+      res.status(403).json({ success: false, error: { message: '只有班级成员可以回复讨论' } });
+      return;
+    }
+    const { content } = req.body;
+    if (!content) {
+      res.status(400).json({ success: false, error: { message: '回复内容不能为空' } });
+      return;
+    }
+    const reply = await classService.replyClassDiscussion(discussionId, userId, content);
+    res.status(201).json({ success: true, data: reply });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.put('/discussions/:discussionId/pin', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const discussionId = req.params.discussionId;
+    const discussion = await classService.getClassDiscussionDetail(discussionId);
+    if (!discussion) {
+      res.status(404).json({ success: false, error: { message: '讨论不存在' } });
+      return;
+    }
+    // 只有教师可以置顶
+    const role = await classService.getMemberRole(discussion.classId, userId);
+    if (role !== 'TEACHER' && (req as any).user.role !== 'ADMIN') {
+      res.status(403).json({ success: false, error: { message: '只有教师可以置顶讨论' } });
+      return;
+    }
+    const result = await classService.togglePinDiscussion(discussionId);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.delete('/discussions/:discussionId', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const discussionId = req.params.discussionId;
+    const discussion = await classService.getClassDiscussionDetail(discussionId);
+    if (!discussion) {
+      res.status(404).json({ success: false, error: { message: '讨论不存在' } });
+      return;
+    }
+    // 教师可删任何帖，学生只能删自己的
+    const role = await classService.getMemberRole(discussion.classId, userId);
+    if (role !== 'TEACHER' && (req as any).user.role !== 'ADMIN' && discussion.userId !== userId) {
+      res.status(403).json({ success: false, error: { message: '无权删除此讨论' } });
+      return;
+    }
+    await classService.deleteClassDiscussion(discussionId);
+    res.json({ success: true, data: { message: '讨论已删除' } });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
+// 班级动态流
+// ========================
+
+router.get('/:id/activities', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const classId = req.params.id;
+    const isMember = await classService.isClassMember(classId, userId);
+    if (!isMember) {
+      res.status(403).json({ success: false, error: { message: '只有班级成员可以查看动态' } });
+      return;
+    }
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const result = await classService.getClassActivities(classId, page, limit);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
+// 班级公告
+// ========================
+
+router.get('/:id/announcements', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const classId = req.params.id;
+    const isMember = await classService.isClassMember(classId, userId);
+    if (!isMember) {
+      res.status(403).json({ success: false, error: { message: '只有班级成员可以查看公告' } });
+      return;
+    }
+    const announcements = await classService.getClassAnnouncements(classId);
+    res.json({ success: true, data: announcements });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.post('/:id/announcements', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const classId = req.params.id;
+    const role = await classService.getMemberRole(classId, userId);
+    if (role !== 'TEACHER' && (req as any).user.role !== 'ADMIN') {
+      res.status(403).json({ success: false, error: { message: '只有教师或管理员可以发布公告' } });
+      return;
+    }
+    const { title, content } = req.body;
+    if (!title || !content) {
+      res.status(400).json({ success: false, error: { message: '标题和内容为必填项' } });
+      return;
+    }
+    const announcement = await classService.createClassAnnouncement(classId, userId, title, content);
+    res.status(201).json({ success: true, data: announcement });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.put('/announcements/:announcementId', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const announcementId = req.params.announcementId;
+    // 获取公告所属班级，验证权限
+    const announcement = await (await import('../lib/prisma')).default.classAnnouncement.findUnique({
+      where: { id: announcementId },
+    });
+    if (!announcement) {
+      res.status(404).json({ success: false, error: { message: '公告不存在' } });
+      return;
+    }
+    const role = await classService.getMemberRole(announcement.classId, userId);
+    if (role !== 'TEACHER' && (req as any).user.role !== 'ADMIN') {
+      res.status(403).json({ success: false, error: { message: '只有教师或管理员可以编辑公告' } });
+      return;
+    }
+    const { title, content } = req.body;
+    const result = await classService.updateClassAnnouncement(announcementId, { title, content });
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.delete('/announcements/:announcementId', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const announcementId = req.params.announcementId;
+    const announcement = await (await import('../lib/prisma')).default.classAnnouncement.findUnique({
+      where: { id: announcementId },
+    });
+    if (!announcement) {
+      res.status(404).json({ success: false, error: { message: '公告不存在' } });
+      return;
+    }
+    const role = await classService.getMemberRole(announcement.classId, userId);
+    if (role !== 'TEACHER' && (req as any).user.role !== 'ADMIN') {
+      res.status(403).json({ success: false, error: { message: '只有教师或管理员可以删除公告' } });
+      return;
+    }
+    await classService.deleteClassAnnouncement(announcementId);
+    res.json({ success: true, data: { message: '公告已删除' } });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.put('/announcements/:announcementId/pin', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const announcementId = req.params.announcementId;
+    const announcement = await (await import('../lib/prisma')).default.classAnnouncement.findUnique({
+      where: { id: announcementId },
+    });
+    if (!announcement) {
+      res.status(404).json({ success: false, error: { message: '公告不存在' } });
+      return;
+    }
+    const role = await classService.getMemberRole(announcement.classId, userId);
+    if (role !== 'TEACHER' && (req as any).user.role !== 'ADMIN') {
+      res.status(403).json({ success: false, error: { message: '只有教师或管理员可以置顶公告' } });
+      return;
+    }
+    const result = await classService.togglePinAnnouncement(announcementId);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
+// 同学进度互查
+// ========================
+
+router.get('/:id/members/:userId/profile', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const currentUserId = (req as any).user.userId;
+    const classId = req.params.id;
+    const targetUserId = req.params.userId;
+    const isMember = await classService.isClassMember(classId, currentUserId);
+    if (!isMember) {
+      res.status(403).json({ success: false, error: { message: '只有班级成员可以查看同学概况' } });
+      return;
+    }
+    const profile = await classService.getMemberProfile(classId, targetUserId);
+    res.json({ success: true, data: profile });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
+// 作业批改反馈
+// ========================
+
+router.put('/homework/submission/:submissionId/review', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const submissionId = req.params.submissionId;
+    const { status, score, feedback } = req.body;
+
+    // 获取提交关联的作业以验证教师权限
+    const submission = await (await import('../lib/prisma')).default.homeworkSubmission.findUnique({
+      where: { id: submissionId },
+      include: { homework: { select: { classId: true } } },
+    });
+    if (!submission) {
+      res.status(404).json({ success: false, error: { message: '作业提交不存在' } });
+      return;
+    }
+    const role = await classService.getMemberRole(submission.homework.classId, userId);
+    if (role !== 'TEACHER' && (req as any).user.role !== 'ADMIN') {
+      res.status(403).json({ success: false, error: { message: '只有教师或管理员可以批改作业' } });
+      return;
+    }
+
+    const result = await classService.reviewHomeworkSubmission(submissionId, userId, { status, score, feedback });
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
 // 班级PK
 // ========================
 

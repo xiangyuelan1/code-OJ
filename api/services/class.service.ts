@@ -1311,6 +1311,320 @@ export class ClassService {
   }
 
   // ========================
+  // 班级讨论区
+  // ========================
+
+  /**
+   * 获取班级讨论列表，按置顶+最新排序，包含回复数和作者信息
+   */
+  async getClassDiscussions(classId: string) {
+    return await prisma.classDiscussion.findMany({
+      where: { classId },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } },
+        _count: { select: { replies: true } },
+      },
+      orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  /**
+   * 发布班级讨论
+   */
+  async createClassDiscussion(classId: string, userId: string, title: string, content: string) {
+    return await prisma.classDiscussion.create({
+      data: { classId, userId, title, content },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } },
+        _count: { select: { replies: true } },
+      },
+    });
+  }
+
+  /**
+   * 获取讨论详情，包含所有回复
+   */
+  async getClassDiscussionDetail(discussionId: string) {
+    return await prisma.classDiscussion.findUnique({
+      where: { id: discussionId },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } },
+        replies: {
+          include: {
+            user: { select: { id: true, username: true, avatar: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+  }
+
+  /**
+   * 回复班级讨论
+   */
+  async replyClassDiscussion(discussionId: string, userId: string, content: string) {
+    return await prisma.classDiscussionReply.create({
+      data: { discussionId, userId, content },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } },
+      },
+    });
+  }
+
+  /**
+   * 置顶/取消置顶讨论
+   */
+  async togglePinDiscussion(discussionId: string) {
+    const discussion = await prisma.classDiscussion.findUnique({ where: { id: discussionId } });
+    if (!discussion) throw new Error('讨论不存在');
+    return await prisma.classDiscussion.update({
+      where: { id: discussionId },
+      data: { isPinned: !discussion.isPinned },
+    });
+  }
+
+  /**
+   * 删除讨论
+   */
+  async deleteClassDiscussion(discussionId: string) {
+    return await prisma.classDiscussion.delete({ where: { id: discussionId } });
+  }
+
+  // ========================
+  // 班级动态流
+  // ========================
+
+  /**
+   * 记录班级动态（失败不抛异常）
+   */
+  async recordActivity(classId: string, userId: string, type: string, content: string) {
+    try {
+      await prisma.classActivity.create({
+        data: { classId, userId, type, content },
+      });
+    } catch (error: any) {
+      console.warn(`记录班级动态失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 获取班级动态列表（分页）
+   */
+  async getClassActivities(classId: string, page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+    const [activities, total] = await Promise.all([
+      prisma.classActivity.findMany({
+        where: { classId },
+        include: {
+          user: { select: { id: true, username: true, avatar: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.classActivity.count({ where: { classId } }),
+    ]);
+    return { activities, total, page, limit };
+  }
+
+  // ========================
+  // 班级公告
+  // ========================
+
+  /**
+   * 获取班级公告列表，按置顶+最新排序
+   */
+  async getClassAnnouncements(classId: string) {
+    return await prisma.classAnnouncement.findMany({
+      where: { classId },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } },
+      },
+      orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  /**
+   * 发布班级公告（仅教师/管理员）
+   */
+  async createClassAnnouncement(classId: string, userId: string, title: string, content: string) {
+    return await prisma.classAnnouncement.create({
+      data: { classId, userId, title, content },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } },
+      },
+    });
+  }
+
+  /**
+   * 编辑班级公告
+   */
+  async updateClassAnnouncement(announcementId: string, data: { title?: string; content?: string }) {
+    return await prisma.classAnnouncement.update({
+      where: { id: announcementId },
+      data,
+    });
+  }
+
+  /**
+   * 删除班级公告
+   */
+  async deleteClassAnnouncement(announcementId: string) {
+    return await prisma.classAnnouncement.delete({ where: { id: announcementId } });
+  }
+
+  /**
+   * 置顶/取消置顶公告
+   */
+  async togglePinAnnouncement(announcementId: string) {
+    const announcement = await prisma.classAnnouncement.findUnique({ where: { id: announcementId } });
+    if (!announcement) throw new Error('公告不存在');
+    return await prisma.classAnnouncement.update({
+      where: { id: announcementId },
+      data: { isPinned: !announcement.isPinned },
+    });
+  }
+
+  // ========================
+  // 同学进度互查
+  // ========================
+
+  /**
+   * 获取同学概况（任何班级成员可查看，不含代码详情）
+   */
+  async getMemberProfile(classId: string, targetUserId: string) {
+    // 验证目标用户是班级成员
+    const membership = await prisma.classMember.findUnique({
+      where: { classId_userId: { classId, userId: targetUserId } },
+    });
+    if (!membership) throw new Error('该用户不是此班级成员');
+
+    // 获取用户基本信息
+    const user = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, username: true, avatar: true, points: true, level: true },
+    });
+    if (!user) throw new Error('用户不存在');
+
+    // 获取提交统计
+    const allSubmissions = await prisma.submission.findMany({
+      where: { userId: targetUserId },
+      select: {
+        id: true, status: true, result: true, createdAt: true,
+        problem: { select: { id: true, title: true, difficulty: true, tags: true } },
+      },
+    });
+
+    const totalSubmissions = allSubmissions.length;
+    const acceptedSubmissions = allSubmissions.filter(
+      s => s.status === 'ACCEPTED' || s.result === 'ACCEPTED'
+    );
+    const acceptedCount = acceptedSubmissions.length;
+    const acceptanceRate = totalSubmissions > 0 ? Math.round((acceptedCount / totalSubmissions) * 100) : 0;
+
+    // 按难度统计已通过的独立题目数
+    const acProblemIds = new Set(acceptedSubmissions.map(s => s.problem.id));
+    const difficultyStats = { easy: 0, medium: 0, hard: 0 };
+    for (const sub of acceptedSubmissions) {
+      if (!acProblemIds.has(sub.problem.id)) continue;
+      acProblemIds.delete(sub.problem.id); // 只计一次
+      const d = sub.problem.difficulty.toLowerCase();
+      if (d === 'easy') difficultyStats.easy++;
+      else if (d === 'medium') difficultyStats.medium++;
+      else if (d === 'hard') difficultyStats.hard++;
+    }
+
+    // 强项标签
+    const tagStats: Record<string, { total: number; accepted: number }> = {};
+    for (const sub of allSubmissions) {
+      let tags: string[] = [];
+      try { tags = JSON.parse(sub.problem.tags); } catch { tags = []; }
+      for (const tag of tags) {
+        if (!tagStats[tag]) tagStats[tag] = { total: 0, accepted: 0 };
+        tagStats[tag].total++;
+        if (sub.status === 'ACCEPTED' || sub.result === 'ACCEPTED') tagStats[tag].accepted++;
+      }
+    }
+    const strongAreas = Object.entries(tagStats)
+      .filter(([, s]) => s.total >= 5 && s.accepted / s.total >= 0.6)
+      .map(([tag]) => tag)
+      .slice(0, 5);
+
+    // 最近活跃时间
+    const lastActiveAt = allSubmissions.length > 0
+      ? allSubmissions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0].createdAt
+      : null;
+
+    // 最近5道AC题（不含代码）
+    const recentACSubmissions = allSubmissions
+      .filter(s => s.status === 'ACCEPTED' || s.result === 'ACCEPTED')
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // 去重取最近5道不同题目
+    const seenProblemIds = new Set<string>();
+    const recentAC: { title: string; difficulty: string; time: Date }[] = [];
+    for (const sub of recentACSubmissions) {
+      if (seenProblemIds.has(sub.problem.id)) continue;
+      seenProblemIds.add(sub.problem.id);
+      recentAC.push({ title: sub.problem.title, difficulty: sub.problem.difficulty, time: sub.createdAt });
+      if (recentAC.length >= 5) break;
+    }
+
+    return {
+      username: user.username,
+      avatar: user.avatar,
+      points: user.points,
+      level: user.level,
+      totalSubmissions,
+      acceptedCount,
+      acceptanceRate,
+      difficultyStats,
+      lastActiveAt,
+      strongAreas,
+      recentAC,
+    };
+  }
+
+  // ========================
+  // 作业批改反馈
+  // ========================
+
+  /**
+   * 教师批改作业：更新提交状态、分数和反馈
+   */
+  async reviewHomeworkSubmission(
+    submissionId: string,
+    reviewerId: string,
+    data: { status?: string; score?: number; feedback?: string },
+  ) {
+    const submission = await prisma.homeworkSubmission.findUnique({ where: { id: submissionId } });
+    if (!submission) throw new Error('作业提交不存在');
+
+    return await prisma.homeworkSubmission.update({
+      where: { id: submissionId },
+      data: {
+        status: data.status ?? submission.status,
+        score: data.score ?? submission.score,
+        feedback: data.feedback,
+        reviewedAt: new Date(),
+        reviewedBy: reviewerId,
+      },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } },
+      },
+    });
+  }
+
+  /**
+   * 获取班级中指定成员的角色
+   */
+  async getMemberRole(classId: string, userId: string): Promise<string | null> {
+    const membership = await prisma.classMember.findUnique({
+      where: { classId_userId: { classId, userId } },
+    });
+    return membership?.role ?? null;
+  }
+
+  // ========================
   // 班级专属考试
   // ========================
 

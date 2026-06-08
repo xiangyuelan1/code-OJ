@@ -325,6 +325,26 @@ export const classAPI = {
   getClassBattles: (id: string) => api.get(`/api/classes/${id}/battles`),
   getTeacherDashboard: () => api.get('/api/classes/teacher/dashboard'),
   updateClassAIBilling: (classId: string, mode: string) => api.put('/api/classes/' + classId + '/ai-billing', { aiBillingMode: mode }),
+  // 班级讨论区
+  getDiscussions: (classId: string) => api.get(`/api/classes/${classId}/discussions`),
+  createDiscussion: (classId: string, data: { title: string; content: string }) => api.post(`/api/classes/${classId}/discussions`, data),
+  getDiscussionDetail: (discussionId: string) => api.get(`/api/classes/discussions/${discussionId}`),
+  replyDiscussion: (discussionId: string, content: string) => api.post(`/api/classes/discussions/${discussionId}/reply`, { content }),
+  pinDiscussion: (discussionId: string) => api.put(`/api/classes/discussions/${discussionId}/pin`),
+  deleteDiscussion: (discussionId: string) => api.delete(`/api/classes/discussions/${discussionId}`),
+  // 班级动态流
+  getActivities: (classId: string, params?: { page?: number; limit?: number }) => api.get(`/api/classes/${classId}/activities`, { params }),
+  // 班级公告
+  getAnnouncements: (classId: string) => api.get(`/api/classes/${classId}/announcements`),
+  createAnnouncement: (classId: string, data: { title: string; content: string }) => api.post(`/api/classes/${classId}/announcements`, data),
+  updateAnnouncement: (announcementId: string, data: { title?: string; content?: string }) => api.put(`/api/classes/announcements/${announcementId}`, data),
+  deleteAnnouncement: (announcementId: string) => api.delete(`/api/classes/announcements/${announcementId}`),
+  pinAnnouncement: (announcementId: string) => api.put(`/api/classes/announcements/${announcementId}/pin`),
+  // 同学进度互查
+  getMemberProfile: (classId: string, userId: string) => api.get(`/api/classes/${classId}/members/${userId}/profile`),
+  // 作业批改反馈
+  reviewHomeworkSubmission: (submissionId: string, data: { status?: string; score?: number; feedback?: string }) =>
+    api.put(`/api/classes/homework/submission/${submissionId}/review`, data),
 };
 
 export const accessAPI = {
