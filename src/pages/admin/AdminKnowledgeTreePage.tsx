@@ -30,6 +30,15 @@ interface AutoComposeResult {
   description: string;
 }
 
+interface OrganizeReport {
+  scanned: number;
+  autoApplied: number;
+  pending: number;
+  skipped: number;
+  temporaryNodes: number;
+  threshold: number;
+}
+
 type FindProblemScope = 'unassigned' | 'all';
 
 interface FindProblemResult {
@@ -76,6 +85,8 @@ export function AdminKnowledgeTreePage() {
   const [selectedProblemIds, setSelectedProblemIds] = useState<Set<string>>(new Set());
   const [findProblemLoading, setFindProblemLoading] = useState(false);
   const [attachProblemLoading, setAttachProblemLoading] = useState(false);
+  const [organizeLoading, setOrganizeLoading] = useState(false);
+  const [organizeReport, setOrganizeReport] = useState<OrganizeReport | null>(null);
 
   useEffect(() => {
     loadTree();
@@ -273,6 +284,25 @@ export function AdminKnowledgeTreePage() {
     setAutoComposeInput('');
     setAutoComposeResult(null);
     setAutoComposing(false);
+  };
+
+  const handleOrganizeKnowledgeBase = async () => {
+    setOrganizeLoading(true);
+    try {
+      const res = await knowledgeTreeAPI.organizeUnassignedProblems({ limit: 30, autoApplyThreshold: 85 });
+      if (res.success) {
+        setOrganizeReport(res.data);
+        await loadTree();
+        await loadStats();
+        if (selectedNodeId) {
+          await viewNodeProblems(selectedNodeId);
+        }
+      }
+    } catch (error: any) {
+      alert(error.error?.message || '一键整理知识库失败');
+    } finally {
+      setOrganizeLoading(false);
+    }
   };
 
   const confirmTemporaryNode = async (id: string) => {
@@ -534,6 +564,14 @@ export function AdminKnowledgeTreePage() {
         </div>
         <div className="flex items-center gap-3">
           <button
+            onClick={handleOrganizeKnowledgeBase}
+            disabled={organizeLoading}
+            className="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+          >
+            {organizeLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+            {organizeLoading ? '整理中...' : '一键整理知识库'}
+          </button>
+          <button
             onClick={() => { setShowAutoComposeModal(true); setAutoComposeResult(null); }}
             className="flex items-center px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors"
           >
@@ -549,6 +587,45 @@ export function AdminKnowledgeTreePage() {
           </button>
         </div>
       </div>
+
+      {organizeReport && (
+        <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-emerald-200 flex items-center gap-2">
+              <CheckCircle className="h-4 w-4" />
+              整理完成
+            </h3>
+            <button
+              onClick={() => setOrganizeReport(null)}
+              className="text-slate-400 hover:text-white text-xs"
+            >
+              关闭
+            </button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="bg-slate-900/60 rounded-lg p-3">
+              <div className="text-xs text-slate-400">扫描题目</div>
+              <div className="text-xl font-bold text-white">{organizeReport.scanned}</div>
+            </div>
+            <div className="bg-emerald-500/10 rounded-lg p-3">
+              <div className="text-xs text-emerald-300">自动归类</div>
+              <div className="text-xl font-bold text-emerald-200">{organizeReport.autoApplied}</div>
+            </div>
+            <div className="bg-amber-500/10 rounded-lg p-3">
+              <div className="text-xs text-amber-300">待确认</div>
+              <div className="text-xl font-bold text-amber-200">{organizeReport.pending}</div>
+            </div>
+            <div className="bg-slate-900/60 rounded-lg p-3">
+              <div className="text-xs text-slate-400">低置信跳过</div>
+              <div className="text-xl font-bold text-slate-200">{organizeReport.skipped}</div>
+            </div>
+            <div className="bg-purple-500/10 rounded-lg p-3">
+              <div className="text-xs text-purple-300">AI临时节点</div>
+              <div className="text-xl font-bold text-purple-200">{organizeReport.temporaryNodes}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {stats && (
         <div className="grid grid-cols-4 gap-4 mb-6">

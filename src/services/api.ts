@@ -172,6 +172,8 @@ export const knowledgeTreeAPI = {
     api.post('/api/knowledge-tree/auto-compose', { description }),
   classifyUnassignedProblems: (limit?: number) =>
     api.post('/api/knowledge-tree/ai/classify-unassigned', { limit }),
+  organizeUnassignedProblems: (data?: { limit?: number; autoApplyThreshold?: number }) =>
+    api.post('/api/knowledge-tree/ai/organize-unassigned', data || {}),
   getClassificationSuggestions: () => api.get('/api/knowledge-tree/ai/suggestions'),
   applyClassificationSuggestion: (id: string) => api.post(`/api/knowledge-tree/ai/suggestions/${id}/apply`),
   skipClassificationSuggestion: (id: string) => api.post(`/api/knowledge-tree/ai/suggestions/${id}/skip`),

@@ -407,6 +407,61 @@ export class KnowledgeTreeService {
     return suggestions;
   }
 
+  async organizeUnassignedProblems(userId: string, options: { limit?: number; autoApplyThreshold?: number } = {}) {
+    const threshold = Math.min(100, Math.max(0, options.autoApplyThreshold ?? 85));
+    const suggestions = await this.suggestClassifyUnassignedProblems(userId, options.limit ?? 30);
+
+    let autoApplied = 0;
+    let pending = 0;
+    let skipped = 0;
+    const temporaryNodeIds = new Set<string>();
+    const pendingSuggestions: any[] = [];
+    const appliedSuggestions: any[] = [];
+    const skippedSuggestions: any[] = [];
+
+    for (const suggestion of suggestions) {
+      if (suggestion.suggestedNodeTemporary && suggestion.suggestedNodeId) {
+        temporaryNodeIds.add(suggestion.suggestedNodeId);
+      }
+
+      if (suggestion.suggestedNodeId && suggestion.confidence >= threshold) {
+        const applied = await this.applyClassificationSuggestion(suggestion.id);
+        autoApplied += 1;
+        appliedSuggestions.push(applied);
+        continue;
+      }
+
+      if (!suggestion.suggestedNodeId || suggestion.confidence < 70) {
+        const skippedSuggestion = await prisma.aIClassificationSuggestion.update({
+          where: { id: suggestion.id },
+          data: { status: 'SKIPPED' },
+          include: {
+            problem: { select: { id: true, title: true } },
+            suggestedNode: { select: { id: true, name: true, isTemporary: true } },
+          },
+        });
+        skipped += 1;
+        skippedSuggestions.push(this.formatSuggestion(skippedSuggestion));
+        continue;
+      }
+
+      pending += 1;
+      pendingSuggestions.push(suggestion);
+    }
+
+    return {
+      scanned: suggestions.length,
+      autoApplied,
+      pending,
+      skipped,
+      temporaryNodes: temporaryNodeIds.size,
+      threshold,
+      appliedSuggestions,
+      pendingSuggestions,
+      skippedSuggestions,
+    };
+  }
+
   async getPendingClassificationSuggestions() {
     const suggestions = await prisma.aIClassificationSuggestion.findMany({
       where: { status: 'PENDING' },

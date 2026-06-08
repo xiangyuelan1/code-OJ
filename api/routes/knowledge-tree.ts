@@ -33,6 +33,19 @@ router.post('/ai/classify-unassigned', authMiddleware, roleMiddleware('ADMIN'), 
   }
 });
 
+router.post('/ai/organize-unassigned', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user?.id;
+    const result = await knowledgeTreeService.organizeUnassignedProblems(userId, {
+      limit: req.body?.limit,
+      autoApplyThreshold: req.body?.autoApplyThreshold,
+    });
+    res.status(201).json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
 router.get('/ai/suggestions', authMiddleware, roleMiddleware('ADMIN'), async (_req: Request, res: any): Promise<void> => {
   try {
     const suggestions = await knowledgeTreeService.getPendingClassificationSuggestions();

@@ -25,6 +25,15 @@ interface ClassificationSuggestion {
   status: 'PENDING' | 'APPLIED' | 'SKIPPED';
 }
 
+interface OrganizeReport {
+  scanned: number;
+  autoApplied: number;
+  pending: number;
+  skipped: number;
+  temporaryNodes: number;
+  threshold: number;
+}
+
 function getStartOfDay(date: Date): Date {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -112,6 +121,8 @@ export function AdminProblemsPage() {
   const [classificationSuggestions, setClassificationSuggestions] = useState<ClassificationSuggestion[]>([]);
   const [suggestionActionId, setSuggestionActionId] = useState<string | null>(null);
   const [batchApplyingSuggestions, setBatchApplyingSuggestions] = useState(false);
+  const [organizeLoading, setOrganizeLoading] = useState(false);
+  const [organizeReport, setOrganizeReport] = useState<OrganizeReport | null>(null);
 
   const [showAiGenerate, setShowAiGenerate] = useState(false);
   const [aiKeywords, setAiKeywords] = useState('');
@@ -399,6 +410,23 @@ export function AdminProblemsPage() {
     }
   };
 
+  const handleOrganizeKnowledgeBase = async () => {
+    setOrganizeLoading(true);
+    setShowClassificationSuggestions(true);
+    try {
+      const res = await knowledgeTreeAPI.organizeUnassignedProblems({ limit: 30, autoApplyThreshold: 85 });
+      if (res.success) {
+        setOrganizeReport(res.data);
+        await loadClassificationSuggestions();
+        await loadProblems();
+      }
+    } catch (error: any) {
+      alert(error.error?.message || '一键整理知识库失败');
+    } finally {
+      setOrganizeLoading(false);
+    }
+  };
+
   const handleApplySuggestion = async (id: string) => {
     setSuggestionActionId(id);
     try {
@@ -637,12 +665,20 @@ export function AdminProblemsPage() {
             批量导入
           </button>
           <button
+            onClick={handleOrganizeKnowledgeBase}
+            disabled={organizeLoading || classifyLoading}
+            className="flex items-center bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-cyan-900/20"
+          >
+            {organizeLoading ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Sparkles className="h-5 w-5 mr-2" />}
+            {organizeLoading ? '整理中...' : '一键整理知识库'}
+          </button>
+          <button
             onClick={handleClassifyUnassignedProblems}
-            disabled={classifyLoading}
-            className="flex items-center bg-purple-500 hover:bg-purple-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={classifyLoading || organizeLoading}
+            className="flex items-center bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {classifyLoading ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Sparkles className="h-5 w-5 mr-2" />}
-            {classifyLoading ? 'AI归类中...' : 'AI归类未分类'}
+            {classifyLoading ? 'AI归类中...' : '只生成建议'}
           </button>
           <button
             onClick={() => { setShowAiGenerate(true); setAiGeneratedProblems([]); }}
@@ -768,9 +804,17 @@ export function AdminProblemsPage() {
                 <Sparkles className="h-5 w-5 text-purple-400" />
                 AI归类建议
               </h2>
-              <p className="text-slate-400 text-sm mt-1">请确认 AI 为未分类题目推荐的知识树节点。</p>
+              <p className="text-slate-400 text-sm mt-1">一键整理会自动应用置信度 ≥85 的建议，其余建议保留给管理员确认。</p>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={handleOrganizeKnowledgeBase}
+                disabled={organizeLoading || classifyLoading}
+                className="flex items-center px-4 py-2 bg-cyan-500/20 text-cyan-300 rounded-lg hover:bg-cyan-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {organizeLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                再整理30题
+              </button>
               <button
                 onClick={handleApplyHighConfidenceSuggestions}
                 disabled={batchApplyingSuggestions || classificationSuggestions.filter(suggestion => suggestion.confidence >= 80).length === 0}
@@ -787,6 +831,31 @@ export function AdminProblemsPage() {
               </button>
             </div>
           </div>
+
+          {organizeReport && (
+            <div className="mb-5 grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="bg-slate-900/70 rounded-lg p-3 border border-slate-700">
+                <div className="text-xs text-slate-400">扫描题目</div>
+                <div className="text-2xl font-bold text-white">{organizeReport.scanned}</div>
+              </div>
+              <div className="bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/30">
+                <div className="text-xs text-emerald-300">自动归类</div>
+                <div className="text-2xl font-bold text-emerald-200">{organizeReport.autoApplied}</div>
+              </div>
+              <div className="bg-amber-500/10 rounded-lg p-3 border border-amber-500/30">
+                <div className="text-xs text-amber-300">待确认</div>
+                <div className="text-2xl font-bold text-amber-200">{organizeReport.pending}</div>
+              </div>
+              <div className="bg-slate-900/70 rounded-lg p-3 border border-slate-700">
+                <div className="text-xs text-slate-400">低置信跳过</div>
+                <div className="text-2xl font-bold text-slate-200">{organizeReport.skipped}</div>
+              </div>
+              <div className="bg-purple-500/10 rounded-lg p-3 border border-purple-500/30">
+                <div className="text-xs text-purple-300">AI临时节点</div>
+                <div className="text-2xl font-bold text-purple-200">{organizeReport.temporaryNodes}</div>
+              </div>
+            </div>
+          )}
 
           {classificationSuggestions.length === 0 ? (
             <div className="text-center py-8 text-slate-400">暂无待确认建议</div>
