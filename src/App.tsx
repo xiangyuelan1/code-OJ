@@ -47,6 +47,7 @@ const MyLibraryPage = lazy(() => import("./pages/MyLibraryPage").then(m => ({ de
 const ProblemListSquarePage = lazy(() => import("./pages/ProblemListSquarePage").then(m => ({ default: m.ProblemListSquarePage })));
 const CheckInPage = lazy(() => import("./pages/CheckInPage").then(m => ({ default: m.CheckInPage })));
 const ClassLeaderboardPage = lazy(() => import("./pages/ClassLeaderboardPage").then(m => ({ default: m.ClassLeaderboardPage })));
+const ArchitecturePage = lazy(() => import("./pages/ArchitecturePage").then(m => ({ default: m.ArchitecturePage })));
 
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard").then(m => ({ default: m.AdminDashboard })));
 const AdminProblemsPage = lazy(() => import("./pages/admin/AdminProblemsPage").then(m => ({ default: m.AdminProblemsPage })));
@@ -242,6 +243,7 @@ export default function App() {
                 }
               />
               <Route path="/app-download" element={<AppDownloadPage />} />
+              <Route path="/architecture" element={<ArchitecturePage />} />
               <Route
                 path="/teacher/classes"
                 element={
