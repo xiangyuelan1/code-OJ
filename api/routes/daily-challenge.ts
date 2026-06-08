@@ -10,8 +10,8 @@ router.get('/today', authMiddleware, async (req: Request, res: any): Promise<voi
     const userId = (req as any).user.userId;
     const today = new Date().toISOString().split('T')[0];
 
-    let dailyChallenge = await prisma.dailyChallenge.findUnique({
-      where: { date: today },
+    let dailyChallenge = await prisma.dailyChallenge.findFirst({
+      where: { date: today, userId: null },
       include: {
         problem: {
           select: {
@@ -61,6 +61,7 @@ router.get('/today', authMiddleware, async (req: Request, res: any): Promise<voi
           problemId: problem.id,
           date: today,
           difficulty: problem.difficulty,
+          userId: null,
         },
         include: {
           problem: {

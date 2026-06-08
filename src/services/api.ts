@@ -71,6 +71,7 @@ export const problemsAPI = {
   batchImport: (problems: any[]) => api.post('/api/problems/batch-import', { problems }),
   batchDelete: (data: { ids?: string[]; beforeDate?: string; deleteAll?: boolean }) =>
     api.delete('/api/problems/batch', { data }),
+  getLastPractice: () => api.get('/api/problems/last-practice'),
 };
 
 export const submissionsAPI = {
@@ -714,6 +715,13 @@ export const starpathExplorationAPI = {
   start: (missionId: string) => api.post('/api/starpath/exploration/start', { missionId }),
   getStatus: () => api.get('/api/starpath/exploration/status'),
   claim: () => api.post('/api/starpath/exploration/claim'),
+};
+
+export const starpathCraftAPI = {
+  getInventory: () => api.get('/api/starpath/craft/inventory'),
+  getRecipes: () => api.get('/api/starpath/craft/recipes'),
+  craft: (recipeId: string) => api.post('/api/starpath/craft/craft', { recipeId }),
+  getHistory: () => api.get('/api/starpath/craft/history'),
 };
 
 export const dailyAPI = {

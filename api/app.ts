@@ -41,6 +41,7 @@ import wrongRecordRoutes from './routes/wrong-record';
 import myLibraryRoutes from './routes/my-library';
 import checkinRoutes from './routes/checkin';
 import classStatsRoutes from './routes/class-stats';
+import starpathCraftRoutes from './routes/starpath-craft';
 
 dotenv.config();
 
@@ -95,6 +96,7 @@ app.use('/api/wrong-records', wrongRecordRoutes);
 app.use('/api/my-library', myLibraryRoutes);
 app.use('/api/checkin', checkinRoutes);
 app.use('/api/class-stats', classStatsRoutes);
+app.use('/api/starpath/craft', starpathCraftRoutes);
 
 app.use(
   '/api/health',

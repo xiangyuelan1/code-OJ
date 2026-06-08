@@ -4,6 +4,7 @@ import path from 'path';
 import prisma from '../lib/prisma';
 import { pointsService } from './points.service';
 import { judge0Service } from './judge0.service';
+import { starpathCraftService } from './starpath-craft.service';
 
 export interface TestCase {
   input: string;
@@ -375,7 +376,15 @@ export class SubmissionService {
       correctAnswer: null,
     });
 
-    return updatedSubmission;
+    // 做题掉落材料（仅 AC 时触发，不影响主提交流程）
+    let materialDrops: any[] = [];
+    if (result.status === 'ACCEPTED') {
+      try {
+        materialDrops = await starpathCraftService.calculateDrop(userId, problem.difficulty, problem.type, true);
+      } catch { /* 掉落失败不影响提交 */ }
+    }
+
+    return { ...updatedSubmission, materialDrops };
   }
 
   async submitChoice(problemId: string, userId: string, answer: string) {
@@ -413,6 +422,7 @@ export class SubmissionService {
     });
 
     let pointsEarned = 0;
+    let materialDrops: any[] = [];
     if (isCorrect) {
       const existingAC = await prisma.submission.findFirst({
         where: {
@@ -434,9 +444,12 @@ export class SubmissionService {
           data: { pointsEarned }
         });
       }
+      try {
+        materialDrops = await starpathCraftService.calculateDrop(userId, problem.difficulty, problem.type, true);
+      } catch { /* 掉落失败不影响提交 */ }
     }
 
-    return { ...submission, pointsEarned };
+    return { ...submission, pointsEarned, materialDrops };
   }
 
   async submitFillBlank(problemId: string, userId: string, answers: string[]) {
@@ -485,6 +498,7 @@ export class SubmissionService {
     });
 
     let pointsEarned = 0;
+    let materialDrops: any[] = [];
     if (isCorrect) {
       const existingAC = await prisma.submission.findFirst({
         where: {
@@ -506,9 +520,12 @@ export class SubmissionService {
           data: { pointsEarned }
         });
       }
+      try {
+        materialDrops = await starpathCraftService.calculateDrop(userId, problem.difficulty, problem.type, true);
+      } catch { /* 掉落失败不影响提交 */ }
     }
 
-    return { ...submission, pointsEarned };
+    return { ...submission, pointsEarned, materialDrops };
   }
 
   private async judgeProgramming(

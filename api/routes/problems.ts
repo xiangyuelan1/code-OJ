@@ -53,6 +53,62 @@ router.get('/stats/overview', authMiddleware, roleMiddleware('ADMIN'), async (re
   }
 });
 
+/**
+ * 继续刷题入口：返回用户最近一次提交的题目信息及同分类下的"下一题"
+ */
+router.get('/last-practice', authMiddleware, async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+
+    // 查询用户最近一次提交
+    const lastSubmission = await prisma.submission.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        problem: {
+          select: { id: true, title: true, difficulty: true, type: true, knowledgeTreeId: true, createdAt: true },
+        },
+      },
+    });
+
+    if (!lastSubmission) {
+      res.json({ success: true, data: null });
+      return;
+    }
+
+    const currentProblem = lastSubmission.problem;
+
+    // 查找同知识点下的"下一题"（按 createdAt 排序，取当前题之后的第一个）
+    let nextProblem = null;
+    if (currentProblem.knowledgeTreeId) {
+      nextProblem = await prisma.problem.findFirst({
+        where: {
+          knowledgeTreeId: currentProblem.knowledgeTreeId,
+          createdAt: { gt: currentProblem.createdAt },
+          id: { not: currentProblem.id },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, title: true, difficulty: true, type: true },
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        lastProblem: {
+          id: currentProblem.id,
+          title: currentProblem.title,
+          difficulty: currentProblem.difficulty,
+          type: currentProblem.type,
+        },
+        nextProblem,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
 router.get('/:id', async (req: Request, res: any): Promise<void> => {
   try {
     const problem = await problemService.getProblemById(req.params.id);

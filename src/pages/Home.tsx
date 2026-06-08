@@ -8,7 +8,7 @@ import {
   ArrowRight, ChevronRight, BookOpen, Target, Flame,
   Terminal, Shield, Brain, Sparkles, CalendarCheck,
   TrendingUp, MessageSquare, AlertTriangle, CheckCircle2,
-  ThumbsUp, Globe, BarChart3, Clock,
+  ThumbsUp, Globe, BarChart3, Clock, Play,
 } from 'lucide-react';
 
 interface PublicStats {
@@ -78,6 +78,11 @@ interface StarMapSummary {
   totalPlanets: number;
   exploredPlanets: number;
   masteredPlanets: number;
+}
+
+interface LastPracticeData {
+  lastProblem: { id: string; title: string; difficulty: string; type: string };
+  nextProblem: { id: string; title: string; difficulty: string; type: string } | null;
 }
 
 const RADAR_DIMENSIONS = ['算法思维', '代码实现', '调试能力', '优化意识', '数学建模'];
@@ -202,6 +207,7 @@ export function HomePage() {
   const [starMapSummary, setStarMapSummary] = useState<StarMapSummary | null>(null);
   const [weeklySolved, setWeeklySolved] = useState(0);
   const [dailyGoalProgress, setDailyGoalProgress] = useState(0);
+  const [lastPractice, setLastPractice] = useState<LastPracticeData | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -213,7 +219,7 @@ export function HomePage() {
 
   const loadAuthData = async () => {
     try {
-      const [profileRes, recRes, dailyRes, statsRes, lbRes, hotRes, matchRes, starMapRes] = await Promise.all([
+      const [profileRes, recRes, dailyRes, statsRes, lbRes, hotRes, matchRes, starMapRes, lastPracticeRes] = await Promise.all([
         profileAPI.getMine(),
         profileAPI.getRecommendations(5),
         dailyAPI.getToday(),
@@ -222,6 +228,7 @@ export function HomePage() {
         discussionAPI.getHot(5).catch(() => ({ success: false, data: [] })),
         matchAPI.getHistory(5).catch(() => ({ success: false, data: [] })),
         starpathAPI.getMap().catch(() => ({ success: false, data: null })),
+        problemsAPI.getLastPractice().catch(() => ({ success: false, data: null })),
       ]);
       if (profileRes.success) setProfileData(profileRes.data);
       if (recRes.success) setRecommendations(recRes.data || []);
@@ -236,6 +243,9 @@ export function HomePage() {
           exploredPlanets: starMapRes.data.exploredPlanets || 0,
           masteredPlanets: starMapRes.data.masteredPlanets || 0,
         });
+      }
+      if (lastPracticeRes.success && lastPracticeRes.data) {
+        setLastPractice(lastPracticeRes.data);
       }
       fetchMyPoints();
 
@@ -619,6 +629,48 @@ export function HomePage() {
                 </div>
               </Link>
             ))}
+          </div>
+        </section>
+      )}
+
+      {/* 继续刷题 */}
+      {lastPractice && (
+        <section className="relative overflow-hidden rounded-xl border border-cyan-500/20">
+          <div className="absolute inset-0 bg-gradient-to-r from-cyan-600/10 via-slate-800/60 to-indigo-600/10" />
+          <div className="relative px-6 py-5 md:px-8">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="shrink-0 p-3 rounded-xl bg-cyan-500/15 border border-cyan-500/25">
+                  <Play className="h-6 w-6 text-cyan-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-1">继续刷题</h3>
+                  <div className="flex items-center gap-2 text-sm text-slate-400">
+                    <span>上次做的：</span>
+                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium border ${getDifficultyStyle(lastPractice.lastProblem.difficulty)}`}>
+                      {getDifficultyLabel(lastPractice.lastProblem.difficulty)}
+                    </span>
+                    <span className="text-white font-medium truncate max-w-[200px]">{lastPractice.lastProblem.title}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Link
+                  to={`/problem/${lastPractice.lastProblem.id}/solve`}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:text-white hover:bg-cyan-500/30 transition-all font-medium text-sm"
+                >
+                  继续 <ArrowRight className="h-4 w-4" />
+                </Link>
+                {lastPractice.nextProblem && (
+                  <Link
+                    to={`/problem/${lastPractice.nextProblem.id}/solve`}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white hover:bg-indigo-500/30 transition-all font-medium text-sm"
+                  >
+                    做下一题 <ChevronRight className="h-4 w-4" />
+                  </Link>
+                )}
+              </div>
+            </div>
           </div>
         </section>
       )}

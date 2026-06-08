@@ -63,6 +63,8 @@ model User {
   problemFavorites UserProblemFavorite[]
   problemLists     UserProblemList[]
   dailyCheckIns    DailyCheckIn[]
+  userMaterials    UserMaterial[]
+  craftHistory     UserCraftHistory[]
 }
 
 model Session {
@@ -615,10 +617,14 @@ model DailyChallenge {
   id          String   @id @default(uuid())
   problemId   String
   problem     Problem  @relation(fields: [problemId], references: [id])
-  date        String   @unique
+  date        String
   difficulty  String   @default("MEDIUM")
+  /// 个性化推荐的目标用户（为空表示全局每日一题）
+  userId      String?
   createdAt   DateTime @default(now())
   userChallenges UserDailyChallenge[]
+
+  @@unique([userId, date])
 }
 
 model UserDailyChallenge {
@@ -1059,4 +1065,66 @@ model DailyCheckIn {
   createdAt   DateTime @default(now())
 
   @@unique([userId, checkDate])
+}
+
+/// 材料定义表
+model Material {
+  id          String         @id @default(uuid())
+  name        String
+  description String
+  rarity      String         @default("COMMON")
+  icon        String         @default("💎")
+  category    String         @default("GENERAL")
+  createdAt   DateTime       @default(now())
+  userMaterials UserMaterial[]
+  recipeMaterials CraftRecipeMaterial[]
+}
+
+/// 用户背包：记录用户持有材料的数量
+model UserMaterial {
+  id         String   @id @default(uuid())
+  userId     String
+  materialId String
+  quantity   Int      @default(0)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, materialId])
+  @@index([userId])
+}
+
+/// 合成配方
+model CraftRecipe {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  resultType  String
+  resultEffect String  @default("{}")
+  unlockLevel Int      @default(1)
+  materials   CraftRecipeMaterial[]
+  createdAt   DateTime @default(now())
+}
+
+/// 合成配方所需材料
+model CraftRecipeMaterial {
+  id         String      @id @default(uuid())
+  recipeId   String
+  materialId String
+  quantity   Int
+  recipe     CraftRecipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  material   Material    @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@index([recipeId])
+}
+
+/// 用户合成历史
+model UserCraftHistory {
+  id        String   @id @default(uuid())
+  userId    String
+  recipeId  String
+  result    String   @default("{}")
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

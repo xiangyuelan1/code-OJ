@@ -36,6 +36,7 @@ const StarStoryPage = lazy(() => import("./pages/StarStory").then(m => ({ defaul
 const StarBuildingPage = lazy(() => import("./pages/StarBuilding").then(m => ({ default: m.StarBuildingPage })));
 const StarSocialPage = lazy(() => import("./pages/StarSocial").then(m => ({ default: m.StarSocialPage })));
 const StarAchievementPage = lazy(() => import("./pages/StarAchievement").then(m => ({ default: m.StarAchievementPage })));
+const StarCraftPage = lazy(() => import("./pages/StarCraft").then(m => ({ default: m.StarCraftPage })));
 const InterviewSimulatorPage = lazy(() => import("./pages/InterviewSimulator").then(m => ({ default: m.InterviewSimulator })));
 const BugHunterPage = lazy(() => import("./pages/BugHunter").then(m => ({ default: m.BugHunter })));
 const LearningHub = lazy(() => import("./pages/LearningHub").then(m => ({ default: m.LearningHub })));
@@ -336,6 +337,14 @@ export default function App() {
                 element={
                   <ProtectedRoute>
                     <StarAchievementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/starpath/craft"
+                element={
+                  <ProtectedRoute>
+                    <StarCraftPage />
                   </ProtectedRoute>
                 }
               />

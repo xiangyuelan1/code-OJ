@@ -843,7 +843,7 @@ export function StarPathPage() {
       )}
 
       {/* 功能入口 */}
-      <div className="relative z-10 grid grid-cols-3 gap-3 mb-8">
+      <div className="relative z-10 grid grid-cols-4 gap-3 mb-8">
         <Link to="/starpath/building" className="glass-card glass-card-hover rounded-xl p-4 text-center transition-all hover:shadow-lg group">
           <Building2 className="h-6 w-6 text-cyan-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
           <span className="text-xs text-slate-300 group-hover:text-white transition-colors">星球建设</span>
@@ -855,6 +855,10 @@ export function StarPathPage() {
         <Link to="/starpath/achievement" className="glass-card glass-card-hover rounded-xl p-4 text-center transition-all hover:shadow-lg group">
           <Award className="h-6 w-6 text-rose-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
           <span className="text-xs text-slate-300 group-hover:text-white transition-colors">成就中心</span>
+        </Link>
+        <Link to="/starpath/craft" className="glass-card glass-card-hover rounded-xl p-4 text-center transition-all hover:shadow-lg group">
+          <Pickaxe className="h-6 w-6 text-violet-400 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+          <span className="text-xs text-slate-300 group-hover:text-white transition-colors">背包合成</span>
         </Link>
       </div>
 
