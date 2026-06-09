@@ -74,7 +74,7 @@ async function ensureSchemaColumns() {
  */
 function syncPrismaSchema() {
   try {
-    execSync('npx prisma db push --skip-generate', { stdio: 'inherit' });
+    execSync('npx prisma db push --skip-generate --accept-data-loss', { stdio: 'inherit' });
     console.log('[DB] ✅ Prisma schema synced');
   } catch (error) {
     console.error('[DB] ❌ Prisma schema sync failed');
