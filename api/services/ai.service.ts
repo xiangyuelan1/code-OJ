@@ -1272,7 +1272,56 @@ DP 解题步骤：
     return diagnosis;
   }
 
+  /**
+   * 检查用户当月AI Token使用量是否超过配额
+   * 配额来源：用户的有效订单中的 PricingPlan 的 aiTokenQuota
+   * aiTokenQuota 为 0 表示不限制
+   */
+  private async checkAITokenQuota(userId: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, accessType: true },
+    });
+
+    // ADMIN 和 TEACHER 不受限制
+    if (!user || user.role === 'ADMIN' || user.role === 'TEACHER') return;
+
+    // 查找用户对应的有效订单中的定价计划
+    const activeOrder = await prisma.order.findFirst({
+      where: {
+        userId,
+        status: 'PAID',
+      },
+      orderBy: { createdAt: 'desc' },
+      include: { plan: true },
+    });
+
+    const tokenQuota = activeOrder?.plan?.aiTokenQuota ?? 0;
+    if (tokenQuota <= 0) return; // 0表示不限制
+
+    // 统计当月已使用的token
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthlyUsage = await prisma.aIUsageLog.aggregate({
+      where: {
+        userId,
+        createdAt: { gte: monthStart },
+      },
+      _sum: { totalTokens: true },
+    });
+
+    const used = monthlyUsage._sum.totalTokens || 0;
+    if (used >= tokenQuota) {
+      throw new Error(`本月AI使用量已达上限(${tokenQuota} tokens)，请升级套餐或等待下月重置`);
+    }
+  }
+
   private async callAI(prompt: string, config: any, feature?: string, userId?: string): Promise<string> {
+    // 检查用户AI Token月度配额
+    if (userId) {
+      await this.checkAITokenQuota(userId);
+    }
+
     const apiKey = config.apiKey;
     const rawBaseUrl = config.baseUrl || 'https://api.openai.com/v1';
     const model = config.model || 'gpt-3.5-turbo';

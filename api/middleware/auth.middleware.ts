@@ -17,11 +17,17 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: { id: true, role: true, username: true }
+      select: { id: true, role: true, username: true, isActive: true }
     });
 
     if (!user) {
       res.status(401).json({ success: false, error: { message: '用户不存在或已被删除' } });
+      return;
+    }
+
+    // 检查用户是否被禁用
+    if (!user.isActive) {
+      res.status(403).json({ success: false, error: { message: '账户已被禁用，请联系管理员', code: 'ACCOUNT_DISABLED' } });
       return;
     }
 

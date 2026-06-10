@@ -22,6 +22,10 @@ router.get('/', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, re
 router.patch('/:id/toggle-status', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
     const user = await authService.toggleUserStatus(req.params.id);
+    // 如果用户被禁用，强制其退出
+    if (!user.isActive) {
+      forceDisconnectUser(req.params.id);
+    }
     res.json({ success: true, data: user });
   } catch (error: any) {
     res.status(400).json({ success: false, error: { message: error.message } });
@@ -93,6 +97,12 @@ router.patch('/:id/role', authMiddleware, roleMiddleware('ADMIN'), async (req: R
         role: true,
         accessType: true,
       },
+    });
+
+    // 通知被修改用户刷新权限状态
+    notifyUser(targetUserId, 'auth:role-changed', {
+      role: updated.role,
+      accessType: updated.accessType
     });
 
     res.json({ success: true, data: updated });
@@ -287,6 +297,12 @@ router.patch('/:id/access', authMiddleware, roleMiddleware('ADMIN'), async (req:
         accessExpiresAt: true,
         trialStartsAt: true,
       },
+    });
+
+    // 通知被修改用户刷新访问状态
+    notifyUser(userId, 'auth:access-changed', {
+      accessType: updated.accessType,
+      accessExpiresAt: updated.accessExpiresAt,
     });
 
     res.json({ success: true, data: updated });

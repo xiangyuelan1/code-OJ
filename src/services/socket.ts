@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { create } from 'zustand';
+import { useAuthStore } from '../stores/auth.store';
 
 const SOCKET_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin;
 
@@ -149,6 +150,27 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
     socket.on('exam:warning', (data: any) => {
       console.warn('考试警告:', data);
+    });
+
+    // 权限变更实时通知
+    socket.on('auth:role-changed', (data: { role: string; accessType: string }) => {
+      const { user } = useAuthStore.getState();
+      if (user) {
+        const updated = { ...user, role: data.role };
+        useAuthStore.getState().setAuth(updated, localStorage.getItem('token') || '');
+      }
+      useAuthStore.getState().checkAccess();
+      window.location.reload();
+    });
+
+    socket.on('auth:access-changed', (_data: { accessType: string; accessExpiresAt?: string }) => {
+      useAuthStore.getState().checkAccess();
+    });
+
+    socket.on('auth:force-logout', (data: { reason: string }) => {
+      alert(data.reason || '您已被强制退出');
+      useAuthStore.getState().logout();
+      window.location.href = '/login';
     });
 
     set({ socket });

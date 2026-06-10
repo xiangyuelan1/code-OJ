@@ -33,6 +33,12 @@ axiosInstance.interceptors.response.use(
         window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
       }
     }
+    if (error.response?.status === 403 && error.response?.data?.error?.code === 'ACCOUNT_DISABLED') {
+      const { logout } = useAuthStore.getState();
+      logout();
+      alert('您的账户已被禁用，请联系管理员');
+      window.location.href = '/login';
+    }
     return Promise.reject(error.response?.data || error);
   }
 );

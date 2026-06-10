@@ -184,6 +184,10 @@ export function TeacherDashboard() {
   const studentUsed = dashboard.totalStudents;
   const quotaPercentage = studentQuota > 0 ? Math.min(Math.round((studentUsed / studentQuota) * 100), 100) : 0;
 
+  // 班级名额：从当前用户的 classQuota 字段获取
+  const classQuota = (user as any)?.classQuota ?? 0;
+  const classQuotaPercentage = classQuota > 0 ? Math.min(Math.round((dashboard.totalClasses / classQuota) * 100), 100) : 0;
+
   const statCards = [
     {
       title: '总班级数',
@@ -249,7 +253,7 @@ export function TeacherDashboard() {
       <h1 className="text-3xl font-bold text-white mb-8">教师工作台</h1>
 
       {/* A. 顶部统计卡片 */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
         {statCards.map((stat) => (
           <div
             key={stat.title}
@@ -285,6 +289,30 @@ export function TeacherDashboard() {
             </div>
           )}
           {studentQuota === 0 && (
+            <div className="text-xs text-slate-500">无限制</div>
+          )}
+        </div>
+
+        {/* 班级名额卡片 */}
+        <div className="bg-slate-800 rounded-xl p-6 shadow-xl border border-slate-700">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-lg bg-indigo-500/10">
+              <GraduationCap className="h-6 w-6 text-indigo-400" />
+            </div>
+          </div>
+          <div className="text-3xl font-bold text-white mb-1">
+            {dashboard.totalClasses}{classQuota > 0 ? `/${classQuota}` : ''}
+          </div>
+          <div className="text-slate-400 text-sm mb-2">班级名额</div>
+          {classQuota > 0 && (
+            <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${classQuotaPercentage >= 90 ? 'bg-red-500' : classQuotaPercentage >= 70 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                style={{ width: `${classQuotaPercentage}%` }}
+              />
+            </div>
+          )}
+          {classQuota === 0 && (
             <div className="text-xs text-slate-500">无限制</div>
           )}
         </div>

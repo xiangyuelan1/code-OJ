@@ -92,6 +92,43 @@ export class FeatureToggleService {
       orderBy: [{ category: 'asc' }, { order: 'asc' }],
     });
   }
+
+  /**
+   * 检查用户是否有权限使用某个功能
+   * @param featureKey 功能标识
+   * @param userRole 用户角色
+   * @param userAccessType 用户访问类型
+   */
+  async checkFeatureAccess(featureKey: string, userRole: string, userAccessType: string): Promise<{ allowed: boolean; reason?: string }> {
+    const feature = await prisma.systemFeature.findUnique({
+      where: { featureKey },
+    });
+
+    if (!feature) {
+      return { allowed: true }; // 未注册的功能默认允许
+    }
+
+    if (!feature.enabled) {
+      return { allowed: false, reason: '该功能已被系统禁用' };
+    }
+
+    const allowedRoles = (feature.allowedRoles ?? 'STUDENT,TEACHER,ADMIN').split(',');
+    if (!allowedRoles.includes(userRole)) {
+      return { allowed: false, reason: '您的角色无权使用此功能' };
+    }
+
+    // ADMIN和TEACHER角色不受accessType限制
+    if (userRole === 'ADMIN' || userRole === 'TEACHER') {
+      return { allowed: true };
+    }
+
+    const allowedAccessTypes = (feature.allowedAccessTypes ?? 'TRIAL,PAID,CLASS,ADMIN').split(',');
+    if (!allowedAccessTypes.includes(userAccessType)) {
+      return { allowed: false, reason: '您的访问权限不足，请升级后使用' };
+    }
+
+    return { allowed: true };
+  }
 }
 
 export const featureToggleService = new FeatureToggleService();

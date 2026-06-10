@@ -97,6 +97,20 @@ export class ClassService {
     grade?: string;
     createdBy: string;
   }) {
+    // 检查教师班级名额
+    const teacher = await prisma.user.findUnique({
+      where: { id: data.createdBy },
+      select: { classQuota: true },
+    });
+    if (teacher?.classQuota && teacher.classQuota > 0) {
+      const currentClassCount = await prisma.class.count({
+        where: { createdBy: data.createdBy },
+      });
+      if (currentClassCount >= teacher.classQuota) {
+        throw new Error(`班级数量已达上限(${teacher.classQuota})，无法创建更多班级`);
+      }
+    }
+
     const cls = await prisma.class.create({
       data: {
         name: data.name,

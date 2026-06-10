@@ -23,6 +23,7 @@ interface WaitingPlayer {
 const onlineUsers = new Map<string, Set<string>>();
 const socketToUser = new Map<string, OnlineUser>();
 const waitingQueues = new Map<string, WaitingPlayer[]>();
+let ioInstance: SocketIOServer | null = null;
 
 export function setupSocketIO(httpServer: any) {
   const io = new SocketIOServer(httpServer, {

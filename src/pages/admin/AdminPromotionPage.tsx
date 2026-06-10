@@ -22,7 +22,7 @@ export function AdminPromotionPage() {
   const [plans, setPlans] = useState<any[]>([]);
   const [showCreatePlan, setShowCreatePlan] = useState(false);
   const [editPlanId, setEditPlanId] = useState<string | null>(null);
-  const [planForm, setPlanForm] = useState({ name: '', price: 0, duration: 30, unit: 'DAY', features: [''], isPopular: false, sortOrder: 0, studentQuota: 50 });
+  const [planForm, setPlanForm] = useState({ name: '', price: 0, duration: 30, unit: 'DAY', features: [''], isPopular: false, sortOrder: 0, studentQuota: 50, classQuota: 10, aiTokenQuota: 0 });
 
   // 财务统计
   const [financial, setFinancial] = useState<any>(null);
@@ -63,7 +63,7 @@ export function AdminPromotionPage() {
       }
       setShowCreatePlan(false);
       setEditPlanId(null);
-      setPlanForm({ name: '', price: 0, duration: 30, unit: 'DAY', features: [''], isPopular: false, sortOrder: 0, studentQuota: 50 });
+      setPlanForm({ name: '', price: 0, duration: 30, unit: 'DAY', features: [''], isPopular: false, sortOrder: 0, studentQuota: 50, classQuota: 10, aiTokenQuota: 0 });
       fetchData();
     } catch (error: any) {
       alert(error.error?.message || '操作失败');
@@ -125,7 +125,7 @@ export function AdminPromotionPage() {
       {tab === 'pricing' && (
         <div className="space-y-6">
           <div className="flex justify-end">
-            <button onClick={() => { setEditPlanId(null); setPlanForm({ name: '', price: 0, duration: 30, unit: 'DAY', features: [''], isPopular: false, sortOrder: 0, studentQuota: 50 }); setShowCreatePlan(true); }} className="flex items-center gap-2 px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors">
+            <button onClick={() => { setEditPlanId(null); setPlanForm({ name: '', price: 0, duration: 30, unit: 'DAY', features: [''], isPopular: false, sortOrder: 0, studentQuota: 50, classQuota: 10, aiTokenQuota: 0 }); setShowCreatePlan(true); }} className="flex items-center gap-2 px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors">
               <Plus className="h-4 w-4" /> 新增定价计划
             </button>
           </div>
@@ -291,6 +291,10 @@ export function AdminPromotionPage() {
                 <div><label className="block text-sm text-slate-300 mb-1">单位</label><select value={planForm.unit} onChange={e => setPlanForm(f => ({ ...f, unit: e.target.value }))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-cyan-500"><option value="DAY">天</option><option value="MONTH">月</option><option value="YEAR">年</option></select></div>
               </div>
               <div><label className="block text-sm text-slate-300 mb-1">学生名额 (0=无限制)</label><input type="number" value={planForm.studentQuota} onChange={e => setPlanForm(f => ({ ...f, studentQuota: Number(e.target.value) }))} min={0} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-cyan-500" placeholder="教师可管理的学生数量上限" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm text-slate-300 mb-1">班级名额 (0=无限制)</label><input type="number" value={planForm.classQuota} onChange={e => setPlanForm(f => ({ ...f, classQuota: Number(e.target.value) }))} min={0} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-cyan-500" placeholder="教师可创建的班级数量上限" /></div>
+                <div><label className="block text-sm text-slate-300 mb-1">AI Token月度配额 (0=无限制)</label><input type="number" value={planForm.aiTokenQuota} onChange={e => setPlanForm(f => ({ ...f, aiTokenQuota: Number(e.target.value) }))} min={0} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-cyan-500" placeholder="每月AI Token使用上限" /></div>
+              </div>
               <div>
                 <label className="block text-sm text-slate-300 mb-1">功能特性</label>
                 {planForm.features.map((f, i) => (

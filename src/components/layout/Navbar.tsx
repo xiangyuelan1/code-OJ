@@ -246,8 +246,8 @@ export function Navbar() {
       accent: 'text-rose-300',
       items: [
         { label: '管理后台', to: '/admin', icon: LayoutDashboard, description: '题目、用户、考试和系统管理', auth: true, roles: ['ADMIN'], badge: pendingCount },
-        { label: '教师工作台', to: '/teacher/dashboard', icon: LayoutDashboard, description: '班级数据和教学概览', auth: true, roles: ['TEACHER'] },
-        { label: '班级管理', to: '/teacher/classes', icon: Users, description: '学生、班级和加入申请', auth: true, roles: ['TEACHER'], badge: pendingCount },
+        { label: '教师工作台', to: '/teacher/dashboard', icon: LayoutDashboard, description: '班级数据和教学概览', auth: true, roles: ['TEACHER', 'ADMIN'] },
+        { label: '班级管理', to: '/teacher/classes', icon: Users, description: '学生、班级和加入申请', auth: true, roles: ['TEACHER', 'ADMIN'], badge: pendingCount },
       ],
     },
   ];

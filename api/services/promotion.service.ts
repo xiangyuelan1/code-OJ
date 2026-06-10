@@ -129,6 +129,9 @@ export class PromotionService {
     features: string[];
     isPopular: boolean;
     sortOrder: number;
+    studentQuota?: number;
+    classQuota?: number;
+    aiTokenQuota?: number;
   }) {
     return prisma.pricingPlan.create({
       data: {
@@ -139,6 +142,9 @@ export class PromotionService {
         features: JSON.stringify(data.features || []),
         isPopular: data.isPopular || false,
         sortOrder: data.sortOrder || 0,
+        studentQuota: data.studentQuota ?? 50,
+        classQuota: data.classQuota ?? 10,
+        aiTokenQuota: data.aiTokenQuota ?? 0,
       },
     });
   }
@@ -164,6 +170,9 @@ export class PromotionService {
     features?: string[];
     isPopular?: boolean;
     sortOrder?: number;
+    studentQuota?: number;
+    classQuota?: number;
+    aiTokenQuota?: number;
   }) {
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
@@ -173,6 +182,9 @@ export class PromotionService {
     if (data.features !== undefined) updateData.features = JSON.stringify(data.features);
     if (data.isPopular !== undefined) updateData.isPopular = data.isPopular;
     if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
+    if (data.studentQuota !== undefined) updateData.studentQuota = data.studentQuota;
+    if (data.classQuota !== undefined) updateData.classQuota = data.classQuota;
+    if (data.aiTokenQuota !== undefined) updateData.aiTokenQuota = data.aiTokenQuota;
 
     return prisma.pricingPlan.update({ where: { id }, data: updateData });
   }

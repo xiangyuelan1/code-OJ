@@ -114,15 +114,26 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
-function ProtectedRoute({ children, allowedRole }: { children: React.ReactNode; allowedRole?: string }) {
+function ProtectedRoute({ children, allowedRole, allowedRoles }: { children: React.ReactNode; allowedRole?: string; allowedRoles?: string[] }) {
   const { isAuthenticated, user } = useAuthStore();
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRole && user?.role !== allowedRole) {
-    return <Navigate to="/" replace />;
+  // 支持多角色列表
+  if (allowedRoles && allowedRoles.length > 0) {
+    if (!user?.role || !allowedRoles.includes(user.role)) {
+      return <Navigate to="/" replace />;
+    }
+    return <>{children}</>;
+  }
+
+  // 单角色兼容：ADMIN 可以访问所有需要角色保护的路由
+  if (allowedRole) {
+    if (!user?.role) return <Navigate to="/" replace />;
+    if (user.role === 'ADMIN') return <>{children}</>;
+    if (user.role !== allowedRole) return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
@@ -248,7 +259,7 @@ export default function App() {
               <Route
                 path="/teacher/classes"
                 element={
-                  <ProtectedRoute allowedRole="TEACHER">
+                  <ProtectedRoute allowedRoles={['TEACHER', 'ADMIN']}>
                     <TeacherClassesPage />
                   </ProtectedRoute>
                 }
@@ -256,7 +267,7 @@ export default function App() {
               <Route
                 path="/teacher/dashboard"
                 element={
-                  <ProtectedRoute allowedRole="TEACHER">
+                  <ProtectedRoute allowedRoles={['TEACHER', 'ADMIN']}>
                     <TeacherDashboardPage />
                   </ProtectedRoute>
                 }
@@ -264,7 +275,7 @@ export default function App() {
               <Route
                 path="/teacher/class-stats"
                 element={
-                  <ProtectedRoute allowedRole="TEACHER">
+                  <ProtectedRoute allowedRoles={['TEACHER', 'ADMIN']}>
                     <TeacherClassStatsPage />
                   </ProtectedRoute>
                 }

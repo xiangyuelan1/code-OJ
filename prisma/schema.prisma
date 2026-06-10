@@ -25,6 +25,7 @@ model User {
   accessType      String       @default("TRIAL")
   paymentId       String?
   studentQuota    Int          @default(0)    // 教师的学生名额上限, 0表示无限制
+  classQuota      Int          @default(0)    // 教师的班级数量上限, 0表示无限制
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   submissions     Submission[]
@@ -557,6 +558,8 @@ model PricingPlan {
   unit        String    @default("DAY")
   features    String    @default("[]")
   studentQuota Int      @default(50)   // 该计划包含的学生名额
+  classQuota    Int       @default(10)   // 该计划包含的班级名额
+  aiTokenQuota  Int       @default(0)    // 该计划的AI Token月度配额, 0表示不限制
   isPopular   Boolean   @default(false)
   isActive    Boolean   @default(true)
   sortOrder   Int       @default(0)
@@ -730,16 +733,18 @@ model BugScenario {
 }
 
 model SystemFeature {
-  id          String   @id @default(uuid())
-  featureKey  String   @unique
-  featureName String
-  description String   @default("")
-  category    String   @default("general")
-  enabled     Boolean  @default(true)
-  visible     Boolean  @default(true)
-  order       Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  featureKey         String   @unique
+  featureName        String
+  description        String   @default("")
+  category           String   @default("general")
+  enabled            Boolean  @default(true)
+  visible            Boolean  @default(true)
+  order              Int      @default(0)
+  allowedAccessTypes String   @default("TRIAL,PAID,CLASS,ADMIN")
+  allowedRoles       String   @default("STUDENT,TEACHER,ADMIN")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 model LearningPath {
