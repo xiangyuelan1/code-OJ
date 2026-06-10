@@ -318,7 +318,11 @@ export class KnowledgeTreeService {
     return this.buildAiTree(nodes);
   }
 
-  async suggestClassifyUnassignedProblems(userId: string, limit = 20) {
+  async suggestClassifyUnassignedProblems(
+    userId: string,
+    limit = 20,
+    onProgress?: (current: number, total: number, phase: string) => void,
+  ) {
     const take = this.clampLimit(limit);
     const knowledgeTree = await this.getKnowledgeTreeForAi();
     const problems = await prisma.problem.findMany({
@@ -327,9 +331,12 @@ export class KnowledgeTreeService {
       take,
     });
 
+    onProgress?.(0, problems.length, '开始AI分类分析...');
     const suggestions: any[] = [];
 
-    for (const problem of problems) {
+    for (let i = 0; i < problems.length; i++) {
+      const problem = problems[i];
+      onProgress?.(i + 1, problems.length, `正在分析: ${problem.title}`);
       const aiResult = await aiService.suggestKnowledgeClassification({
         title: problem.title,
         description: problem.description,
@@ -407,9 +414,13 @@ export class KnowledgeTreeService {
     return suggestions;
   }
 
-  async organizeUnassignedProblems(userId: string, options: { limit?: number; autoApplyThreshold?: number } = {}) {
+  async organizeUnassignedProblems(
+    userId: string,
+    options: { limit?: number; autoApplyThreshold?: number } = {},
+    onProgress?: (current: number, total: number, phase: string) => void,
+  ) {
     const threshold = Math.min(100, Math.max(0, options.autoApplyThreshold ?? 85));
-    const suggestions = await this.suggestClassifyUnassignedProblems(userId, options.limit ?? 30);
+    const suggestions = await this.suggestClassifyUnassignedProblems(userId, options.limit ?? 30, onProgress);
 
     let autoApplied = 0;
     let pending = 0;
@@ -553,6 +564,12 @@ export class KnowledgeTreeService {
         knowledgeTree: { select: { id: true, name: true } },
       },
     });
+
+    if (candidates.length === 0) {
+      throw new Error(scope === 'unassigned'
+        ? '当前没有未分类的题目可供搜索'
+        : '当前没有可供搜索的候选题目');
+    }
 
     const candidatePayload = candidates.map(problem => ({
       id: problem.id,

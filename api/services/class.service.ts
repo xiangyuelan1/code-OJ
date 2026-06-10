@@ -190,6 +190,19 @@ export class ClassService {
   }
 
   async addMember(classId: string, userId: string, role: string = 'STUDENT') {
+    // 添加学生时检查教师名额
+    if (role === 'STUDENT') {
+      const cls = await prisma.class.findUnique({
+        where: { id: classId },
+        select: { createdBy: true },
+      });
+      if (cls) {
+        const quotaFull = await this.isTeacherStudentQuotaFull(cls.createdBy);
+        if (quotaFull) {
+          throw new Error('教师的学生名额已满，无法接受更多学生');
+        }
+      }
+    }
     return await prisma.classMember.create({
       data: {
         classId,
@@ -226,6 +239,19 @@ export class ClassService {
     if (existing) {
       throw new Error('您已是该班级成员');
     }
+
+    // 检查教师的学生名额
+    const cls = await prisma.class.findUnique({
+      where: { id: classId },
+      select: { createdBy: true },
+    });
+    if (cls) {
+      const quotaFull = await this.isTeacherStudentQuotaFull(cls.createdBy);
+      if (quotaFull) {
+        throw new Error('教师的学生名额已满，无法加入该班级');
+      }
+    }
+
     return await prisma.classMember.create({
       data: {
         classId,
@@ -352,6 +378,34 @@ export class ClassService {
   }
 
   /**
+   * 检查教师的学生名额是否已满
+   * 如果 studentQuota > 0 且当前管理的学生总数 >= studentQuota，返回 true 表示已满
+   */
+  async isTeacherStudentQuotaFull(teacherId: string): Promise<boolean> {
+    const teacher = await prisma.user.findUnique({
+      where: { id: teacherId },
+      select: { studentQuota: true },
+    });
+    if (!teacher || teacher.studentQuota <= 0) return false;
+
+    // 统计该教师所有班级中的学生总数（去重）
+    const teacherClasses = await prisma.class.findMany({
+      where: { createdBy: teacherId },
+      select: { id: true },
+    });
+    if (teacherClasses.length === 0) return false;
+
+    const classIds = teacherClasses.map(c => c.id);
+    const students = await prisma.classMember.findMany({
+      where: { classId: { in: classIds }, role: 'STUDENT' },
+      select: { userId: true },
+    });
+    const uniqueStudentCount = new Set(students.map(s => s.userId)).size;
+
+    return uniqueStudentCount >= teacher.studentQuota;
+  }
+
+  /**
    * 审批加入申请：通过时将用户加入班级并更新 accessType 为 CLASS
    */
   async reviewJoinRequest(requestId: string, reviewerId: string, approved: boolean) {
@@ -368,6 +422,18 @@ export class ClassService {
     }
 
     if (approved) {
+      // 检查班级创建者（教师）的学生名额
+      const cls = await prisma.class.findUnique({
+        where: { id: request.classId },
+        select: { createdBy: true },
+      });
+      if (cls) {
+        const quotaFull = await this.isTeacherStudentQuotaFull(cls.createdBy);
+        if (quotaFull) {
+          throw new Error('教师的学生名额已满，无法接受更多学生');
+        }
+      }
+
       const user = await prisma.user.findUnique({
         where: { id: request.userId },
         select: { accessType: true },

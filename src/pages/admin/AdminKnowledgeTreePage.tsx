@@ -87,6 +87,7 @@ export function AdminKnowledgeTreePage() {
   const [attachProblemLoading, setAttachProblemLoading] = useState(false);
   const [organizeLoading, setOrganizeLoading] = useState(false);
   const [organizeReport, setOrganizeReport] = useState<OrganizeReport | null>(null);
+  const [organizeProgress, setOrganizeProgress] = useState<{ current: number; total: number; phase: string } | null>(null);
 
   useEffect(() => {
     loadTree();
@@ -288,20 +289,50 @@ export function AdminKnowledgeTreePage() {
 
   const handleOrganizeKnowledgeBase = async () => {
     setOrganizeLoading(true);
+    setOrganizeProgress(null);
+    setOrganizeReport(null);
     try {
       const res = await knowledgeTreeAPI.organizeUnassignedProblems({ limit: 30, autoApplyThreshold: 85 });
-      if (res.success) {
-        setOrganizeReport(res.data);
-        await loadTree();
-        await loadStats();
-        if (selectedNodeId) {
-          await viewNodeProblems(selectedNodeId);
-        }
+      if (!res.success || !res.data?.taskId) {
+        throw new Error('启动整理任务失败');
       }
+      const taskId = res.data.taskId;
+
+      // 轮询任务进度
+      const poll = async (): Promise<void> => {
+        const statusRes = await knowledgeTreeAPI.getOrganizeStatus(taskId);
+        if (!statusRes.success) return;
+
+        const { status, progress, result, error } = statusRes.data;
+        setOrganizeProgress(progress);
+
+        if (status === 'completed') {
+          setOrganizeReport(result);
+          setOrganizeProgress(null);
+          setOrganizeLoading(false);
+          await loadTree();
+          await loadStats();
+          if (selectedNodeId) await viewNodeProblems(selectedNodeId);
+          return;
+        }
+        if (status === 'failed') {
+          setOrganizeProgress(null);
+          setOrganizeLoading(false);
+          alert(error || '整理任务执行失败');
+          return;
+        }
+        // 仍在运行，继续轮询
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        await poll();
+      };
+
+      // 首次轮询前等待2秒
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      await poll();
     } catch (error: any) {
-      alert(error.error?.message || '一键整理知识库失败');
-    } finally {
+      alert(error.error?.message || error.message || '一键整理知识库失败');
       setOrganizeLoading(false);
+      setOrganizeProgress(null);
     }
   };
 
@@ -588,6 +619,26 @@ export function AdminKnowledgeTreePage() {
         </div>
       </div>
 
+      {organizeLoading && organizeProgress && (
+        <div className="mb-6 rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-cyan-200 font-medium flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {organizeProgress.phase}
+            </span>
+            <span className="text-xs text-slate-400">
+              {organizeProgress.current} / {organizeProgress.total}
+            </span>
+          </div>
+          <div className="w-full bg-slate-700 rounded-full h-2.5">
+            <div
+              className="bg-gradient-to-r from-cyan-500 to-emerald-500 h-2.5 rounded-full transition-all duration-300"
+              style={{ width: organizeProgress.total > 0 ? `${(organizeProgress.current / organizeProgress.total) * 100}%` : '0%' }}
+            />
+          </div>
+        </div>
+      )}
+
       {organizeReport && (
         <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
           <div className="flex items-center justify-between mb-3">
@@ -690,7 +741,7 @@ export function AdminKnowledgeTreePage() {
         )}
       </div>
 
-      {selectedNodeId && nodeProblems.length > 0 && (
+      {selectedNodeId && (
         <div className="mt-6 bg-slate-800 rounded-xl p-6 shadow-xl">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-white">节点题目</h2>
@@ -701,36 +752,43 @@ export function AdminKnowledgeTreePage() {
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="space-y-2">
-            {nodeProblems.map((problem: any) => (
-              <div key={problem.id} className="flex items-center justify-between p-3 bg-slate-700 rounded-lg">
-                <div className="flex-1">
-                  <span className="text-white font-medium">{problem.title}</span>
-                  <span className={`ml-2 text-xs px-2 py-0.5 rounded ${
-                    problem.type === 'PROGRAMMING' ? 'bg-blue-500/20 text-blue-400' :
-                    problem.type === 'CHOICE' ? 'bg-green-500/20 text-green-400' :
-                    'bg-purple-500/20 text-purple-400'
-                  }`}>
-                    {problem.type === 'PROGRAMMING' ? '编程' : problem.type === 'CHOICE' ? '选择' : '填空'}
-                  </span>
-                  <span className={`ml-1 text-xs px-2 py-0.5 rounded ${
-                    problem.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400' :
-                    problem.difficulty === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
-                    'bg-red-500/20 text-red-400'
-                  }`}>
-                    {problem.difficulty === 'EASY' ? '简单' : problem.difficulty === 'MEDIUM' ? '中等' : '困难'}
-                  </span>
+          {nodeProblems.length === 0 ? (
+            <div className="text-center py-8 text-slate-400">
+              <BookOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>该节点暂无关联题目</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {nodeProblems.map((problem: any) => (
+                <div key={problem.id} className="flex items-center justify-between p-3 bg-slate-700 rounded-lg">
+                  <div className="flex-1">
+                    <span className="text-white font-medium">{problem.title}</span>
+                    <span className={`ml-2 text-xs px-2 py-0.5 rounded ${
+                      problem.type === 'PROGRAMMING' ? 'bg-blue-500/20 text-blue-400' :
+                      problem.type === 'CHOICE' ? 'bg-green-500/20 text-green-400' :
+                      'bg-purple-500/20 text-purple-400'
+                    }`}>
+                      {problem.type === 'PROGRAMMING' ? '编程' : problem.type === 'CHOICE' ? '选择' : '填空'}
+                    </span>
+                    <span className={`ml-1 text-xs px-2 py-0.5 rounded ${
+                      problem.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400' :
+                      problem.difficulty === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
+                      'bg-red-500/20 text-red-400'
+                    }`}>
+                      {problem.difficulty === 'EASY' ? '简单' : problem.difficulty === 'MEDIUM' ? '中等' : '困难'}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => unlinkProblemFromNode(problem.id)}
+                    className="p-1 text-red-400 hover:text-red-300"
+                    title="解除关联"
+                  >
+                    <Unlink className="h-4 w-4" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => unlinkProblemFromNode(problem.id)}
-                  className="p-1 text-red-400 hover:text-red-300"
-                  title="解除关联"
-                >
-                  <Unlink className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

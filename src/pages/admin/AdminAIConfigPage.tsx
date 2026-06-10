@@ -138,6 +138,10 @@ export function AdminAIConfigPage() {
   const [testingFeature, setTestingFeature] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ featureKey: string; success: boolean; message: string } | null>(null);
 
+  // 功能列表标签页的测试状态
+  const [testingListFeature, setTestingListFeature] = useState<string | null>(null);
+  const [testListResults, setTestListResults] = useState<Record<string, { success: boolean; message: string }>>({});
+
   const [providerConfigs, setProviderConfigs] = useState<any[]>([]);
   const [showProviderForm, setShowProviderForm] = useState(false);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
@@ -391,6 +395,49 @@ export function AdminAIConfigPage() {
       });
     } finally {
       setTestingFeature(null);
+    }
+  };
+
+  // 功能列表标签页的测试处理：每个功能调用其真实API接口
+  const handleTestListFeature = async (featureId: string) => {
+    setTestingListFeature(featureId);
+    setTestListResults(prev => { const next = { ...prev }; delete next[featureId]; return next; });
+    try {
+      let res: any;
+      switch (featureId) {
+        case 'explainCode':
+          res = await aiAPI.explainCode({ code: 'function add(a, b) { return a + b; }', language: 'javascript' });
+          break;
+        case 'getHint':
+          res = await aiAPI.getHint({ problemTitle: '两数之和', problemDescription: '给定一个整数数组和一个目标值，找出数组中两个数之和等于目标值的两个整数', code: '', language: 'javascript' });
+          break;
+        case 'diagnoseError':
+          res = await aiAPI.diagnose({ code: 'function sum(arr) { return arr.reduce((a, b) => a + b) }', error: 'TypeError: Cannot read property reduce of undefined', language: 'javascript' });
+          break;
+        case 'generateSolution':
+          res = await aiAPI.getHint({ problemTitle: '两数之和', problemDescription: '给定一个整数数组和一个目标值，找出数组中两个数之和等于目标值', code: '', language: 'javascript' });
+          break;
+        case 'generateTestCases':
+          res = await enhancedAiAPI.generateTestCases({ problemTitle: '两数之和', problemDescription: '给定整数数组和目标值' });
+          break;
+        case 'parseKnowledgeTree':
+          res = await enhancedAiAPI.parseKnowledgeTree('数据结构\n  数组\n  链表\n  树\n算法\n  排序\n  搜索');
+          break;
+        case 'classifyProblem':
+          res = await enhancedAiAPI.classifyProblem({ title: '两数之和', description: '给定一个整数数组', tags: '数组,哈希表' });
+          break;
+        case 'parseProblemFile':
+          res = await enhancedAiAPI.parseProblemFile('# 两数之和\n给定一个整数数组 nums 和一个整数目标值 target', 'markdown');
+          break;
+        default:
+          throw new Error('未知功能');
+      }
+      const preview = res?.data ? JSON.stringify(res.data).slice(0, 80) + '...' : '返回成功';
+      setTestListResults(prev => ({ ...prev, [featureId]: { success: true, message: `✓ 测试通过 | ${preview}` } }));
+    } catch (error: any) {
+      setTestListResults(prev => ({ ...prev, [featureId]: { success: false, message: `✗ 失败: ${error.error?.message || error.message || '请检查API配置'}` } }));
+    } finally {
+      setTestingListFeature(null);
     }
   };
 
@@ -690,6 +737,7 @@ export function AdminAIConfigPage() {
             {aiFeatures.map((feature) => {
               const colorClasses: Record<string, string> = { cyan: 'border-cyan-500 bg-cyan-500/10', yellow: 'border-yellow-500 bg-yellow-500/10', red: 'border-red-500 bg-red-500/10', blue: 'border-blue-500 bg-blue-500/10', green: 'border-green-500 bg-green-500/10', purple: 'border-purple-500 bg-purple-500/10', orange: 'border-orange-500 bg-orange-500/10', pink: 'border-pink-500 bg-pink-500/10' };
               const iconColors: Record<string, string> = { cyan: 'text-cyan-400', yellow: 'text-yellow-400', red: 'text-red-400', blue: 'text-blue-400', green: 'text-green-400', purple: 'text-purple-400', orange: 'text-orange-400', pink: 'text-pink-400' };
+              const testResult = testListResults[feature.id];
               return (
                 <div key={feature.id} className={`border-l-4 ${colorClasses[feature.color]} p-4 rounded-lg`}>
                   <div className="flex items-start">
@@ -699,10 +747,26 @@ export function AdminAIConfigPage() {
                       <p className="text-slate-400 text-sm mb-2">{feature.description}</p>
                       <div className="flex items-center justify-between">
                         <code className="text-xs text-slate-500 bg-slate-700 px-2 py-1 rounded">{feature.endpoint}</code>
-                        <div className={`flex items-center text-sm ${config.enabled && config.apiKey ? 'text-green-400' : 'text-slate-500'}`}>
-                          {config.enabled && config.apiKey ? (<><CheckCircle className="h-4 w-4 mr-1" />可用</>) : (<><XCircle className="h-4 w-4 mr-1" />需配置</>)}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleTestListFeature(feature.id)}
+                            disabled={testingListFeature === feature.id}
+                            className="flex items-center px-2.5 py-1 bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 rounded text-xs font-medium transition-colors disabled:opacity-50"
+                          >
+                            {testingListFeature === feature.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
+                            ⚡ 测试
+                          </button>
+                          <div className={`flex items-center text-sm ${config.enabled && config.apiKey ? 'text-green-400' : 'text-slate-500'}`}>
+                            {config.enabled && config.apiKey ? (<><CheckCircle className="h-4 w-4 mr-1" />可用</>) : (<><XCircle className="h-4 w-4 mr-1" />需配置</>)}
+                          </div>
                         </div>
                       </div>
+                      {/* 测试结果展示 */}
+                      {testResult && (
+                        <div className={`mt-2 p-2 rounded text-xs ${testResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-400' : 'bg-red-500/10 border border-red-500/30 text-red-400'}`}>
+                          {testResult.message}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

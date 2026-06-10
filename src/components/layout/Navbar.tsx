@@ -10,6 +10,7 @@ import {
   BookX,
   CalendarCheck,
   ChevronDown,
+  Clock,
   Crown,
   FileCheck,
   Gamepad2,
@@ -136,7 +137,7 @@ function DesktopGroup({ group, onNavigate }: { group: NavGroup; onNavigate: () =
 }
 
 export function Navbar() {
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, isAuthenticated, logout, accessStatus } = useAuthStore();
   const { points, levelName, rank, fetchMyPoints } = usePointsStore();
   const { onlineCount, disconnect } = useSocketStore();
   const navigate = useNavigate();
@@ -262,6 +263,28 @@ export function Navbar() {
     }))
     .filter(group => group.items.length > 0);
 
+  // 计算试用/付费剩余时间
+  const getTrialInfo = () => {
+    if (!accessStatus || user?.role === 'ADMIN' || user?.role === 'TEACHER') return null;
+    if (accessStatus.accessType === 'trial' || accessStatus.accessType === 'TRIAL') {
+      if (accessStatus.expiresAt) {
+        const diff = new Date(accessStatus.expiresAt).getTime() - Date.now();
+        const days = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+        return { type: 'trial', days };
+      }
+      return { type: 'trial', days: 0 };
+    }
+    if (accessStatus.accessType === 'paid' || accessStatus.accessType === 'PAID') {
+      if (accessStatus.expiresAt) {
+        const diff = new Date(accessStatus.expiresAt).getTime() - Date.now();
+        const days = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+        return { type: 'paid', days };
+      }
+      return { type: 'paid', days: -1 }; // 无限期
+    }
+    return null;
+  };
+
   const userMenuItems: NavItem[] = [
     { label: '个人中心', to: '/profile', icon: User, description: '资料、能力画像和学习统计', auth: true },
     { label: '签到', to: '/checkin', icon: CalendarCheck, description: '领取连续学习奖励', auth: true },
@@ -291,6 +314,34 @@ export function Navbar() {
           <div className="hidden items-center gap-3 lg:flex">
             {isAuthenticated ? (
               <>
+                {(() => {
+                  const trialInfo = getTrialInfo();
+                  if (!trialInfo) return null;
+                  if (trialInfo.type === 'trial') {
+                    return (
+                      <Link
+                        to="/payment"
+                        className="flex items-center gap-1.5 rounded-full border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-sm text-amber-300 hover:bg-amber-500/20 transition"
+                      >
+                        <Clock className="h-3.5 w-3.5" />
+                        <span>试用 {trialInfo.days}天</span>
+                      </Link>
+                    );
+                  }
+                  if (trialInfo.type === 'paid' && trialInfo.days >= 0 && trialInfo.days <= 7) {
+                    return (
+                      <Link
+                        to="/payment"
+                        className="flex items-center gap-1.5 rounded-full border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-sm text-red-300 hover:bg-red-500/20 transition animate-pulse"
+                      >
+                        <Clock className="h-3.5 w-3.5" />
+                        <span>即将到期 {trialInfo.days}天</span>
+                      </Link>
+                    );
+                  }
+                  return null;
+                })()}
+
                 <div className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm">
                   <Award className="h-4 w-4 text-yellow-300" />
                   <span className="font-semibold text-yellow-200">{points}</span>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { examAPI, problemsAPI, knowledgeTreeAPI, enhancedAiAPI, classAPI } from '../../services/api';
 import { Plus, Trash2, Clock, FileText, Users, ArrowLeft, Save, Eye, ChevronDown, ChevronUp, Trophy, Code, CheckCircle, XCircle, User, FolderTree, Filter, Sparkles, Loader2 } from 'lucide-react';
@@ -41,6 +41,10 @@ export function AdminExamPage() {
   const [tagFilter, setTagFilter] = useState<string>('');
   const [aiGenerating, setAiGenerating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [problemSearchText, setProblemSearchText] = useState('');
+  const [problemPageSize] = useState(50);
+  const [problemPage, setProblemPage] = useState(1);
 
   useEffect(() => {
     fetchExams();
@@ -118,19 +122,31 @@ export function AdminExamPage() {
     return Array.from(tagSet).sort();
   }, [problems]);
 
-  const filteredProblems = problems.filter((p: any) => {
-    if (problemTypeFilter && p.type !== problemTypeFilter) return false;
-    if (difficultyFilter && p.difficulty !== difficultyFilter) return false;
-    if (selectedKnowledgeNodeId) {
-      const nodeId = p.knowledgeTreeId || p.knowledgeTree?.id;
-      if (nodeId !== selectedKnowledgeNodeId) return false;
-    }
-    if (tagFilter) {
-      const tags = Array.isArray(p.tags) ? p.tags : [];
-      if (!tags.includes(tagFilter)) return false;
-    }
-    return true;
-  });
+  const filteredProblems = useMemo(() => {
+    return problems.filter((p: any) => {
+      if (problemTypeFilter && p.type !== problemTypeFilter) return false;
+      if (difficultyFilter && p.difficulty !== difficultyFilter) return false;
+      if (selectedKnowledgeNodeId) {
+        const nodeId = p.knowledgeTreeId || p.knowledgeTree?.id;
+        if (nodeId !== selectedKnowledgeNodeId) return false;
+      }
+      if (tagFilter) {
+        const tags = Array.isArray(p.tags) ? p.tags : [];
+        if (!tags.includes(tagFilter)) return false;
+      }
+      // 搜索文本过滤（标题模糊匹配）
+      if (problemSearchText) {
+        const keyword = problemSearchText.toLowerCase();
+        if (!p.title?.toLowerCase().includes(keyword)) return false;
+      }
+      return true;
+    });
+  }, [problems, problemTypeFilter, difficultyFilter, selectedKnowledgeNodeId, tagFilter, problemSearchText]);
+
+  // 分页后的题目列表，减少 DOM 节点数量
+  const paginatedProblems = useMemo(() => {
+    return filteredProblems.slice(0, problemPage * problemPageSize);
+  }, [filteredProblems, problemPage, problemPageSize]);
 
   const handleAiGenerateExam = async () => {
     setAiGenerating(true);
@@ -250,37 +266,69 @@ export function AdminExamPage() {
   };
 
   const handleEditExam = async (examId: string) => {
+    if (editLoading) return;
+    setEditLoading(true);
     try {
       const res = await examAPI.getById(examId);
-      if (res.success && res.data) {
-        const exam = res.data;
-        setForm({
-          title: exam.title,
-          description: exam.description || '',
-          type: exam.type,
-          duration: exam.duration,
-          startTime: exam.startTime ? new Date(exam.startTime).toISOString().slice(0, 16) : '',
-          endTime: exam.endTime ? new Date(exam.endTime).toISOString().slice(0, 16) : '',
-          enableProctoring: exam.enableProctoring || false,
-          maxAttempts: exam.maxAttempts || 1,
-          problemIds: exam.questions?.map((q: any) => q.problemId) || [],
-          scope: exam.scope || 'PUBLIC',
-          classIds: JSON.parse(exam.classIds || '[]'),
-          pointsReward: exam.pointsReward || 0,
-          medalEnabled: exam.medalEnabled || false,
-          showRanking: exam.showRanking !== false,
-          passScore: exam.passScore || 60,
-          showAnswerAfter: exam.showAnswerAfter || 'NEVER',
-        });
-        setEditingExamId(examId);
-        setShowForm(true);
-        if (problems.length === 0) {
-          fetchProblems();
-          fetchKnowledgeTree();
+      if (!res.success || !res.data) {
+        alert('获取考试详情失败：数据为空');
+        return;
+      }
+      const exam = res.data;
+
+      // 安全解析日期字段（防止无效日期导致 toISOString 抛错）
+      let startTimeStr = '';
+      let endTimeStr = '';
+      try {
+        if (exam.startTime) {
+          const d = new Date(exam.startTime);
+          if (!isNaN(d.getTime())) startTimeStr = d.toISOString().slice(0, 16);
         }
+      } catch { /* 无效日期忽略 */ }
+      try {
+        if (exam.endTime) {
+          const d = new Date(exam.endTime);
+          if (!isNaN(d.getTime())) endTimeStr = d.toISOString().slice(0, 16);
+        }
+      } catch { /* 无效日期忽略 */ }
+
+      // 安全解析 classIds（可能是 JSON 字符串或已是数组）
+      let parsedClassIds: string[] = [];
+      if (Array.isArray(exam.classIds)) {
+        parsedClassIds = exam.classIds;
+      } else if (typeof exam.classIds === 'string') {
+        try { parsedClassIds = JSON.parse(exam.classIds); } catch { parsedClassIds = []; }
+      }
+
+      setForm({
+        title: exam.title,
+        description: exam.description || '',
+        type: exam.type,
+        duration: exam.duration,
+        startTime: startTimeStr,
+        endTime: endTimeStr,
+        enableProctoring: exam.enableProctoring || false,
+        maxAttempts: exam.maxAttempts || 1,
+        problemIds: exam.questions?.map((q: any) => q.problemId) || [],
+        scope: exam.scope || 'PUBLIC',
+        classIds: parsedClassIds,
+        pointsReward: exam.pointsReward || 0,
+        medalEnabled: exam.medalEnabled || false,
+        showRanking: exam.showRanking !== false,
+        passScore: exam.passScore || 60,
+        showAnswerAfter: exam.showAnswerAfter || 'NEVER',
+      });
+      setEditingExamId(examId);
+      setShowForm(true);
+      if (problems.length === 0) {
+        fetchProblems();
+        fetchKnowledgeTree();
       }
     } catch (error: any) {
-      alert(error.error?.message || '获取考试详情失败');
+      console.error('[AdminExamPage] handleEditExam failed:', error);
+      alert(error.error?.message || error.message || '获取考试详情失败');
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -307,14 +355,14 @@ export function AdminExamPage() {
     }
   };
 
-  const toggleProblem = (problemId: string) => {
+  const toggleProblem = useCallback((problemId: string) => {
     setForm(prev => ({
       ...prev,
       problemIds: prev.problemIds.includes(problemId)
         ? prev.problemIds.filter(id => id !== problemId)
         : [...prev.problemIds, problemId]
     }));
-  };
+  }, []);
 
   const getTypeName = (type: string) => {
     switch (type) {
@@ -627,13 +675,15 @@ export function AdminExamPage() {
                       ))}
                     </select>
                   )}
-                  {(problemTypeFilter || difficultyFilter || selectedKnowledgeNodeId || tagFilter) && (
+                  {(problemTypeFilter || difficultyFilter || selectedKnowledgeNodeId || tagFilter || problemSearchText) && (
                     <button
                       onClick={() => {
                         setProblemTypeFilter('');
                         setDifficultyFilter('');
                         setSelectedKnowledgeNodeId('');
                         setTagFilter('');
+                        setProblemSearchText('');
+                        setProblemPage(1);
                       }}
                       className="text-xs text-slate-400 hover:text-white transition-colors"
                     >
@@ -654,8 +704,19 @@ export function AdminExamPage() {
                   </button>
                 </div>
 
+                {/* 搜索框：快速定位题目 */}
+                <div className="mb-3">
+                  <input
+                    type="text"
+                    value={problemSearchText}
+                    onChange={(e) => { setProblemSearchText(e.target.value); setProblemPage(1); }}
+                    placeholder="搜索题目标题..."
+                    className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {filteredProblems.map((problem) => (
+                  {paginatedProblems.map((problem) => (
                   <label
                     key={problem.id}
                     className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
@@ -686,6 +747,15 @@ export function AdminExamPage() {
                   </label>
                 ))}
               </div>
+              {/* 加载更多按钮 */}
+              {paginatedProblems.length < filteredProblems.length && (
+                <button
+                  onClick={() => setProblemPage(prev => prev + 1)}
+                  className="w-full mt-3 py-2 text-sm text-cyan-400 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
+                >
+                  加载更多（已显示 {paginatedProblems.length}/{filteredProblems.length}）
+                </button>
+              )}
               </>
             )}
           </div>
@@ -962,10 +1032,11 @@ export function AdminExamPage() {
                   </button>
                   <button
                     onClick={() => handleEditExam(exam.id)}
-                    className="text-blue-400 hover:text-blue-300 p-2 transition-colors"
+                    disabled={editLoading}
+                    className="text-blue-400 hover:text-blue-300 p-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     title="编辑考试"
                   >
-                    ✏️
+                    {editLoading ? '⏳' : '✏️'}
                   </button>
                   <button
                     onClick={() => handleDeleteExam(exam.id)}

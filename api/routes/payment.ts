@@ -331,6 +331,50 @@ router.put('/channel/:method', authMiddleware, roleMiddleware('ADMIN'), async (r
 });
 
 /**
+ * 上传管理员联系二维码（仅管理员）
+ */
+router.post('/contact-qr', authMiddleware, roleMiddleware('ADMIN'), paymentUpload.single('qrCode'), async (req: Request, res: any): Promise<void> => {
+  try {
+    let qrCodeUrl: string | null = req.body.qrCodeUrl ?? null;
+    if (req.file) {
+      qrCodeUrl = `/api/uploads/payments/${req.file.filename}`;
+    }
+    if (!qrCodeUrl) {
+      res.status(400).json({ success: false, error: { message: '请上传二维码图片或提供 URL' } });
+      return;
+    }
+    await accessService.setConfig('contact_qr_code', qrCodeUrl);
+    res.json({ success: true, data: { url: qrCodeUrl } });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/**
+ * 获取管理员联系二维码（已登录用户可用）
+ */
+router.get('/contact-qr', authMiddleware, async (_req: Request, res: any): Promise<void> => {
+  try {
+    const url = await accessService.getConfig('contact_qr_code');
+    res.json({ success: true, data: { url: url || null } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/**
+ * 删除管理员联系二维码（仅管理员）
+ */
+router.delete('/contact-qr', authMiddleware, roleMiddleware('ADMIN'), async (_req: Request, res: any): Promise<void> => {
+  try {
+    await accessService.setConfig('contact_qr_code', '');
+    res.json({ success: true, data: { deleted: true } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/**
  * 获取所有支付方式配置（仅管理员）
  */
 router.get('/config', authMiddleware, roleMiddleware('ADMIN'), async (_req: Request, res: any): Promise<void> => {

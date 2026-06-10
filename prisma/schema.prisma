@@ -24,6 +24,7 @@ model User {
   accessExpiresAt DateTime?
   accessType      String       @default("TRIAL")
   paymentId       String?
+  studentQuota    Int          @default(0)    // 教师的学生名额上限, 0表示无限制
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   submissions     Submission[]
@@ -555,6 +556,7 @@ model PricingPlan {
   duration    Int       @default(30)
   unit        String    @default("DAY")
   features    String    @default("[]")
+  studentQuota Int      @default(50)   // 该计划包含的学生名额
   isPopular   Boolean   @default(false)
   isActive    Boolean   @default(true)
   sortOrder   Int       @default(0)

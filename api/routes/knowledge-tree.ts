@@ -1,7 +1,19 @@
 import { Router, type Request } from 'express';
+import { randomUUID } from 'crypto';
 import { knowledgeTreeService } from '../services/knowledge-tree.service';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { roleMiddleware } from '../middleware/role.middleware';
+
+// 异步整理任务管理
+interface OrganizeTask {
+  id: string;
+  status: 'running' | 'completed' | 'failed';
+  progress: { current: number; total: number; phase: string };
+  result?: any;
+  error?: string;
+  startedAt: Date;
+}
+const organizeTasks = new Map<string, OrganizeTask>();
 
 const router = Router();
 
@@ -36,13 +48,54 @@ router.post('/ai/classify-unassigned', authMiddleware, roleMiddleware('ADMIN'), 
 router.post('/ai/organize-unassigned', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user?.id;
-    const result = await knowledgeTreeService.organizeUnassignedProblems(userId, {
+    const taskId = randomUUID();
+    const task: OrganizeTask = {
+      id: taskId,
+      status: 'running',
+      progress: { current: 0, total: 0, phase: '初始化中...' },
+      startedAt: new Date(),
+    };
+    organizeTasks.set(taskId, task);
+
+    // 后台异步执行整理任务
+    knowledgeTreeService.organizeUnassignedProblems(userId, {
       limit: req.body?.limit,
       autoApplyThreshold: req.body?.autoApplyThreshold,
+    }, (current, total, phase) => {
+      task.progress = { current, total, phase };
+    }).then(result => {
+      task.status = 'completed';
+      task.result = result;
+    }).catch(err => {
+      task.status = 'failed';
+      task.error = err.message || '整理任务执行失败';
     });
-    res.status(201).json({ success: true, data: result });
+
+    res.status(202).json({ success: true, data: { taskId, status: 'running' } });
   } catch (error: any) {
     res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+router.get('/ai/organize-status/:taskId', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any): Promise<void> => {
+  const task = organizeTasks.get(req.params.taskId);
+  if (!task) {
+    res.status(404).json({ success: false, error: { message: '任务不存在' } });
+    return;
+  }
+  res.json({
+    success: true,
+    data: {
+      id: task.id,
+      status: task.status,
+      progress: task.progress,
+      result: task.result,
+      error: task.error,
+    },
+  });
+  // 已完成或失败的任务读取后清理，避免内存泄漏
+  if (task.status !== 'running') {
+    organizeTasks.delete(task.id);
   }
 });
 

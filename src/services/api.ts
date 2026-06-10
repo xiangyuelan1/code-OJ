@@ -175,6 +175,8 @@ export const knowledgeTreeAPI = {
     api.post('/api/knowledge-tree/ai/classify-unassigned', { limit }),
   organizeUnassignedProblems: (data?: { limit?: number; autoApplyThreshold?: number }) =>
     api.post('/api/knowledge-tree/ai/organize-unassigned', data || {}),
+  getOrganizeStatus: (taskId: string) =>
+    api.get(`/api/knowledge-tree/ai/organize-status/${taskId}`),
   getClassificationSuggestions: () => api.get('/api/knowledge-tree/ai/suggestions'),
   applyClassificationSuggestion: (id: string) => api.post(`/api/knowledge-tree/ai/suggestions/${id}/apply`),
   skipClassificationSuggestion: (id: string) => api.post(`/api/knowledge-tree/ai/suggestions/${id}/skip`),
@@ -365,6 +367,10 @@ export const paymentAPI = {
   deleteQrCode: (method: string) => api.delete(`/api/payments/qr-code/${method}`),
   updateChannel: (method: string, data: { enabled: boolean; config?: Record<string, string> }) =>
     api.put(`/api/payments/channel/${method}`, data),
+  uploadContactQr: (data: FormData) =>
+    api.post('/api/payments/contact-qr', data, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  getContactQr: () => api.get('/api/payments/contact-qr'),
+  deleteContactQr: () => api.delete('/api/payments/contact-qr'),
 };
 
 export const promotionAPI = {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { paymentAPI } from '../../services/api';
 import {
   CreditCard, CheckCircle2, XCircle, Clock, Upload, QrCode, Eye,
-  Trash2, Settings, Smartphone, ToggleLeft, ToggleRight,
+  Trash2, Settings, Smartphone, ToggleLeft, ToggleRight, MessageCircle,
 } from 'lucide-react';
 
 interface MethodConfig {
@@ -22,10 +22,13 @@ export function AdminPaymentPage() {
   const [viewingProof, setViewingProof] = useState<string | null>(null);
   const [deletingMethod, setDeletingMethod] = useState<string | null>(null);
   const [togglingMethod, setTogglingMethod] = useState<string | null>(null);
+  const [contactQrCode, setContactQrCode] = useState<string | null>(null);
+  const [uploadingContactQr, setUploadingContactQr] = useState(false);
+  const contactQrInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
-    Promise.all([fetchPayments(), fetchMethodsConfig()]).finally(() => setLoading(false));
+    Promise.all([fetchPayments(), fetchMethodsConfig(), fetchContactQrCode()]).finally(() => setLoading(false));
   }, []);
 
   const fetchPayments = async () => {
@@ -47,6 +50,43 @@ export function AdminPaymentPage() {
       }
     } catch (error) {
       console.error('获取支付方式配置失败', error);
+    }
+  };
+
+  const fetchContactQrCode = async () => {
+    try {
+      const res = await paymentAPI.getContactQr();
+      if (res.success && res.data?.url) {
+        setContactQrCode(res.data.url);
+      }
+    } catch {}
+  };
+
+  const handleContactQrUpload = async (file: File) => {
+    setUploadingContactQr(true);
+    try {
+      const formData = new FormData();
+      formData.append('qrCode', file);
+      const res = await paymentAPI.uploadContactQr(formData);
+      if (res.success) {
+        setContactQrCode(res.data.url);
+      }
+    } catch (error: any) {
+      alert(error.error?.message || '上传失败');
+    } finally {
+      setUploadingContactQr(false);
+    }
+  };
+
+  const handleDeleteContactQr = async () => {
+    if (!confirm('确定删除联系二维码？')) return;
+    try {
+      const res = await paymentAPI.deleteContactQr();
+      if (res.success) {
+        setContactQrCode(null);
+      }
+    } catch (error: any) {
+      alert(error.error?.message || '删除失败');
     }
   };
 
@@ -288,6 +328,69 @@ export function AdminPaymentPage() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* 管理员联系方式配置 */}
+      <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-8">
+        <h2 className="text-xl font-semibold text-white mb-2 flex items-center gap-2">
+          <MessageCircle className="h-5 w-5 text-cyan-400" />
+          管理员联系方式
+        </h2>
+        <p className="text-slate-400 text-sm mb-6">
+          上传微信二维码，用户在付费页面可以扫码添加好友进行咨询
+        </p>
+
+        {contactQrCode ? (
+          <div className="flex items-start gap-4">
+            <div className="p-2 bg-white rounded-lg flex-shrink-0">
+              <img src={contactQrCode} alt="联系二维码" className="w-28 h-28 rounded" />
+            </div>
+            <div className="flex-1 flex flex-col gap-2">
+              <p className="text-slate-300 text-sm">当前联系二维码已配置</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => contactQrInputRef.current?.click()}
+                  disabled={uploadingContactQr}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors text-sm disabled:opacity-50"
+                >
+                  <Upload className="h-4 w-4" />
+                  {uploadingContactQr ? '上传中...' : '更换'}
+                </button>
+                <button
+                  onClick={handleDeleteContactQr}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors text-sm"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  删除
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="border-2 border-dashed border-slate-600 rounded-lg p-6 text-center hover:border-cyan-500/50 transition-colors">
+            <MessageCircle className="h-8 w-8 text-slate-500 mx-auto mb-2" />
+            <p className="text-slate-400 text-sm mb-3">未上传联系二维码</p>
+            <button
+              onClick={() => contactQrInputRef.current?.click()}
+              disabled={uploadingContactQr}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors text-sm disabled:opacity-50"
+            >
+              <Upload className="h-4 w-4" />
+              {uploadingContactQr ? '上传中...' : '上传二维码'}
+            </button>
+          </div>
+        )}
+        <input
+          ref={contactQrInputRef}
+          type="file"
+          accept="image/*"
+          onChange={e => {
+            const file = e.target.files?.[0];
+            if (file) handleContactQrUpload(file);
+            e.target.value = '';
+          }}
+          className="hidden"
+        />
       </div>
 
       <div className="bg-slate-800 rounded-xl overflow-hidden shadow-xl">

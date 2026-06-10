@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { paymentAPI, accessAPI, promotionAPI } from '../services/api';
-import { CreditCard, Upload, CheckCircle2, Clock, XCircle, QrCode, ArrowLeft, Smartphone, Gift } from 'lucide-react';
+import { CreditCard, Upload, CheckCircle2, Clock, XCircle, QrCode, ArrowLeft, Smartphone, Gift, Star, Zap, Shield, MessageCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface PaymentMethod {
@@ -25,9 +25,17 @@ export function PaymentPage() {
   const [promoCode, setPromoCode] = useState('');
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoMessage, setPromoMessage] = useState('');
+  const [pricingPlans, setPricingPlans] = useState<any[]>([]);
+  const [contactQrCode, setContactQrCode] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([fetchPaymentStatus(), fetchPaymentMethods(), fetchPaymentConfig()]).finally(() => setLoading(false));
+    Promise.all([
+      fetchPaymentStatus(),
+      fetchPaymentMethods(),
+      fetchPaymentConfig(),
+      fetchPlans(),
+      fetchContactQr(),
+    ]).finally(() => setLoading(false));
   }, []);
 
   const fetchPaymentStatus = async () => {
@@ -73,6 +81,22 @@ export function PaymentPage() {
     } catch (error) {
       console.error('获取支付配置失败', error);
     }
+  };
+
+  const fetchPlans = async () => {
+    try {
+      const res = await promotionAPI.getActivePlans();
+      if (res.success) setPricingPlans(res.data || []);
+    } catch {}
+  };
+
+  const fetchContactQr = async () => {
+    try {
+      const res = await paymentAPI.getContactQr();
+      if (res.success && res.data?.url) {
+        setContactQrCode(res.data.url);
+      }
+    } catch {}
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -158,6 +182,94 @@ export function PaymentPage() {
       </button>
 
       <h1 className="text-3xl font-bold text-white mb-8">付费使用</h1>
+
+      {/* 付费权益介绍区域 */}
+      <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-6">
+        <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+          <Zap className="h-5 w-5 text-cyan-400" />
+          功能对比
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* 试用版 */}
+          <div className="rounded-xl border border-slate-600 bg-slate-700/30 p-5">
+            <h3 className="text-lg font-semibold text-slate-300 mb-4 flex items-center gap-2">
+              <Clock className="h-4 w-4 text-slate-400" />
+              免费试用
+            </h3>
+            <ul className="space-y-2.5 text-sm text-slate-400">
+              <li className="flex items-start gap-2"><XCircle className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" /><span>有限题目访问</span></li>
+              <li className="flex items-start gap-2"><XCircle className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" /><span>限时使用期限</span></li>
+              <li className="flex items-start gap-2"><XCircle className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" /><span>无高级功能</span></li>
+              <li className="flex items-start gap-2"><XCircle className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" /><span>基础判题服务</span></li>
+            </ul>
+          </div>
+          {/* 付费版 */}
+          <div className="rounded-xl border border-cyan-500/50 bg-cyan-500/5 p-5 ring-1 ring-cyan-500/20">
+            <h3 className="text-lg font-semibold text-cyan-300 mb-4 flex items-center gap-2">
+              <Star className="h-4 w-4 text-cyan-400" />
+              付费版
+            </h3>
+            <ul className="space-y-2.5 text-sm text-slate-300">
+              <li className="flex items-start gap-2"><CheckCircle2 className="h-4 w-4 text-cyan-400 mt-0.5 shrink-0" /><span>全部题目无限访问</span></li>
+              <li className="flex items-start gap-2"><CheckCircle2 className="h-4 w-4 text-cyan-400 mt-0.5 shrink-0" /><span>完整使用期限</span></li>
+              <li className="flex items-start gap-2"><CheckCircle2 className="h-4 w-4 text-cyan-400 mt-0.5 shrink-0" /><span>所有高级功能（对战、考试等）</span></li>
+              <li className="flex items-start gap-2"><CheckCircle2 className="h-4 w-4 text-cyan-400 mt-0.5 shrink-0" /><span>优先判题 & 技术支持</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* 定价计划 */}
+      {pricingPlans.length > 0 && (
+        <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-6">
+          <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+            <Shield className="h-5 w-5 text-cyan-400" />
+            定价计划
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pricingPlans.map((plan: any) => (
+              <div
+                key={plan.id}
+                className={`rounded-xl border p-5 transition ${
+                  plan.recommended
+                    ? 'border-cyan-500/60 bg-cyan-500/5 ring-1 ring-cyan-500/20'
+                    : 'border-slate-600 bg-slate-700/30'
+                }`}
+              >
+                {plan.recommended && (
+                  <span className="inline-block mb-2 rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-300">
+                    推荐
+                  </span>
+                )}
+                <h3 className="text-lg font-semibold text-white">{plan.name}</h3>
+                {plan.description && <p className="text-sm text-slate-400 mt-1">{plan.description}</p>}
+                <div className="mt-3">
+                  <span className="text-2xl font-bold text-cyan-400">¥{plan.price}</span>
+                  {plan.duration && (
+                    <span className="text-sm text-slate-400 ml-1">/ {plan.duration}天</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 联系管理员 */}
+      {contactQrCode && (
+        <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-6">
+          <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+            <MessageCircle className="h-5 w-5 text-cyan-400" />
+            联系管理员
+          </h2>
+          <div className="flex flex-col items-center text-center">
+            <div className="inline-block p-3 bg-white rounded-xl">
+              <img src={contactQrCode} alt="管理员微信二维码" className="w-40 h-40 rounded-lg" />
+            </div>
+            <p className="text-slate-300 text-sm mt-4">扫码添加管理员微信，获取更多帮助</p>
+          </div>
+        </div>
+      )}
 
       <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-6">
         <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">

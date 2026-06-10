@@ -4,7 +4,7 @@ import { classAPI, enhancedAiAPI } from '../../services/api';
 import {
   GraduationCap, Users, Code, CheckCircle,
   Loader2, ChevronDown, ChevronRight,
-  Sparkles, Tags, AlertTriangle, ArrowRight,
+  Sparkles, Tags, AlertTriangle, ArrowRight, UserCheck,
 } from 'lucide-react';
 
 interface DashboardData {
@@ -179,6 +179,11 @@ export function TeacherDashboard() {
 
   /* ==================== A. 顶部统计卡片 ==================== */
 
+  // 学生名额：从当前用户的 studentQuota 字段获取
+  const studentQuota = (user as any)?.studentQuota ?? 0;
+  const studentUsed = dashboard.totalStudents;
+  const quotaPercentage = studentQuota > 0 ? Math.min(Math.round((studentUsed / studentQuota) * 100), 100) : 0;
+
   const statCards = [
     {
       title: '总班级数',
@@ -244,7 +249,7 @@ export function TeacherDashboard() {
       <h1 className="text-3xl font-bold text-white mb-8">教师工作台</h1>
 
       {/* A. 顶部统计卡片 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
         {statCards.map((stat) => (
           <div
             key={stat.title}
@@ -259,6 +264,30 @@ export function TeacherDashboard() {
             <div className="text-slate-400 text-sm">{stat.title}</div>
           </div>
         ))}
+
+        {/* 学生名额卡片 */}
+        <div className="bg-slate-800 rounded-xl p-6 shadow-xl border border-slate-700">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-lg bg-orange-500/10">
+              <UserCheck className="h-6 w-6 text-orange-400" />
+            </div>
+          </div>
+          <div className="text-3xl font-bold text-white mb-1">
+            {studentUsed}{studentQuota > 0 ? `/${studentQuota}` : ''}
+          </div>
+          <div className="text-slate-400 text-sm mb-2">学生名额</div>
+          {studentQuota > 0 && (
+            <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${quotaPercentage >= 90 ? 'bg-red-500' : quotaPercentage >= 70 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                style={{ width: `${quotaPercentage}%` }}
+              />
+            </div>
+          )}
+          {studentQuota === 0 && (
+            <div className="text-xs text-slate-500">无限制</div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
