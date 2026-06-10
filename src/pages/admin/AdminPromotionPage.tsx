@@ -72,7 +72,7 @@ export function AdminPromotionPage() {
 
   const startEditPlan = (plan: any) => {
     const features = JSON.parse(plan.features || '[]');
-    setPlanForm({ name: plan.name, price: plan.price, duration: plan.duration, unit: plan.unit, features: features.length > 0 ? features : [''], isPopular: plan.isPopular, sortOrder: plan.sortOrder, studentQuota: plan.studentQuota ?? 50 });
+    setPlanForm({ name: plan.name, price: plan.price, duration: plan.duration, unit: plan.unit, features: features.length > 0 ? features : [''], isPopular: plan.isPopular, sortOrder: plan.sortOrder, studentQuota: plan.studentQuota ?? 50, classQuota: plan.classQuota ?? 10, aiTokenQuota: plan.aiTokenQuota ?? 0 });
     setEditPlanId(plan.id);
     setShowCreatePlan(true);
   };

@@ -186,6 +186,7 @@ export function setupSocketIO(httpServer: any) {
     });
   });
 
+  ioInstance = io;
   return io;
 }
 
@@ -402,4 +403,35 @@ export function getOnlineCount(): number {
 
 export function getOnlineUsers(): OnlineUser[] {
   return getOnlineUsersList();
+}
+
+/**
+ * 向指定用户发送事件通知
+ * 通过 onlineUsers map 查找该用户的所有 socket 连接
+ */
+export function notifyUser(userId: string, event: string, data: any) {
+  if (!ioInstance) return;
+  const userSockets = onlineUsers.get(userId);
+  if (userSockets) {
+    for (const socketId of userSockets) {
+      ioInstance.to(socketId).emit(event, data);
+    }
+  }
+}
+
+/**
+ * 强制断开指定用户的所有WebSocket连接（用于禁用用户时）
+ */
+export function forceDisconnectUser(userId: string) {
+  if (!ioInstance) return;
+  const userSockets = onlineUsers.get(userId);
+  if (userSockets) {
+    for (const socketId of userSockets) {
+      const socket = ioInstance.sockets.sockets.get(socketId);
+      if (socket) {
+        socket.emit('auth:force-logout', { reason: '账户已被禁用' });
+        socket.disconnect(true);
+      }
+    }
+  }
 }

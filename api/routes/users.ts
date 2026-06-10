@@ -3,6 +3,7 @@ import { authService } from '../services/auth.service';
 import { accessService } from '../services/access.service';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { roleMiddleware } from '../middleware/role.middleware';
+import { notifyUser, forceDisconnectUser } from '../services/socket.service';
 import prisma from '../lib/prisma';
 import bcrypt from 'bcryptjs';
 
