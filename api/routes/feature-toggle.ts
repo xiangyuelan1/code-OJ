@@ -1,5 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { featureToggleService } from '../services/feature-toggle.service';
+import { authMiddleware } from '../middleware/auth.middleware';
+import prisma from '../lib/prisma';
 
 const router = Router();
 
@@ -47,6 +49,28 @@ router.get('/public', async (_req: Request, res: Response) => {
   try {
     const features = await featureToggleService.getVisibleFeatures();
     res.json({ success: true, data: features });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/**
+ * 检查当前用户是否有权限使用某功能
+ */
+router.get('/check-access/:featureKey', authMiddleware, async (req: Request, res: any) => {
+  try {
+    const { featureKey } = req.params;
+    const user = (req as any).user;
+
+    // 查询用户 accessType
+    const userInfo = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { accessType: true },
+    });
+
+    const accessType = userInfo?.accessType || 'TRIAL';
+    const result = await featureToggleService.checkFeatureAccess(featureKey, user.role, accessType);
+    res.json({ success: true, data: result });
   } catch (error: any) {
     res.status(500).json({ success: false, error: { message: error.message } });
   }

@@ -3,6 +3,7 @@ import { useAuthStore } from '../../stores/auth.store';
 import { usePointsStore } from '../../stores/points.store';
 import { useSocketStore } from '../../services/socket';
 import { classAPI, featureAPI } from '../../services/api';
+import { useFeatureAccess } from '../../hooks/useFeatureAccess';
 import {
   Award,
   BookMarked,
@@ -17,6 +18,7 @@ import {
   GraduationCap,
   LayoutDashboard,
   LibraryBig,
+  Lock,
   LogOut,
   Menu,
   MessageSquare,
@@ -44,6 +46,8 @@ interface NavItem {
   description: string;
   auth?: boolean;
   featureKey?: string;
+  /** 付费功能标识，免费用户在导航中看到锁定标记 */
+  premiumKey?: string;
   roles?: Array<'ADMIN' | 'TEACHER' | 'STUDENT'>;
   badge?: number;
 }
@@ -69,7 +73,7 @@ function canShowItem(
   return true;
 }
 
-function DesktopGroup({ group, onNavigate }: { group: NavGroup; onNavigate: () => void }) {
+function DesktopGroup({ group, onNavigate, canUsePremium }: { group: NavGroup; onNavigate: () => void; canUsePremium: (key: string) => boolean }) {
   const [open, setOpen] = useState(false);
   const Icon = group.icon;
 
@@ -101,15 +105,16 @@ function DesktopGroup({ group, onNavigate }: { group: NavGroup; onNavigate: () =
             <div className="p-2">
               {group.items.map((item) => {
                 const ItemIcon = item.icon;
+                const isLocked = !!item.premiumKey && !canUsePremium(item.premiumKey);
                 return (
                   <Link
                     key={`${group.label}-${item.to}`}
-                    to={item.to}
+                    to={isLocked ? '/payment' : item.to}
                     onClick={() => {
                       setOpen(false);
                       onNavigate();
                     }}
-                    className="group/item flex items-start gap-3 rounded-xl px-3 py-3 transition hover:bg-slate-800/90"
+                    className={`group/item flex items-start gap-3 rounded-xl px-3 py-3 transition hover:bg-slate-800/90 ${isLocked ? 'opacity-60' : ''}`}
                   >
                     <span className="mt-0.5 rounded-lg bg-slate-800 p-2 text-cyan-300 transition group-hover/item:bg-cyan-500/15">
                       <ItemIcon className="h-4 w-4" />
@@ -117,13 +122,18 @@ function DesktopGroup({ group, onNavigate }: { group: NavGroup; onNavigate: () =
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2 text-sm font-medium text-slate-100">
                         {item.label}
+                        {isLocked && (
+                          <Lock className="h-3 w-3 text-amber-400" />
+                        )}
                         {!!item.badge && item.badge > 0 && (
                           <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] leading-none text-white">
                             {item.badge > 9 ? '9+' : item.badge}
                           </span>
                         )}
                       </span>
-                      <span className="mt-0.5 block text-xs leading-5 text-slate-400">{item.description}</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-slate-400">
+                        {isLocked ? '升级会员解锁此功能' : item.description}
+                      </span>
                     </span>
                   </Link>
                 );
@@ -140,6 +150,7 @@ export function Navbar() {
   const { user, isAuthenticated, logout, accessStatus } = useAuthStore();
   const { points, levelName, rank, fetchMyPoints } = usePointsStore();
   const { onlineCount, disconnect } = useSocketStore();
+  const { canUseFeature: canUsePremium } = useFeatureAccess();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -205,7 +216,7 @@ export function Navbar() {
       items: [
         { label: '题目练习', to: '/', icon: BookOpen, description: '按难度和题型开始刷题', featureKey: 'problems' },
         { label: '知识树刷题', to: '/categories', icon: ScrollText, description: '沿知识结构系统练习' },
-        { label: '多元学习', to: '/learning', icon: Sparkles, description: '项目、路径和能力训练', auth: true, featureKey: 'learning' },
+        { label: '多元学习', to: '/learning', icon: Sparkles, description: '项目、路径和能力训练', auth: true, featureKey: 'learning', premiumKey: 'ai-companion' },
         { label: '编程星途', to: '/starpath', icon: Trophy, description: '星图探索、伙伴和星球建设', auth: true, featureKey: 'starpath' },
         { label: '每日一题', to: '/checkin', icon: CalendarCheck, description: '签到、连续学习和每日挑战', auth: true },
       ],
@@ -238,6 +249,7 @@ export function Navbar() {
       accent: 'text-violet-300',
       items: [
         { label: '讨论区', to: '/discussions', icon: MessageSquare, description: '交流题解、经验和问题', auth: true, roles: ['STUDENT', 'TEACHER'], featureKey: 'discussions' },
+        // 注意：免费用户可以访问讨论区（只看），发帖限制在讨论区页面内通过 FeatureGate 控制
       ],
     },
     {
@@ -307,7 +319,7 @@ export function Navbar() {
 
           <div className="hidden flex-1 items-center justify-center gap-1 lg:flex">
             {visibleGroups.map(group => (
-              <DesktopGroup key={group.label} group={group} onNavigate={() => setUserMenuOpen(false)} />
+              <DesktopGroup key={group.label} group={group} onNavigate={() => setUserMenuOpen(false)} canUsePremium={canUsePremium} />
             ))}
           </div>
 
@@ -443,15 +455,17 @@ export function Navbar() {
                   <div className="grid gap-1 sm:grid-cols-2">
                     {group.items.map(item => {
                       const ItemIcon = item.icon;
+                      const isLocked = !!item.premiumKey && !canUsePremium(item.premiumKey);
                       return (
                         <Link
                           key={`${group.label}-${item.to}`}
-                          to={item.to}
-                          className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 hover:text-white"
+                          to={isLocked ? '/payment' : item.to}
+                          className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 hover:text-white ${isLocked ? 'opacity-60' : ''}`}
                           onClick={() => setMobileMenuOpen(false)}
                         >
                           <ItemIcon className="h-4 w-4 text-cyan-300" />
                           <span>{item.label}</span>
+                          {isLocked && <Lock className="h-3 w-3 text-amber-400 ml-1" />}
                           {!!item.badge && item.badge > 0 && (
                             <span className="ml-auto rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] leading-none text-white">
                               {item.badge > 9 ? '9+' : item.badge}

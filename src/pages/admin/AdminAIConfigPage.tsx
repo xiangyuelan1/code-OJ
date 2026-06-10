@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { aiAPI, enhancedAiAPI, aiProviderAPI } from '../../services/api';
+import { aiAPI, enhancedAiAPI, aiProviderAPI, featureAPI } from '../../services/api';
 import { Cpu, Save, Loader2, Brain, Code, Lightbulb, Bug, FileText, TreePine, Tag, FileUp, CheckCircle, XCircle, Settings2, ToggleLeft, ToggleRight, Edit3, Plus, X, Play, RotateCcw, Zap, ZapOff, BarChart3, DollarSign, Activity, BookOpen, GraduationCap, PenTool, Gavel, Layers, Sliders, Target, Star, Trash2, ArrowUpDown } from 'lucide-react';
 
 interface FeatureConfig {
@@ -939,7 +939,38 @@ export function AdminAIConfigPage() {
                                 </div>
                               )}
 
-                              <div className="flex items-center justify-end">
+                              {/* 身份权限配置 */}
+                              <div className="mt-3 pt-3 border-t border-slate-700">
+                                <p className="text-xs text-slate-400 mb-2">可用身份：</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {['TRIAL', 'PAID', 'CLASS', 'ADMIN'].map(type => {
+                                    const types = ((fc as any).allowedAccessTypes || 'TRIAL,PAID,CLASS,ADMIN').split(',');
+                                    const isChecked = types.includes(type);
+                                    const labels: Record<string, string> = { TRIAL: '免费', PAID: '付费', CLASS: '班级', ADMIN: '管理' };
+                                    return (
+                                      <label key={type} className="flex items-center gap-1 text-xs cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={async () => {
+                                            const newTypes = isChecked
+                                              ? types.filter((t: string) => t !== type)
+                                              : [...types, type];
+                                            await featureAPI.update(fc.featureKey, {
+                                              allowedAccessTypes: newTypes.join(','),
+                                            });
+                                            loadFeatureConfigs();
+                                          }}
+                                          className="w-3.5 h-3.5 rounded border-slate-600"
+                                        />
+                                        <span className={isChecked ? 'text-cyan-400' : 'text-slate-500'}>{labels[type]}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-end mt-3">
                                 <button
                                   onClick={() => handleEditFeature(fc)}
                                   className="flex items-center px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-lg transition-colors"

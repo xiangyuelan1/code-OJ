@@ -11,6 +11,7 @@ interface FeatureItem {
   enabled: boolean;
   visible: boolean;
   order: number;
+  allowedAccessTypes?: string;
 }
 
 const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {

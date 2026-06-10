@@ -4,16 +4,20 @@ const DEFAULT_FEATURES = [
   { featureKey: 'problems', featureName: '题库', description: '题目列表与详情', category: 'core', enabled: true, visible: true, order: 1 },
   { featureKey: 'match', featureName: '对战', description: 'PK对战模式', category: 'core', enabled: true, visible: true, order: 2 },
   { featureKey: 'exams', featureName: '考试', description: '在线考试系统', category: 'core', enabled: true, visible: true, order: 3 },
-  { featureKey: 'discussions', featureName: '社区', description: '讨论区与交流', category: 'core', enabled: true, visible: true, order: 4 },
-  { featureKey: 'learning', featureName: '多元学习', description: '多元学习入口', category: 'learning', enabled: true, visible: true, order: 5 },
-  { featureKey: 'starpath', featureName: '编程星途', description: '星途探索学习', category: 'learning', enabled: true, visible: true, order: 6 },
-  { featureKey: 'interview', featureName: 'AI面试', description: 'AI面试模拟器', category: 'learning', enabled: true, visible: true, order: 7 },
-  { featureKey: 'bug-hunter', featureName: 'AI猎虫', description: 'Bug猎手挑战', category: 'learning', enabled: true, visible: true, order: 8 },
-  { featureKey: 'daily-challenge', featureName: '每日一题', description: '每日挑战题目', category: 'core', enabled: true, visible: true, order: 9 },
-  { featureKey: 'achievements', featureName: '成就', description: '成就系统', category: 'core', enabled: true, visible: true, order: 10 },
-  { featureKey: 'ai-companion', featureName: 'AI学伴', description: 'AI学习伙伴', category: 'ai', enabled: true, visible: true, order: 11 },
-  { featureKey: 'ai-hint', featureName: 'AI提示', description: 'AI解题提示', category: 'ai', enabled: true, visible: true, order: 12 },
-  { featureKey: 'ai-judge', featureName: 'AI判题', description: 'AI预测判题结果', category: 'ai', enabled: true, visible: true, order: 13 },
+  { featureKey: 'discussions', featureName: '社区浏览', description: '浏览讨论区', category: 'core', enabled: true, visible: true, order: 4 },
+  { featureKey: 'discussions_post', featureName: '社区发帖', description: '发表讨论帖子（会员功能）', category: 'core', enabled: true, visible: true, order: 5 },
+  { featureKey: 'learning', featureName: '多元学习', description: '多元学习入口', category: 'learning', enabled: true, visible: true, order: 6 },
+  { featureKey: 'starpath', featureName: '编程星途', description: '星途探索学习', category: 'learning', enabled: true, visible: true, order: 7 },
+  { featureKey: 'interview', featureName: 'AI面试', description: 'AI面试模拟器（会员功能）', category: 'ai', enabled: true, visible: true, order: 8 },
+  { featureKey: 'bug-hunter', featureName: 'AI猎虫', description: 'Bug猎手挑战（会员功能）', category: 'ai', enabled: true, visible: true, order: 9 },
+  { featureKey: 'daily-challenge', featureName: '每日一题', description: '每日挑战题目', category: 'core', enabled: true, visible: true, order: 10 },
+  { featureKey: 'achievements', featureName: '成就', description: '成就系统', category: 'core', enabled: true, visible: true, order: 11 },
+  { featureKey: 'ai-companion', featureName: 'AI学伴', description: 'AI学习伙伴（会员功能）', category: 'ai', enabled: true, visible: true, order: 12 },
+  { featureKey: 'ai-hint', featureName: 'AI提示', description: 'AI解题提示（会员功能）', category: 'ai', enabled: true, visible: true, order: 13 },
+  { featureKey: 'ai-judge', featureName: 'AI判题', description: 'AI预测判题结果（会员功能）', category: 'ai', enabled: true, visible: true, order: 14 },
+  { featureKey: 'ai-find-problems', featureName: 'AI找题', description: 'AI智能推荐题目（会员功能）', category: 'ai', enabled: true, visible: true, order: 15 },
+  { featureKey: 'ai-classify', featureName: 'AI分类', description: 'AI自动分类题目（会员功能）', category: 'ai', enabled: true, visible: true, order: 16 },
+  { featureKey: 'radar-chart', featureName: '能力雷达', description: '个人能力雷达图', category: 'core', enabled: true, visible: true, order: 17 },
 ];
 
 export class FeatureToggleService {
@@ -43,6 +47,8 @@ export class FeatureToggleService {
     featureName?: string;
     description?: string;
     order?: number;
+    allowedAccessTypes?: string;
+    allowedRoles?: string;
   }) {
     return prisma.systemFeature.update({
       where: { featureKey },
@@ -52,6 +58,8 @@ export class FeatureToggleService {
         ...(data.featureName !== undefined && { featureName: data.featureName }),
         ...(data.description !== undefined && { description: data.description }),
         ...(data.order !== undefined && { order: data.order }),
+        ...(data.allowedAccessTypes !== undefined && { allowedAccessTypes: data.allowedAccessTypes }),
+        ...(data.allowedRoles !== undefined && { allowedRoles: data.allowedRoles }),
       },
     });
   }

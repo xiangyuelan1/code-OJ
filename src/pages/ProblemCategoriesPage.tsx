@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { knowledgeTreeAPI } from '../services/api';
-import { TreePine, ChevronRight, ChevronDown, Code, CheckCircle, PenTool, BookOpen } from 'lucide-react';
+import { useFeatureAccess } from '../hooks/useFeatureAccess';
+import { TreePine, ChevronRight, ChevronDown, Code, CheckCircle, PenTool, BookOpen, Lock } from 'lucide-react';
 
 export function ProblemCategoriesPage() {
   const [tree, setTree] = useState<any[]>([]);
@@ -11,18 +12,37 @@ export function ProblemCategoriesPage() {
   const [nodeProblems, setNodeProblems] = useState<any[]>([]);
   const [loadingProblems, setLoadingProblems] = useState(false);
 
+  const { knowledgeTreeAccess, isFreeUser, loading: accessLoading } = useFeatureAccess();
+
+  // 初始加载 + 当权限数据就绪后重新加载（确保过滤生效）
   useEffect(() => {
-    loadTree();
-  }, []);
+    if (!accessLoading) {
+      loadTree();
+    }
+  }, [accessLoading]);
+
+  /**
+   * 过滤知识树：免费用户仅能看到配置的免费根节点
+   * knowledgeTreeAccess.allAccess === true 时不限制
+   * knowledgeTreeAccess.restrictedNodeIds 包含免费用户可见的根节点 ID
+   */
+  const filterTreeByAccess = (nodes: any[]): any[] => {
+    if (!isFreeUser || knowledgeTreeAccess.allAccess) return nodes;
+    if (!knowledgeTreeAccess.restrictedNodeIds || knowledgeTreeAccess.restrictedNodeIds.length === 0) return [];
+    const allowedSet = new Set(knowledgeTreeAccess.restrictedNodeIds);
+    return nodes.filter(node => allowedSet.has(node.id));
+  };
 
   const loadTree = async () => {
     try {
       setLoading(true);
       const res = await knowledgeTreeAPI.getTree();
       if (res.success) {
-        setTree(res.data || []);
+        const fullTree = res.data || [];
+        const visibleTree = filterTreeByAccess(fullTree);
+        setTree(visibleTree);
         const expandSet = new Set<string>();
-        (res.data || []).forEach((node: any) => expandSet.add(node.id));
+        visibleTree.forEach((node: any) => expandSet.add(node.id));
         setExpandedNodes(expandSet);
       }
     } catch (error) {
@@ -146,6 +166,13 @@ export function ProblemCategoriesPage() {
           题单分类
         </h1>
         <p className="text-slate-400 mt-2">按知识体系浏览题目，两层分类结构：一级分类 → 二级知识点</p>
+        {isFreeUser && !knowledgeTreeAccess.allAccess && (
+          <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-sm text-amber-400">
+            <Lock className="h-4 w-4 flex-shrink-0" />
+            <span>当前为试用身份，仅可查看部分知识节点。</span>
+            <a href="/payment" className="ml-auto text-cyan-400 hover:text-cyan-300 underline whitespace-nowrap">升级会员</a>
+          </div>
+        )}
       </div>
 
       {tree.length === 0 ? (

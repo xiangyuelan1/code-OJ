@@ -50,18 +50,35 @@ export class AccessService {
     }
 
     if (user.accessType === 'CLASS') {
-      const membership = await prisma.classMember.findFirst({
-        where: { userId },
+      // 必须属于一个教师有效的班级才有权限
+      const validMembership = await prisma.classMember.findFirst({
+        where: {
+          userId,
+          class: {
+            creator: {
+              isActive: true,
+              role: { in: ['TEACHER', 'ADMIN'] },
+            },
+          },
+        },
       });
-      if (membership) {
+      if (validMembership) {
         return { hasAccess: true, accessType: 'CLASS', expiresAt: undefined };
       }
-      return { hasAccess: false, accessType: 'CLASS', message: '不属于任何班级' };
+      return { hasAccess: false, accessType: 'CLASS', message: '不属于任何有效班级，或教师权限已失效' };
     }
 
-    // TRIAL 或其他类型：先检查是否实际属于某班级（自动升级为 CLASS 权限）
+    // TRIAL 或其他类型：先检查是否实际属于某有效班级（教师有效时自动升级为 CLASS 权限）
     const classMembership = await prisma.classMember.findFirst({
-      where: { userId },
+      where: {
+        userId,
+        class: {
+          creator: {
+            isActive: true,
+            role: { in: ['TEACHER', 'ADMIN'] },
+          },
+        },
+      },
     });
     if (classMembership) {
       return { hasAccess: true, accessType: 'CLASS', expiresAt: undefined };

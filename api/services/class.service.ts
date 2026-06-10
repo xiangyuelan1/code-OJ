@@ -266,13 +266,27 @@ export class ClassService {
       }
     }
 
-    return await prisma.classMember.create({
+    const membership = await prisma.classMember.create({
       data: {
         classId,
         userId,
         role: 'STUDENT',
       },
     });
+
+    // 加入班级后自动升级为 CLASS 身份（仅 TRIAL 用户需要升级）
+    const userInfo = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { accessType: true, role: true },
+    });
+    if (userInfo && userInfo.role === 'STUDENT' && userInfo.accessType === 'TRIAL') {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { accessType: 'CLASS' },
+      });
+    }
+
+    return membership;
   }
 
   async leaveClass(classId: string, userId: string) {
@@ -286,11 +300,16 @@ export class ClassService {
       throw new Error('教师不能离开自己创建的班级，请删除班级或转让权限');
     }
 
-    return await prisma.classMember.delete({
+    await prisma.classMember.delete({
       where: {
         classId_userId: { classId, userId },
       },
     });
+
+    // 退出班级后检查：如果用户不再属于任何班级且是 CLASS 身份，降级为 TRIAL
+    await this.reevaluateUserAccess(userId);
+
+    return { success: true };
   }
 
   async isClassCreator(classId: string, userId: string) {
@@ -308,6 +327,72 @@ export class ClassService {
       },
     });
     return !!membership;
+  }
+
+  /**
+   * 重新评估用户的访问权限
+   * 如果用户是 CLASS 身份但不再属于任何有效班级（教师有效），则降级为 TRIAL
+   */
+  async reevaluateUserAccess(userId: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { accessType: true, role: true },
+    });
+
+    // 仅处理 CLASS 身份的学生
+    if (!user || user.role !== 'STUDENT' || user.accessType !== 'CLASS') return;
+
+    // 检查是否仍属于任何有效班级（教师有效 = isActive + role是TEACHER/ADMIN + accessType未过期）
+    const validMembership = await prisma.classMember.findFirst({
+      where: {
+        userId,
+        class: {
+          creator: {
+            isActive: true,
+            role: { in: ['TEACHER', 'ADMIN'] },
+          },
+        },
+      },
+    });
+
+    if (!validMembership) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { accessType: 'TRIAL' },
+      });
+    }
+  }
+
+  /**
+   * 当教师身份失效时，重新评估其所有班级学生的权限
+   * 调用时机：教师被禁用、角色降级、accessType过期
+   */
+  async reevaluateTeacherStudents(teacherId: string) {
+    // 找到该教师创建的所有班级
+    const teacherClasses = await prisma.class.findMany({
+      where: { createdBy: teacherId },
+      select: { id: true },
+    });
+
+    if (teacherClasses.length === 0) return;
+
+    const classIds = teacherClasses.map(c => c.id);
+
+    // 找到这些班级中所有 CLASS 身份的学生
+    const members = await prisma.classMember.findMany({
+      where: {
+        classId: { in: classIds },
+        role: 'STUDENT',
+        user: { accessType: 'CLASS' },
+      },
+      select: { userId: true },
+    });
+
+    // 逐个重新评估（因为学生可能同时属于其他有效班级）
+    const uniqueUserIds = [...new Set(members.map(m => m.userId))];
+    for (const uid of uniqueUserIds) {
+      await this.reevaluateUserAccess(uid);
+    }
   }
 
   /**
@@ -450,10 +535,11 @@ export class ClassService {
 
       const user = await prisma.user.findUnique({
         where: { id: request.userId },
-        select: { accessType: true },
+        select: { accessType: true, role: true },
       });
       const updateData: any = {};
-      if (user && user.accessType === 'TRIAL') {
+      // 审批通过后自动升级为 CLASS 身份（仅 TRIAL 学生需要升级）
+      if (user && user.role === 'STUDENT' && user.accessType === 'TRIAL') {
         updateData.accessType = 'CLASS';
       }
       await prisma.$transaction([

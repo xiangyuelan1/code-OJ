@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageSquare, ThumbsUp, Search, Plus, Pin, Edit3, Eye, EyeOff, Flame, Star, User } from 'lucide-react';
+import { MessageSquare, ThumbsUp, Search, Plus, Pin, Edit3, Eye, EyeOff, Flame, Star, User, Lock } from 'lucide-react';
 import { discussionAPI } from '../services/api';
 import { useAuthStore } from '../stores/auth.store';
+import { useFeatureAccess } from '../hooks/useFeatureAccess';
 
 type DiscussionType = 'QUESTION' | 'SOLUTION' | 'SHARE';
 type SortMode = 'latest' | 'hot' | 'pinned';
@@ -96,6 +97,7 @@ function getLevelBadge(level?: number) {
 
 export function DiscussionsPage() {
   const { isAuthenticated, user } = useAuthStore();
+  const { canUseFeature, isFreeUser } = useFeatureAccess();
   const [discussions, setDiscussions] = useState<DiscussionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState<DiscussionType | ''>('');
@@ -221,9 +223,15 @@ export function DiscussionsPage() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">社区讨论</h1>
           {isAuthenticated && (
-            <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-cyan-500 hover:bg-cyan-600 rounded-lg transition-colors">
-              <Plus className="h-4 w-4" /> 发起讨论
-            </button>
+            canUseFeature('discussions_post') ? (
+              <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-cyan-500 hover:bg-cyan-600 rounded-lg transition-colors">
+                <Plus className="h-4 w-4" /> 发起讨论
+              </button>
+            ) : (
+              <a href="/payment" className="flex items-center gap-2 px-4 py-2 bg-slate-700 border border-amber-500/30 rounded-lg text-amber-400 text-sm hover:bg-slate-600 transition-colors">
+                <Lock className="h-4 w-4" /> 升级会员发帖
+              </a>
+            )
           )}
         </div>
 

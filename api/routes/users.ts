@@ -1,6 +1,7 @@
 import { Router, type Request } from 'express';
 import { authService } from '../services/auth.service';
 import { accessService } from '../services/access.service';
+import { classService } from '../services/class.service';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { roleMiddleware } from '../middleware/role.middleware';
 import { notifyUser, forceDisconnectUser } from '../services/socket.service';
@@ -26,6 +27,10 @@ router.patch('/:id/toggle-status', authMiddleware, roleMiddleware('ADMIN'), asyn
     // 如果用户被禁用，强制其退出
     if (!user.isActive) {
       forceDisconnectUser(req.params.id);
+    }
+    // 如果被禁用的是教师，重新评估其班级学生的权限
+    if (!user.isActive && user.role === 'TEACHER') {
+      await classService.reevaluateTeacherStudents(req.params.id);
     }
     res.json({ success: true, data: user });
   } catch (error: any) {
@@ -99,6 +104,11 @@ router.patch('/:id/role', authMiddleware, roleMiddleware('ADMIN'), async (req: R
         accessType: true,
       },
     });
+
+    // 如果教师被降级为学生，重新评估其班级学生的权限
+    if (role === 'STUDENT') {
+      await classService.reevaluateTeacherStudents(targetUserId);
+    }
 
     // 通知被修改用户刷新权限状态
     notifyUser(targetUserId, 'auth:role-changed', {

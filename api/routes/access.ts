@@ -3,6 +3,7 @@ import { accessService } from '../services/access.service';
 import { classService } from '../services/class.service';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { roleMiddleware } from '../middleware/role.middleware';
+import prisma from '../lib/prisma';
 
 const router = Router();
 
@@ -123,6 +124,82 @@ router.put('/classes/join-requests/:requestId', authMiddleware, async (req: Requ
     res.json({ success: true, data: result });
   } catch (error: any) {
     res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/**
+ * 获取知识树免费开放节点配置（仅管理员）
+ */
+router.get('/knowledge-tree-free-nodes', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any) => {
+  try {
+    const config = await accessService.getConfig('knowledge_tree_free_nodes');
+    const nodeIds = config ? JSON.parse(config) : [];
+    res.json({ success: true, data: { nodeIds, useDefault: nodeIds.length === 0 } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/**
+ * 设置知识树免费开放节点（仅管理员）
+ */
+router.put('/knowledge-tree-free-nodes', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any) => {
+  try {
+    const { nodeIds } = req.body;
+    if (!Array.isArray(nodeIds)) {
+      res.status(400).json({ success: false, error: { message: 'nodeIds 必须是数组' } });
+      return;
+    }
+    await accessService.setConfig('knowledge_tree_free_nodes', JSON.stringify(nodeIds));
+    res.json({ success: true, data: { nodeIds } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/**
+ * 获取当前用户可访问的知识树根节点
+ * ADMIN/TEACHER 或有会员权限可访问全部，免费用户返回受限节点列表
+ */
+router.get('/accessible-knowledge-roots', authMiddleware, async (req: Request, res: any) => {
+  try {
+    const user = (req as any).user;
+
+    // ADMIN/TEACHER 可访问全部
+    if (user.role === 'ADMIN' || user.role === 'TEACHER') {
+      res.json({ success: true, data: { allAccess: true, restrictedNodeIds: null } });
+      return;
+    }
+
+    // 查询用户 accessType
+    const userInfo = await prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { accessType: true },
+    });
+
+    if (userInfo && ['PAID', 'CLASS', 'ADMIN'].includes(userInfo.accessType)) {
+      res.json({ success: true, data: { allAccess: true, restrictedNodeIds: null } });
+      return;
+    }
+
+    // 免费用户：返回可访问的根节点ID列表
+    const config = await accessService.getConfig('knowledge_tree_free_nodes');
+    let freeNodeIds: string[] = config ? JSON.parse(config) : [];
+
+    if (freeNodeIds.length === 0) {
+      // 默认取前3个根节点
+      const rootNodes = await prisma.knowledgeTree.findMany({
+        where: { parentId: null },
+        orderBy: { order: 'asc' },
+        take: 3,
+        select: { id: true },
+      });
+      freeNodeIds = rootNodes.map(n => n.id);
+    }
+
+    res.json({ success: true, data: { allAccess: false, restrictedNodeIds: freeNodeIds } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
   }
 });
 

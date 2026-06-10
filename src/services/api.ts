@@ -359,6 +359,9 @@ export const accessAPI = {
   check: () => api.get('/api/access/check'),
   getConfig: () => api.get('/api/access/config'),
   updateConfig: (key: string, value: string) => api.put('/api/access/config', { key, value }),
+  getKnowledgeTreeFreeNodes: () => api.get('/api/access/knowledge-tree-free-nodes'),
+  setKnowledgeTreeFreeNodes: (nodeIds: string[]) => api.put('/api/access/knowledge-tree-free-nodes', { nodeIds }),
+  getAccessibleKnowledgeRoots: () => api.get('/api/access/accessible-knowledge-roots'),
 };
 
 export const paymentAPI = {
@@ -814,6 +817,7 @@ export const featureAPI = {
   update: (featureKey: string, data: any) => api.put(`/api/features/${featureKey}`, data),
   initialize: () => api.post('/api/features/initialize'),
   getPublic: () => api.get('/api/features/public'),
+  checkFeatureAccess: (featureKey: string) => api.get(`/api/features/check-access/${featureKey}`),
 };
 
 export const learningAPI = {
