@@ -71,6 +71,8 @@ model User {
   classDiscussionReplies ClassDiscussionReply[]
   classActivities       ClassActivity[]
   classAnnouncements    ClassAnnouncement[]
+  courses               Course[]              @relation("UserCourses")
+  courseProgresses       CourseProgress[]      @relation("UserCourseProgress")
 }
 
 model Session {
@@ -181,6 +183,11 @@ model Submission {
   createdAt   DateTime @default(now())
   matchParticipantId String?
   matchParticipant MatchParticipant? @relation(fields: [matchParticipantId], references: [id])
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([problemId])
+  @@index([createdAt])
 }
 
 model Match {
@@ -385,6 +392,7 @@ model Class {
   discussions   ClassDiscussion[]
   activities    ClassActivity[]
   announcements ClassAnnouncement[]
+  courses       Course[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -401,6 +409,7 @@ model ClassMember {
   joinedAt  DateTime @default(now())
   
   @@unique([classId, userId])
+  @@index([userId])
   @@map("class_members")
 }
 
@@ -441,6 +450,8 @@ model Order {
   paidAt       DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+
+  @@index([userId, status])
 }
 
 model ClassJoinRequest {
@@ -456,6 +467,7 @@ model ClassJoinRequest {
   updatedAt  DateTime @updatedAt
 
   @@unique([classId, userId])
+  @@index([classId, status])
 }
 
 model Homework {
@@ -521,6 +533,8 @@ model AIUsageLog {
   totalTokens       Int      @default(0)
   cost              Float    @default(0)
   createdAt         DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model Promotion {
@@ -1185,6 +1199,66 @@ model ClassActivity {
   content   String
   createdAt DateTime @default(now())
   @@index([classId, createdAt])
+}
+
+/// 课程体系：课程 → 阶段 → 讲次（三层嵌套）
+model Course {
+  id          String        @id @default(uuid())
+  classId     String
+  class       Class         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  createdBy   String
+  creator     User          @relation("UserCourses", fields: [createdBy], references: [id])
+  stages      CourseStage[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([classId])
+}
+
+model CourseStage {
+  id        String          @id @default(uuid())
+  courseId   String
+  course    Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  name      String
+  order     Int             @default(0)
+  sessions  CourseSession[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([courseId])
+}
+
+model CourseSession {
+  id           String   @id @default(uuid())
+  stageId      String
+  stage        CourseStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  name         String
+  order        Int      @default(0)
+  problemIds   String   @default("[]")
+  materialText String   @default("")
+  examId       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([stageId])
+}
+
+/// 学生课程学习进度
+model CourseProgress {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation("UserCourseProgress", fields: [userId], references: [id])
+  courseId   String
+  sessionId String
+  status    String   @default("NOT_STARTED")
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, sessionId])
+  @@index([userId, courseId])
 }
 
 /// 班级公告

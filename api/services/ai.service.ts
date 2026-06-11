@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma';
+import { getEditionConfig } from '../../config/editions';
 
 export interface TestCase {
   input: string;
@@ -1277,40 +1278,60 @@ DP 解题步骤：
    * 配额来源：用户的有效订单中的 PricingPlan 的 aiTokenQuota
    * aiTokenQuota 为 0 表示不限制
    */
+  // AI Token 配额缓存：{ userId -> { quota, used, expiresAt } }
+  private tokenQuotaCache = new Map<string, { quota: number; used: number; expiresAt: number }>();
+  private static QUOTA_CACHE_TTL = 60 * 1000; // 60秒
+
   private async checkAITokenQuota(userId: string) {
+    // 私有部署版不限制 AI Token 用量
+    if (getEditionConfig().features.tokenQuota === false) return;
+
+    const now = Date.now();
+    const cached = this.tokenQuotaCache.get(userId);
+
+    // 有缓存且未过期，直接使用缓存判断
+    if (cached && cached.expiresAt > now) {
+      if (cached.quota <= 0) return; // 不限制
+      if (cached.used >= cached.quota) {
+        throw new Error(`本月AI使用量已达上限(${cached.quota} tokens)，请升级套餐或等待下月重置`);
+      }
+      return;
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { role: true, accessType: true },
     });
 
     // ADMIN 和 TEACHER 不受限制
-    if (!user || user.role === 'ADMIN' || user.role === 'TEACHER') return;
+    if (!user || user.role === 'ADMIN' || user.role === 'TEACHER') {
+      this.tokenQuotaCache.set(userId, { quota: 0, used: 0, expiresAt: now + AIService.QUOTA_CACHE_TTL });
+      return;
+    }
 
     // 查找用户对应的有效订单中的定价计划
     const activeOrder = await prisma.order.findFirst({
-      where: {
-        userId,
-        status: 'PAID',
-      },
+      where: { userId, status: 'PAID' },
       orderBy: { createdAt: 'desc' },
       include: { plan: true },
     });
 
-    const tokenQuota = activeOrder?.plan?.aiTokenQuota ?? 0;
-    if (tokenQuota <= 0) return; // 0表示不限制
+    const tokenQuota = (activeOrder?.plan as any)?.aiTokenQuota ?? 0;
 
     // 统计当月已使用的token
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const currentDate = new Date();
+    const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
     const monthlyUsage = await prisma.aIUsageLog.aggregate({
-      where: {
-        userId,
-        createdAt: { gte: monthStart },
-      },
+      where: { userId, createdAt: { gte: monthStart } },
       _sum: { totalTokens: true },
     });
 
     const used = monthlyUsage._sum.totalTokens || 0;
+
+    // 缓存结果
+    this.tokenQuotaCache.set(userId, { quota: tokenQuota, used, expiresAt: now + AIService.QUOTA_CACHE_TTL });
+
+    if (tokenQuota <= 0) return; // 0表示不限制
     if (used >= tokenQuota) {
       throw new Error(`本月AI使用量已达上限(${tokenQuota} tokens)，请升级套餐或等待下月重置`);
     }

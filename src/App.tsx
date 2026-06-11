@@ -48,6 +48,7 @@ const ProblemListSquarePage = lazy(() => import("./pages/ProblemListSquarePage")
 const CheckInPage = lazy(() => import("./pages/CheckInPage").then(m => ({ default: m.CheckInPage })));
 const ClassLeaderboardPage = lazy(() => import("./pages/ClassLeaderboardPage").then(m => ({ default: m.ClassLeaderboardPage })));
 const ClassDetailPage = lazy(() => import("./pages/ClassDetailPage").then(m => ({ default: m.ClassDetailPage })));
+const StudentCoursePage = lazy(() => import("./pages/StudentCoursePage").then(m => ({ default: m.StudentCoursePage })));
 const ArchitecturePage = lazy(() => import("./pages/ArchitecturePage").then(m => ({ default: m.ArchitecturePage })));
 
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard").then(m => ({ default: m.AdminDashboard })));
@@ -439,6 +440,14 @@ export default function App() {
                 element={
                   <ProtectedRoute>
                     <ClassDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/course/:courseId"
+                element={
+                  <ProtectedRoute>
+                    <StudentCoursePage />
                   </ProtectedRoute>
                 }
               />

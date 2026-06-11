@@ -7,6 +7,8 @@ import cors from 'cors';
 import path from 'path';
 import dotenv from 'dotenv';
 import { authMiddleware } from './middleware/auth.middleware.js';
+import { getEditionConfig } from '../config/editions';
+import { getEditionInfo } from './middleware/edition.middleware';
 import authRoutes from './routes/auth.js';
 import problemRoutes from './routes/problems.js';
 import submissionRoutes from './routes/submissions.js';
@@ -42,6 +44,7 @@ import myLibraryRoutes from './routes/my-library';
 import checkinRoutes from './routes/checkin';
 import classStatsRoutes from './routes/class-stats';
 import starpathCraftRoutes from './routes/starpath-craft';
+import courseRoutes from './routes/course';
 
 dotenv.config();
 
@@ -62,41 +65,55 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
+// --- 版本信息路由 ---
+app.get('/api/edition', (req: Request, res: Response) => {
+  res.json({ success: true, data: getEditionInfo() });
+});
+
+// --- 路由注册（按版本条件） ---
+const editionConfig = getEditionConfig();
+
+// 核心路由：所有版本均注册
 app.use('/api/auth', authRoutes);
 app.use('/api/problems', problemRoutes);
 app.use('/api/submissions', submissionRoutes);
 app.use('/api/solutions', solutionRoutes);
-app.use('/api/ai', aiRoutes);
 app.use('/api/admin/users', userRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/api/wrong-records', wrongRecordRoutes);
+app.use('/api/my-library', myLibraryRoutes);
+app.use('/api/checkin', checkinRoutes);
+app.use('/api/features', featureToggleRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/ai-providers', aiProviderRoutes);
+app.use('/api/access', accessRoutes);
 app.use('/api/points', pointsRoutes);
-app.use('/api/knowledge-tree', knowledgeTreeRoutes);
+app.use('/api/classes', classRoutes);
+app.use('/api/class-stats', classStatsRoutes);
+app.use('/api/learning-admin', learningAdminRoutes);
+app.use('/api/learning', learningPathRoutes);
 app.use('/api/exams', examRoutes);
+app.use('/api/discussions', discussionRoutes);
+app.use('/api/knowledge-tree', knowledgeTreeRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/achievements', achievementRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/classes', classRoutes);
-app.use('/api/access', accessRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/promotions', promotionRoutes);
-app.use('/api/discussions', discussionRoutes);
-app.use('/api/profile', profileRoutes);
 app.use('/api/daily-challenge', dailyChallengeRoutes);
 app.use('/api/starpath', starpathRoutes);
-app.use('/api/learning-admin', learningAdminRoutes);
-app.use('/api/features', featureToggleRoutes);
-app.use('/api/learning', learningPathRoutes);
-app.use('/api/ai-providers', aiProviderRoutes);
 app.use('/api/starpath/story', starpathStoryRoutes);
 app.use('/api/starpath/building', starpathBuildingRoutes);
 app.use('/api/starpath/social', starpathSocialRoutes);
 app.use('/api/starpath/achievement', starpathAchievementRoutes);
 app.use('/api/starpath/fun', starpathFunRoutes);
 app.use('/api/starpath/exploration', starpathExplorationRoutes);
-app.use('/api/wrong-records', wrongRecordRoutes);
-app.use('/api/my-library', myLibraryRoutes);
-app.use('/api/checkin', checkinRoutes);
-app.use('/api/class-stats', classStatsRoutes);
 app.use('/api/starpath/craft', starpathCraftRoutes);
+app.use('/api/courses', courseRoutes);
+
+// 仅 full 版注册：支付/推广/订单相关路由
+if (editionConfig.features.payment) {
+  app.use('/api/payments', paymentRoutes);
+  app.use('/api/promotions', promotionRoutes);
+}
 
 app.use(
   '/api/health',

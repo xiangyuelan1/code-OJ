@@ -786,6 +786,33 @@ export const checkinAPI = {
 };
 
 /* ── 班级统计 API ── */
+export const courseAPI = {
+  // 课程 CRUD
+  getByClass: (classId: string) => api.get(`/api/courses/class/${classId}`),
+  getById: (courseId: string) => api.get(`/api/courses/${courseId}`),
+  create: (data: { classId: string; name: string; description?: string }) => api.post('/api/courses', data),
+  update: (courseId: string, data: { name?: string; description?: string }) => api.patch(`/api/courses/${courseId}`, data),
+  delete: (courseId: string) => api.delete(`/api/courses/${courseId}`),
+  // 阶段
+  createStage: (courseId: string, name: string) => api.post('/api/courses/stages', { courseId, name }),
+  updateStage: (stageId: string, data: { name?: string; order?: number }) => api.patch(`/api/courses/stages/${stageId}`, data),
+  deleteStage: (stageId: string) => api.delete(`/api/courses/stages/${stageId}`),
+  // 讲次
+  createSession: (stageId: string, name: string) => api.post('/api/courses/sessions', { stageId, name }),
+  updateSession: (sessionId: string, data: any) => api.patch(`/api/courses/sessions/${sessionId}`, data),
+  deleteSession: (sessionId: string) => api.delete(`/api/courses/sessions/${sessionId}`),
+  // 学生进度
+  getProgress: (courseId: string) => api.get(`/api/courses/${courseId}/progress`),
+  updateProgress: (courseId: string, sessionId: string, status: string) => api.post(`/api/courses/${courseId}/progress`, { sessionId, status }),
+  // AI 生成
+  aiGenerate: (data: { topic: string; totalSessions?: number; difficulty?: string; knowledgePoints?: string[]; classId: string }) => api.post('/api/courses/ai-generate', data),
+  // AI 辅助：补全大纲、生成内容、推荐题目、润色
+  aiCompleteSyllabus: (courseId: string, targetTotal: number) => api.post(`/api/courses/${courseId}/ai-complete-syllabus`, { targetTotal }),
+  aiGenerateContent: (sessionId: string, keywords: string[], referenceText: string) => api.post(`/api/courses/sessions/${sessionId}/ai-generate-content`, { keywords, referenceText }),
+  aiRecommendProblems: (sessionId: string, count: number) => api.post(`/api/courses/sessions/${sessionId}/ai-recommend-problems`, { count }),
+  aiPolishContent: (sessionId: string, originalText: string, instruction?: string) => api.post(`/api/courses/sessions/${sessionId}/ai-polish-content`, { originalText, instruction }),
+};
+
 export const classStatsAPI = {
   getOverview: (classId: string) => api.get(`/api/class-stats/${classId}/overview`),
   getLeaderboard: (classId: string, params?: { sortBy?: string; limit?: number }) =>

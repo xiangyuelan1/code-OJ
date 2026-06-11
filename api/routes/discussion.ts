@@ -1,5 +1,6 @@
 import { Router, type Request } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { featureMiddleware } from '../middleware/feature.middleware';
 import { discussionService } from '../services/discussion.service';
 
 const router = Router();
@@ -53,7 +54,7 @@ router.get('/:id', async (req: Request, res: any): Promise<void> => {
   }
 });
 
-router.post('/', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/', authMiddleware, featureMiddleware('discussions_post'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const discussion = await discussionService.createDiscussion({

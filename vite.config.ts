@@ -4,6 +4,11 @@ import tsconfigPaths from "vite-tsconfig-paths";
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  define: {
+    '__EDITION__': JSON.stringify(process.env.EDITION || 'full'),
+    '__FEATURE_PAYMENT__': JSON.stringify((process.env.EDITION || 'full') === 'full'),
+    '__FEATURE_ACCESS_CONTROL__': JSON.stringify((process.env.EDITION || 'full') === 'full'),
+  },
   plugins: [
     react(),
     VitePWA({

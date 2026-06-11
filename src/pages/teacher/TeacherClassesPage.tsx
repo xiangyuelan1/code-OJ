@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../../stores/auth.store';
-import { classAPI, problemsAPI, usersAPI, knowledgeTreeAPI, enhancedAiAPI } from '../../services/api';
+import { classAPI, problemsAPI, usersAPI, knowledgeTreeAPI, enhancedAiAPI, courseAPI } from '../../services/api';
 import {
   Plus, Users, BookOpen, ClipboardList, FileText, X, ChevronRight,
   CheckCircle2, XCircle, Clock, Save, Search, Loader2, GraduationCap,
@@ -62,24 +62,7 @@ const EMPTY_CLASS_FORM: ClassForm = { name: '', description: '', grade: '' };
 const EMPTY_HOMEWORK_FORM: HomeworkForm = { title: '', description: '', problemIds: [], dueDate: '' };
 const EMPTY_EXAM_FORM: ExamForm = { title: '', description: '', duration: 60, startTime: '', endTime: '', problemIds: [] };
 
-/** 课程体系嵌套更新的辅助函数，避免深层 map 嵌套降低可读性 */
-const updateCourseInList = (
-  list: Course[], courseId: string, updater: (c: Course) => Course
-): Course[] => list.map(c => (c.id === courseId ? updater(c) : c));
 
-const updateStageInCourse = (
-  course: Course, stageId: string, updater: (s: Stage) => Stage
-): Course => ({
-  ...course,
-  stages: course.stages.map(s => (s.id === stageId ? updater(s) : s)),
-});
-
-const updateSessionInStage = (
-  stage: Stage, sessionId: string, updater: (sess: Session) => Session
-): Stage => ({
-  ...stage,
-  sessions: stage.sessions.map(sess => (sess.id === sessionId ? updater(sess) : sess)),
-});
 
 export function TeacherClassesPage() {
   const { user } = useAuthStore();
@@ -145,6 +128,11 @@ export function TeacherClassesPage() {
     courseId: string; stageId: string; sessionId: string;
   } | null>(null);
   const [materialEditText, setMaterialEditText] = useState('');
+  const [showAiCourseForm, setShowAiCourseForm] = useState(false);
+  const [aiCourseForm, setAiCourseForm] = useState({ topic: '', totalSessions: 10, difficulty: 'MEDIUM', knowledgePoints: '' });
+  const [aiCourseGenerating, setAiCourseGenerating] = useState(false);
+  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
+  const [recommendingSessionId, setRecommendingSessionId] = useState<string | null>(null);
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
   const [joinRequestsLoading, setJoinRequestsLoading] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -525,7 +513,7 @@ export function TeacherClassesPage() {
       fetchProblems();
     }
     if (tab === 'course') {
-      loadCourses(selectedClass.id);
+      fetchCourses(selectedClass.id);
       fetchProblems();
     }
     if (tab === 'ai-usage') {
@@ -583,142 +571,152 @@ export function TeacherClassesPage() {
     });
   };
 
-  /* ==================== 课程体系 CRUD ==================== */
+  /* ==================== 课程体系 CRUD（后端 API） ==================== */
 
-  const loadCourses = (classId: string) => {
+  const fetchCourses = async (classId: string) => {
     try {
-      const stored = localStorage.getItem(`oj_courses_${classId}`);
-      setCourses(stored ? JSON.parse(stored) : []);
+      const res = await courseAPI.getByClass(classId);
+      if (res.success) {
+        // 后端返回的课程列表，将 problemIds 从 JSON 字符串转为数组
+        const parsed = (res.data || []).map((c: any) => ({
+          ...c,
+          stages: (c.stages || []).map((s: any) => ({
+            ...s,
+            sessions: (s.sessions || []).map((sess: any) => ({
+              ...sess,
+              problemIds: sess.problemIds
+                ? (typeof sess.problemIds === 'string' ? JSON.parse(sess.problemIds) : sess.problemIds)
+                : [],
+              materialText: sess.materialText || '',
+              examId: sess.examId || null,
+            })),
+          })),
+        }));
+        setCourses(parsed);
+      }
     } catch {
       setCourses([]);
     }
   };
 
-  const saveCourses = (classId: string, updated: Course[]) => {
-    localStorage.setItem(`oj_courses_${classId}`, JSON.stringify(updated));
-    setCourses(updated);
-  };
-
-  const addCourse = () => {
+  const addCourse = async () => {
     if (!selectedClass || !courseForm.name.trim()) return;
-    const newCourse: Course = {
-      id: `course_${Date.now()}`,
-      name: courseForm.name,
-      description: courseForm.description,
-      stages: [],
-    };
-    const updated = [...courses, newCourse];
-    saveCourses(selectedClass.id, updated);
-    setCourseForm({ name: '', description: '' });
-    setShowCourseForm(false);
-    setExpandedCourses(prev => new Set([...prev, newCourse.id]));
+    try {
+      const res = await courseAPI.create({
+        classId: selectedClass.id,
+        name: courseForm.name,
+        description: courseForm.description || undefined,
+      });
+      setCourseForm({ name: '', description: '' });
+      setShowCourseForm(false);
+      if (res.success && res.data) {
+        setExpandedCourses(prev => new Set([...prev, res.data.id]));
+      }
+      await fetchCourses(selectedClass.id);
+    } catch { /* 网络错误由全局拦截处理 */ }
   };
 
-  const deleteCourse = (courseId: string) => {
+  const deleteCourse = async (courseId: string) => {
     if (!selectedClass || !confirm('确定要删除此课程吗？所有阶段和讲次将一并删除。')) return;
-    const updated = courses.filter(c => c.id !== courseId);
-    saveCourses(selectedClass.id, updated);
+    try {
+      await courseAPI.delete(courseId);
+      await fetchCourses(selectedClass.id);
+    } catch { /* 网络错误由全局拦截处理 */ }
   };
 
-  const addStage = (courseId: string) => {
+  const addStage = async (courseId: string) => {
     if (!selectedClass || !stageForm.name.trim()) return;
-    const updated = updateCourseInList(courses, courseId, course => ({
-      ...course,
-      stages: [...course.stages, {
-        id: `stage_${Date.now()}`,
-        name: stageForm.name,
-        order: course.stages.length + 1,
-        sessions: [],
-      }],
-    }));
-    saveCourses(selectedClass.id, updated);
-    setStageForm({ name: '' });
-    setShowStageForm(null);
+    try {
+      await courseAPI.createStage(courseId, stageForm.name);
+      setStageForm({ name: '' });
+      setShowStageForm(null);
+      await fetchCourses(selectedClass.id);
+    } catch { /* 网络错误由全局拦截处理 */ }
   };
 
-  const deleteStage = (courseId: string, stageId: string) => {
+  const deleteStage = async (_courseId: string, stageId: string) => {
     if (!selectedClass || !confirm('确定要删除此阶段吗？所有讲次将一并删除。')) return;
-    const updated = updateCourseInList(courses, courseId, course => ({
-      ...course,
-      stages: course.stages.filter(s => s.id !== stageId),
-    }));
-    saveCourses(selectedClass.id, updated);
+    try {
+      await courseAPI.deleteStage(stageId);
+      await fetchCourses(selectedClass.id);
+    } catch { /* 网络错误由全局拦截处理 */ }
   };
 
-  const addSession = (courseId: string, stageId: string) => {
+  const addSession = async (_courseId: string, stageId: string) => {
     if (!selectedClass || !sessionForm.name.trim()) return;
-    const updated = updateCourseInList(courses, courseId, course =>
-      updateStageInCourse(course, stageId, stage => ({
-        ...stage,
-        sessions: [...stage.sessions, {
-          id: `session_${Date.now()}`,
-          name: sessionForm.name,
-          order: stage.sessions.length + 1,
-          problemIds: [],
-          materialText: sessionForm.materialText,
-          examId: null,
-        }],
-      }))
-    );
-    saveCourses(selectedClass.id, updated);
-    setSessionForm({ name: '', materialText: '' });
-    setShowSessionForm(null);
+    try {
+      await courseAPI.createSession(stageId, sessionForm.name);
+      setSessionForm({ name: '', materialText: '' });
+      setShowSessionForm(null);
+      await fetchCourses(selectedClass.id);
+    } catch { /* 网络错误由全局拦截处理 */ }
   };
 
-  const deleteSession = (courseId: string, stageId: string, sessionId: string) => {
+  const deleteSession = async (_courseId: string, _stageId: string, sessionId: string) => {
     if (!selectedClass || !confirm('确定要删除此讲次吗？')) return;
-    const updated = updateCourseInList(courses, courseId, course =>
-      updateStageInCourse(course, stageId, stage => ({
-        ...stage,
-        sessions: stage.sessions.filter(sess => sess.id !== sessionId),
-      }))
-    );
-    saveCourses(selectedClass.id, updated);
+    try {
+      await courseAPI.deleteSession(sessionId);
+      await fetchCourses(selectedClass.id);
+    } catch { /* 网络错误由全局拦截处理 */ }
   };
 
   /** 课程讲次中切换题目选中状态 */
-  const toggleCourseSessionProblem = (courseId: string, stageId: string, sessionId: string, problemId: string) => {
+  const toggleCourseSessionProblem = async (courseId: string, stageId: string, sessionId: string, problemId: string) => {
     if (!selectedClass) return;
-    const updated = updateCourseInList(courses, courseId, course =>
-      updateStageInCourse(course, stageId, stage =>
-        updateSessionInStage(stage, sessionId, sess => ({
-          ...sess,
-          problemIds: sess.problemIds.includes(problemId)
-            ? sess.problemIds.filter(id => id !== problemId)
-            : [...sess.problemIds, problemId],
-        }))
-      )
-    );
-    saveCourses(selectedClass.id, updated);
+    // 从当前状态计算新的 problemIds
+    const course = courses.find(c => c.id === courseId);
+    const stage = course?.stages.find(s => s.id === stageId);
+    const session = stage?.sessions.find(sess => sess.id === sessionId);
+    if (!session) return;
+    const newIds = session.problemIds.includes(problemId)
+      ? session.problemIds.filter(id => id !== problemId)
+      : [...session.problemIds, problemId];
+    try {
+      await courseAPI.updateSession(sessionId, { problemIds: JSON.stringify(newIds) });
+      await fetchCourses(selectedClass.id);
+    } catch { /* 网络错误由全局拦截处理 */ }
   };
 
   /** 更新讲次资料文本 */
-  const saveSessionMaterial = (courseId: string, stageId: string, sessionId: string) => {
+  const saveSessionMaterial = async (_courseId: string, _stageId: string, sessionId: string) => {
     if (!selectedClass) return;
-    const updated = updateCourseInList(courses, courseId, course =>
-      updateStageInCourse(course, stageId, stage =>
-        updateSessionInStage(stage, sessionId, sess => ({
-          ...sess,
-          materialText: materialEditText,
-        }))
-      )
-    );
-    saveCourses(selectedClass.id, updated);
-    setEditingSessionMaterial(null);
+    try {
+      await courseAPI.updateSession(sessionId, { materialText: materialEditText });
+      setEditingSessionMaterial(null);
+      await fetchCourses(selectedClass.id);
+    } catch { /* 网络错误由全局拦截处理 */ }
   };
 
   /** 更新讲次关联考试 */
-  const updateSessionExam = (courseId: string, stageId: string, sessionId: string, examId: string | null) => {
+  const updateSessionExam = async (_courseId: string, _stageId: string, sessionId: string, examId: string | null) => {
     if (!selectedClass) return;
-    const updated = updateCourseInList(courses, courseId, course =>
-      updateStageInCourse(course, stageId, stage =>
-        updateSessionInStage(stage, sessionId, sess => ({
-          ...sess,
-          examId,
-        }))
-      )
-    );
-    saveCourses(selectedClass.id, updated);
+    try {
+      await courseAPI.updateSession(sessionId, { examId });
+      await fetchCourses(selectedClass.id);
+    } catch { /* 网络错误由全局拦截处理 */ }
+  };
+
+  /** AI 生成课程 */
+  const handleAiGenerateCourse = async () => {
+    if (!selectedClass || !aiCourseForm.topic.trim()) return;
+    try {
+      setAiCourseGenerating(true);
+      const knowledgePoints = aiCourseForm.knowledgePoints.trim()
+        ? aiCourseForm.knowledgePoints.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+        : undefined;
+      await courseAPI.aiGenerate({
+        topic: aiCourseForm.topic,
+        totalSessions: aiCourseForm.totalSessions,
+        difficulty: aiCourseForm.difficulty,
+        knowledgePoints,
+        classId: selectedClass.id,
+      });
+      setShowAiCourseForm(false);
+      setAiCourseForm({ topic: '', totalSessions: 10, difficulty: 'MEDIUM', knowledgePoints: '' });
+      await fetchCourses(selectedClass.id);
+    } catch { /* 网络错误由全局拦截处理 */ } finally {
+      setAiCourseGenerating(false);
+    }
   };
 
   /* ==================== 通用辅助 ==================== */
@@ -936,14 +934,97 @@ export function TeacherClassesPage() {
       <div>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-white">课程体系</h2>
-          <button
-            onClick={() => setShowCourseForm(true)}
-            className="flex items-center px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            新建课程
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowAiCourseForm(true)}
+              className="flex items-center px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors"
+            >
+              <Zap className="h-4 w-4 mr-2" />
+              AI 生成课程
+            </button>
+            <button
+              onClick={() => setShowCourseForm(true)}
+              className="flex items-center px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              新建课程
+            </button>
+          </div>
         </div>
+
+        {/* AI 生成课程对话框 */}
+        {showAiCourseForm && (
+          <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-6 border border-purple-500/30">
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <Zap className="h-5 w-5 text-purple-400" />
+              AI 生成课程
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">课程主题 *</label>
+                <input
+                  type="text"
+                  value={aiCourseForm.topic}
+                  onChange={e => setAiCourseForm({ ...aiCourseForm, topic: e.target.value })}
+                  className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="如：Python 数据结构与算法"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">计划讲次数</label>
+                  <input
+                    type="number"
+                    value={aiCourseForm.totalSessions}
+                    onChange={e => setAiCourseForm({ ...aiCourseForm, totalSessions: parseInt(e.target.value) || 10 })}
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    min={1}
+                    max={50}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">难度等级</label>
+                  <select
+                    value={aiCourseForm.difficulty}
+                    onChange={e => setAiCourseForm({ ...aiCourseForm, difficulty: e.target.value })}
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="EASY">简单</option>
+                    <option value="MEDIUM">中等</option>
+                    <option value="HARD">困难</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">知识点（可选，逗号分隔）</label>
+                <input
+                  type="text"
+                  value={aiCourseForm.knowledgePoints}
+                  onChange={e => setAiCourseForm({ ...aiCourseForm, knowledgePoints: e.target.value })}
+                  className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="如：数组, 链表, 栈, 队列"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-4 mt-6">
+              <button
+                onClick={() => { setShowAiCourseForm(false); setAiCourseForm({ topic: '', totalSessions: 10, difficulty: 'MEDIUM', knowledgePoints: '' }); }}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                disabled={aiCourseGenerating}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleAiGenerateCourse}
+                disabled={!aiCourseForm.topic.trim() || aiCourseGenerating}
+                className="flex items-center px-4 py-2 bg-purple-500 hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+              >
+                {aiCourseGenerating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {aiCourseGenerating ? '生成中...' : '生成'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 新建课程表单 */}
         {showCourseForm && (
@@ -1022,13 +1103,35 @@ export function TeacherClassesPage() {
                       {course.stages.length} 个阶段
                     </span>
                   </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); deleteCourse(course.id); }}
-                    className="text-slate-500 hover:text-red-400 transition-colors p-1"
-                    title="删除课程"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!confirm('AI将根据已有讲次补全剩余内容，确认？')) return;
+                        try {
+                          setAiCourseGenerating(true);
+                          await courseAPI.aiCompleteSyllabus(course.id, 12);
+                          await fetchCourses(selectedClass.id);
+                          alert('AI 补全完成！');
+                        } catch (err: any) {
+                          alert(err?.error?.message || 'AI 补全失败');
+                        } finally {
+                          setAiCourseGenerating(false);
+                        }
+                      }}
+                      disabled={aiCourseGenerating}
+                      className="text-xs px-2 py-1 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded hover:bg-purple-500/30 disabled:opacity-50"
+                    >
+                      AI 补全大纲
+                    </button>
+                    <button
+                      onClick={e => { e.stopPropagation(); deleteCourse(course.id); }}
+                      className="text-slate-500 hover:text-red-400 transition-colors p-1"
+                      title="删除课程"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* 展开的课程内容：阶段列表 */}
@@ -1226,6 +1329,94 @@ export function TeacherClassesPage() {
                                     >
                                       保存资料
                                     </button>
+
+                                    {/* AI 辅助按钮组 */}
+                                    <div className="flex gap-2 mt-2">
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            await courseAPI.aiGenerateContent(sess.id, [], '');
+                                            await fetchCourses(selectedClass.id);
+                                            alert('AI 内容已生成');
+                                          } catch (err: any) {
+                                            alert(err?.error?.message || 'AI 生成失败');
+                                          }
+                                        }}
+                                        className="text-xs px-3 py-1.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded hover:bg-cyan-500/30"
+                                      >
+                                        ✨ AI 生成内容
+                                      </button>
+
+                                      <button
+                                        onClick={async () => {
+                                          if (!materialEditText) { alert('请先填写一些内容再润色'); return; }
+                                          try {
+                                            await courseAPI.aiPolishContent(sess.id, materialEditText);
+                                            await fetchCourses(selectedClass.id);
+                                            alert('AI 润色完成');
+                                          } catch (err: any) {
+                                            alert(err?.error?.message || 'AI 润色失败');
+                                          }
+                                        }}
+                                        className="text-xs px-3 py-1.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded hover:bg-green-500/30"
+                                      >
+                                        ✏️ AI 润色
+                                      </button>
+
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            const res = await courseAPI.aiRecommendProblems(sess.id, 5);
+                                            if (res.data?.recommendations?.length > 0) {
+                                              setAiRecommendations(res.data.recommendations);
+                                              setRecommendingSessionId(sess.id);
+                                            } else {
+                                              alert('暂无推荐题目');
+                                            }
+                                          } catch (err: any) {
+                                            alert(err?.error?.message || 'AI 推荐失败');
+                                          }
+                                        }}
+                                        className="text-xs px-3 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded hover:bg-amber-500/30"
+                                      >
+                                        🎯 AI 推荐题目
+                                      </button>
+                                    </div>
+
+                                    {/* AI 推荐题目展示与采纳 */}
+                                    {recommendingSessionId === sess.id && aiRecommendations.length > 0 && (
+                                      <div className="mt-3 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <span className="text-sm font-medium text-amber-400">AI 推荐题目</span>
+                                          <button onClick={() => { setAiRecommendations([]); setRecommendingSessionId(null); }} className="text-xs text-slate-400 hover:text-white">关闭</button>
+                                        </div>
+                                        <div className="space-y-2">
+                                          {aiRecommendations.map((rec: any) => (
+                                            <div key={rec.problemId} className="flex items-center justify-between p-2 bg-slate-700/50 rounded">
+                                              <div>
+                                                <span className="text-sm text-white">{rec.title}</span>
+                                                <span className="text-xs text-slate-400 ml-2">{rec.difficulty}</span>
+                                                <span className="text-xs text-slate-500 ml-2">{rec.reason}</span>
+                                              </div>
+                                              <button
+                                                onClick={async () => {
+                                                  const currentIds: string[] = sess.problemIds || [];
+                                                  if (!currentIds.includes(rec.problemId)) {
+                                                    const newIds = [...currentIds, rec.problemId];
+                                                    await courseAPI.updateSession(sess.id, { problemIds: JSON.stringify(newIds) });
+                                                    await fetchCourses(selectedClass.id);
+                                                  }
+                                                  setAiRecommendations(prev => prev.filter(r => r.problemId !== rec.problemId));
+                                                }}
+                                                className="text-xs px-2 py-1 bg-green-500/20 text-green-400 rounded hover:bg-green-500/30"
+                                              >
+                                                采纳
+                                              </button>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>

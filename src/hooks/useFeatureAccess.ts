@@ -70,8 +70,8 @@ export function useFeatureAccess(): FeatureAccessState {
         setKnowledgeTreeAccess(res.data);
       }
     } catch {
-      // 接口异常时默认全部开放，避免阻塞正常使用
-      setKnowledgeTreeAccess({ allAccess: true, restrictedNodeIds: null });
+      // 接口异常时保持受限状态（安全第一），不默认开放
+      // 若之前已有数据则保留，否则免费用户维持受限
     } finally {
       setLoading(false);
     }

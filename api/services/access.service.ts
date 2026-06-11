@@ -1,6 +1,11 @@
 import prisma from '../lib/prisma';
+import { getEditionConfig } from '../../config/editions';
 
 const DEFAULT_TRIAL_DAYS = 3;
+
+// 试用天数配置的内存缓存（避免每次权限检查都查DB）
+let trialDaysCache: { value: number; expiresAt: number } | null = null;
+const TRIAL_DAYS_CACHE_TTL = 5 * 60 * 1000; // 5分钟
 
 export class AccessService {
   /**
@@ -14,6 +19,11 @@ export class AccessService {
    *   - 若 accessType 非 CLASS 但用户实际属于某班级，也视为有 CLASS 权限
    */
   async checkAccess(userId: string) {
+    // 私有部署版所有用户默认全权限
+    if (getEditionConfig().features.accessControl === false) {
+      return { hasAccess: true, accessType: 'ADMIN', expiresAt: undefined };
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -38,13 +48,14 @@ export class AccessService {
     }
 
     if (user.accessType === 'PAID') {
-      if (user.accessExpiresAt && user.accessExpiresAt > new Date()) {
-        return { hasAccess: true, accessType: 'PAID', expiresAt: user.accessExpiresAt };
+      // accessExpiresAt 为 null 视为永不过期（管理员手动授予的永久权限）
+      if (!user.accessExpiresAt || user.accessExpiresAt > new Date()) {
+        return { hasAccess: true, accessType: 'PAID', expiresAt: user.accessExpiresAt ?? undefined };
       }
       return {
         hasAccess: false,
         accessType: 'PAID',
-        expiresAt: user.accessExpiresAt ?? undefined,
+        expiresAt: user.accessExpiresAt,
         message: '付费访问已过期',
       };
     }
@@ -151,16 +162,25 @@ export class AccessService {
 
   /**
    * 获取试用天数配置，默认 3 天
+   * 使用内存缓存（TTL 5分钟）避免每次权限检查都查询数据库
    */
   async getTrialDays(): Promise<number> {
+    const now = Date.now();
+    if (trialDaysCache && trialDaysCache.expiresAt > now) {
+      return trialDaysCache.value;
+    }
+
     const value = await this.getConfig('trial_days');
+    let days = DEFAULT_TRIAL_DAYS;
     if (value) {
-      const days = parseInt(value, 10);
-      if (!isNaN(days) && days > 0) {
-        return days;
+      const parsed = parseInt(value, 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        days = parsed;
       }
     }
-    return DEFAULT_TRIAL_DAYS;
+
+    trialDaysCache = { value: days, expiresAt: now + TRIAL_DAYS_CACHE_TTL };
+    return days;
   }
 
   /**

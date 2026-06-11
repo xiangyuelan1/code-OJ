@@ -17,7 +17,14 @@ interface FeatureGateProps {
  * 包裹需要付费权限的功能入口，免费用户看到锁定提示或降级展示
  */
 export function FeatureGate({ featureKey, children, fallback, disableOnly }: FeatureGateProps) {
-  const { canUseFeature } = useFeatureAccess();
+  const { canUseFeature, loading } = useFeatureAccess();
+
+  // 权限数据加载中时显示占位，避免付费功能短暂闪烁
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 p-6 min-h-[120px] animate-pulse" />
+    );
+  }
 
   if (canUseFeature(featureKey)) {
     return <>{children}</>;

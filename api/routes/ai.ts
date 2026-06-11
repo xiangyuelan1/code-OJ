@@ -2,11 +2,12 @@ import { Router, type Request } from 'express';
 import { aiService } from '../services/ai.service';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { roleMiddleware } from '../middleware/role.middleware';
+import { featureMiddleware } from '../middleware/feature.middleware';
 import prisma from '../lib/prisma';
 
 const router = Router();
 
-router.post('/explain-code', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/explain-code', authMiddleware, featureMiddleware('ai-hint'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { code, language } = req.body;
@@ -23,7 +24,7 @@ router.post('/explain-code', authMiddleware, async (req: Request, res: any): Pro
   }
 });
 
-router.post('/hint', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/hint', authMiddleware, featureMiddleware('ai-hint'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { problem, context } = req.body;
@@ -40,7 +41,7 @@ router.post('/hint', authMiddleware, async (req: Request, res: any): Promise<voi
   }
 });
 
-router.post('/diagnose', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/diagnose', authMiddleware, featureMiddleware('ai-hint'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { code, language, error } = req.body;
@@ -57,7 +58,7 @@ router.post('/diagnose', authMiddleware, async (req: Request, res: any): Promise
   }
 });
 
-router.post('/ai-judge', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/ai-judge', authMiddleware, featureMiddleware('ai-judge'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { code, language, problem, testCases } = req.body;
@@ -277,7 +278,7 @@ router.post('/generate-exam', authMiddleware, roleMiddleware('ADMIN', 'TEACHER')
   }
 });
 
-router.post('/optimize-code', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/optimize-code', authMiddleware, featureMiddleware('ai-hint'), async (req: Request, res: any): Promise<void> => {
   try {
     const { code, language } = req.body;
     if (!code || !language) {
@@ -291,7 +292,7 @@ router.post('/optimize-code', authMiddleware, async (req: Request, res: any): Pr
   }
 });
 
-router.post('/recommend-similar', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/recommend-similar', authMiddleware, featureMiddleware('ai-find-problems'), async (req: Request, res: any): Promise<void> => {
   try {
     const { problemId } = req.body;
     if (!problemId) {
@@ -305,7 +306,7 @@ router.post('/recommend-similar', authMiddleware, async (req: Request, res: any)
   }
 });
 
-router.post('/companion', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/companion', authMiddleware, featureMiddleware('ai-companion'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user?.userId;
     const result = await aiService.companionChat({ ...req.body, userId });
@@ -315,7 +316,7 @@ router.post('/companion', authMiddleware, async (req: Request, res: any): Promis
   }
 });
 
-router.post('/companion-stream', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/companion-stream', authMiddleware, featureMiddleware('ai-companion'), async (req: Request, res: any): Promise<void> => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -360,7 +361,7 @@ router.post('/batch-classify', authMiddleware, roleMiddleware('ADMIN'), async (r
 // 个性化题单与考试
 // ========================
 
-router.post('/personalized-plan', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/personalized-plan', authMiddleware, featureMiddleware('ai-find-problems'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { type, options } = req.body;
@@ -377,7 +378,7 @@ router.post('/personalized-plan', authMiddleware, async (req: Request, res: any)
   }
 });
 
-router.get('/personalized-recommendations', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.get('/personalized-recommendations', authMiddleware, featureMiddleware('ai-find-problems'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const result = await aiService.getPersonalizedRecommendations({ userId });
@@ -469,7 +470,7 @@ router.get('/personalization-config', authMiddleware, roleMiddleware('ADMIN'), a
 // 新增 AI 功能路由
 // ========================
 
-router.post('/generate-learning-path', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/generate-learning-path', authMiddleware, featureMiddleware('ai-companion'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { currentLevel, targetLevel, weakPoints } = req.body;
@@ -489,7 +490,7 @@ router.post('/generate-learning-path', authMiddleware, async (req: Request, res:
   }
 });
 
-router.post('/analyze-submission-trend', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/analyze-submission-trend', authMiddleware, featureMiddleware('ai-companion'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { recentSubmissions } = req.body;
@@ -509,7 +510,7 @@ router.post('/analyze-submission-trend', authMiddleware, async (req: Request, re
   }
 });
 
-router.post('/smart-hint', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/smart-hint', authMiddleware, featureMiddleware('ai-hint'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { problem, userCode, attemptCount, previousHints } = req.body;
@@ -538,7 +539,7 @@ router.post('/smart-hint', authMiddleware, async (req: Request, res: any): Promi
 // AI 面试模拟器
 // ========================
 
-router.post('/interview/simulate', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/interview/simulate', authMiddleware, featureMiddleware('interview'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { role, difficulty } = req.body;
@@ -555,7 +556,7 @@ router.post('/interview/simulate', authMiddleware, async (req: Request, res: any
   }
 });
 
-router.post('/interview/evaluate', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/interview/evaluate', authMiddleware, featureMiddleware('interview'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { questionId, code, language } = req.body;
@@ -576,7 +577,7 @@ router.post('/interview/evaluate', authMiddleware, async (req: Request, res: any
 // AI Bug 猎手
 // ========================
 
-router.post('/bug-hunter/generate', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/bug-hunter/generate', authMiddleware, featureMiddleware('bug-hunter'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { topic, difficulty } = req.body;
@@ -593,7 +594,7 @@ router.post('/bug-hunter/generate', authMiddleware, async (req: Request, res: an
   }
 });
 
-router.post('/bug-hunter/verify', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/bug-hunter/verify', authMiddleware, featureMiddleware('bug-hunter'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { buggyCodeId, fixedCode } = req.body;
@@ -614,7 +615,7 @@ router.post('/bug-hunter/verify', authMiddleware, async (req: Request, res: any)
 // AI 学习日记
 // ========================
 
-router.post('/learning-diary', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/learning-diary', authMiddleware, featureMiddleware('ai-companion'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { from, to } = req.body;
@@ -638,7 +639,7 @@ router.post('/learning-diary', authMiddleware, async (req: Request, res: any): P
 // AI 代码解说员
 // ========================
 
-router.post('/code-commentary', authMiddleware, async (req: Request, res: any): Promise<void> => {
+router.post('/code-commentary', authMiddleware, featureMiddleware('ai-companion'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
     const { code, language, problemTitle } = req.body;

@@ -2,6 +2,10 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# 接收版本参数，默认全量版
+ARG EDITION=full
+ENV EDITION=${EDITION}
+
 COPY package.json package-lock.json ./
 RUN npm ci
 

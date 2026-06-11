@@ -356,9 +356,10 @@ export class ClassService {
     });
 
     if (!validMembership) {
+      // 降级为 TRIAL 时重置试用开始时间，避免用户直接进入"试用已过期"状态
       await prisma.user.update({
         where: { id: userId },
-        data: { accessType: 'TRIAL' },
+        data: { accessType: 'TRIAL', trialStartsAt: new Date() },
       });
     }
   }
@@ -388,10 +389,33 @@ export class ClassService {
       select: { userId: true },
     });
 
-    // 逐个重新评估（因为学生可能同时属于其他有效班级）
     const uniqueUserIds = [...new Set(members.map(m => m.userId))];
-    for (const uid of uniqueUserIds) {
-      await this.reevaluateUserAccess(uid);
+    if (uniqueUserIds.length === 0) return;
+
+    // 批量查询：哪些学生仍属于其他有效教师的班级
+    const stillValidMembers = await prisma.classMember.findMany({
+      where: {
+        userId: { in: uniqueUserIds },
+        class: {
+          createdBy: { not: teacherId }, // 排除当前失效教师的班级
+          creator: {
+            isActive: true,
+            role: { in: ['TEACHER', 'ADMIN'] },
+          },
+        },
+      },
+      select: { userId: true },
+    });
+
+    const stillValidIds = new Set(stillValidMembers.map(m => m.userId));
+    const toDegradeIds = uniqueUserIds.filter(id => !stillValidIds.has(id));
+
+    // 批量降级：一次 updateMany 替代 N 次单独 update
+    if (toDegradeIds.length > 0) {
+      await prisma.user.updateMany({
+        where: { id: { in: toDegradeIds }, accessType: 'CLASS' },
+        data: { accessType: 'TRIAL', trialStartsAt: new Date() },
+      });
     }
   }
 

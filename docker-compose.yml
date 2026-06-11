@@ -1,6 +1,11 @@
+# 全量版部署配置（SaaS 平台）
+# 使用方式: docker compose up -d
 services:
   oj:
-    build: .
+    build:
+      context: .
+      args:
+        - EDITION=full
     container_name: oj-system
     restart: always
     ports:
@@ -16,6 +21,7 @@ services:
       - JWT_EXPIRES_IN=24h
       - NODE_ENV=production
       - PORT=5000
+      - EDITION=full
 
 volumes:
   oj-db:
