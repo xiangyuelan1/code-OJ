@@ -26,6 +26,7 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/api ./api
+COPY --from=builder /app/config ./config
 COPY --from=builder /app/public ./public
 
 RUN mkdir -p uploads temp data && chmod 777 uploads temp data
