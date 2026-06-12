@@ -466,7 +466,7 @@ export function TeacherDashboard() {
                 <span className="text-slate-400 text-sm">总费用</span>
               </div>
               <div className="text-2xl font-bold text-yellow-400">
-                ¥{((aiUsage.myUsage?.totalCost ?? 0) + (aiUsage.studentsUsage?.totalCost ?? 0) || aiUsage.totalCost ?? 0).toFixed(2)}
+                ¥{((aiUsage.myUsage?.totalCost ?? 0) + (aiUsage.studentsUsage?.totalCost ?? 0) || (aiUsage.totalCost ?? 0)).toFixed(2)}
               </div>
             </div>
             {/* 总调用次数 */}
@@ -476,7 +476,7 @@ export function TeacherDashboard() {
                 <span className="text-slate-400 text-sm">总调用次数</span>
               </div>
               <div className="text-2xl font-bold text-purple-400">
-                {(aiUsage.myUsage?.totalCalls ?? 0) + (aiUsage.studentsUsage?.totalCalls ?? 0) || aiUsage.totalCalls ?? 0}
+                {(aiUsage.myUsage?.totalCalls ?? 0) + (aiUsage.studentsUsage?.totalCalls ?? 0) || (aiUsage.totalCalls ?? 0)}
               </div>
             </div>
           </div>

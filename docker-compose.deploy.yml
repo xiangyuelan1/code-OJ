@@ -12,7 +12,7 @@ services:
     container_name: oj-deploy
     restart: always
     ports:
-      - "5001:5000"
+      - "${DEPLOY_PORT:-5001}:5000"
     volumes:
       - oj-deploy-db:/app/data
       - oj-deploy-uploads:/app/uploads
