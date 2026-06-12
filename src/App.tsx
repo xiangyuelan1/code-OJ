@@ -3,6 +3,7 @@ import { Component, type ReactNode, lazy } from "react";
 import { useAuthStore } from "./stores/auth.store";
 import { Layout } from "./components/layout/Layout";
 import { AdminLayout } from "./pages/admin/AdminLayout";
+import { FEATURE_PAYMENT } from "./config/edition";
 
 const HomePage = lazy(() => import("./pages/Home").then(m => ({ default: m.HomePage })));
 const LoginPage = lazy(() => import("./pages/Login").then(m => ({ default: m.LoginPage })));
@@ -21,7 +22,7 @@ const MatchPage = lazy(() => import("./pages/MatchPage").then(m => ({ default: m
 const MatchBattlePage = lazy(() => import("./pages/MatchBattlePage").then(m => ({ default: m.MatchBattlePage })));
 const ProblemCategoriesPage = lazy(() => import("./pages/ProblemCategoriesPage").then(m => ({ default: m.ProblemCategoriesPage })));
 const AchievementPage = lazy(() => import("./pages/AchievementPage").then(m => ({ default: m.AchievementPage })));
-const PaymentPage = lazy(() => import("./pages/PaymentPage").then(m => ({ default: m.PaymentPage })));
+const PaymentPage = FEATURE_PAYMENT ? lazy(() => import("./pages/PaymentPage").then(m => ({ default: m.PaymentPage }))) : () => null;
 const AppDownloadPage = lazy(() => import("./pages/AppDownload").then(m => ({ default: m.AppDownloadPage })));
 const TeacherClassesPage = lazy(() => import("./pages/teacher/TeacherClassesPage").then(m => ({ default: m.TeacherClassesPage })));
 const TeacherDashboardPage = lazy(() => import("./pages/teacher/TeacherDashboard").then(m => ({ default: m.TeacherDashboard })));
@@ -62,10 +63,10 @@ const AdminSubmissionsPage = lazy(() => import("./pages/admin/AdminSubmissionsPa
 const AdminMatchesPage = lazy(() => import("./pages/admin/AdminMatchesPage").then(m => ({ default: m.AdminMatchesPage })));
 const AdminKnowledgeTreePage = lazy(() => import("./pages/admin/AdminKnowledgeTreePage").then(m => ({ default: m.AdminKnowledgeTreePage })));
 const AdminClassesPage = lazy(() => import("./pages/admin/AdminClassesPage").then(m => ({ default: m.AdminClassesPage })));
-const AdminPaymentPage = lazy(() => import("./pages/admin/AdminPaymentPage").then(m => ({ default: m.AdminPaymentPage })));
+const AdminPaymentPage = FEATURE_PAYMENT ? lazy(() => import("./pages/admin/AdminPaymentPage").then(m => ({ default: m.AdminPaymentPage }))) : () => null;
 const AdminAccessConfigPage = lazy(() => import("./pages/admin/AdminAccessConfigPage").then(m => ({ default: m.AdminAccessConfigPage })));
 const AdminAIUsagePage = lazy(() => import("./pages/admin/AdminAIUsagePage").then(m => ({ default: m.AdminAIUsagePage })));
-const AdminPromotionPage = lazy(() => import("./pages/admin/AdminPromotionPage").then(m => ({ default: m.AdminPromotionPage })));
+const AdminPromotionPage = FEATURE_PAYMENT ? lazy(() => import("./pages/admin/AdminPromotionPage").then(m => ({ default: m.AdminPromotionPage }))) : () => null;
 const AdminLearningPage = lazy(() => import("./pages/admin/AdminLearningPage").then(m => ({ default: m.AdminLearningPage })));
 const AdminFeaturesPage = lazy(() => import("./pages/admin/AdminFeaturesPage").then(m => ({ default: m.AdminFeaturesPage })));
 
@@ -247,14 +248,14 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
-              <Route
+              {FEATURE_PAYMENT && <Route
                 path="/payment"
                 element={
                   <ProtectedRoute>
                     <PaymentPage />
                   </ProtectedRoute>
                 }
-              />
+              />}
               <Route path="/app-download" element={<AppDownloadPage />} />
               <Route path="/architecture" element={<ArchitecturePage />} />
               <Route
@@ -475,8 +476,8 @@ export default function App() {
               <Route path="classes" element={<AdminClassesPage />} />
               <Route path="ai-config" element={<AdminAIConfigPage />} />
               <Route path="ai-usage" element={<AdminAIUsagePage />} />
-              <Route path="payments" element={<AdminPaymentPage />} />
-              <Route path="promotions" element={<AdminPromotionPage />} />
+              {FEATURE_PAYMENT && <Route path="payments" element={<AdminPaymentPage />} />}
+              {FEATURE_PAYMENT && <Route path="promotions" element={<AdminPromotionPage />} />}
               <Route path="access-config" element={<AdminAccessConfigPage />} />
               <Route path="learning" element={<AdminLearningPage />} />
               <Route path="features" element={<AdminFeaturesPage />} />

@@ -4,6 +4,7 @@ import { usePointsStore } from '../../stores/points.store';
 import { useSocketStore } from '../../services/socket';
 import { classAPI, featureAPI } from '../../services/api';
 import { useFeatureAccess } from '../../hooks/useFeatureAccess';
+import { FEATURE_PAYMENT } from '../../config/edition';
 import {
   Award,
   BookMarked,
@@ -105,7 +106,7 @@ function DesktopGroup({ group, onNavigate, canUsePremium }: { group: NavGroup; o
             <div className="p-2">
               {group.items.map((item) => {
                 const ItemIcon = item.icon;
-                const isLocked = !!item.premiumKey && !canUsePremium(item.premiumKey);
+                const isLocked = FEATURE_PAYMENT && !!item.premiumKey && !canUsePremium(item.premiumKey);
                 return (
                   <Link
                     key={`${group.label}-${item.to}`}
@@ -275,8 +276,9 @@ export function Navbar() {
     }))
     .filter(group => group.items.length > 0);
 
-  // 计算试用/付费剩余时间
+  // 计算试用/付费剩余时间（仅全量版有意义）
   const getTrialInfo = () => {
+    if (!FEATURE_PAYMENT) return null;
     if (!accessStatus || user?.role === 'ADMIN' || user?.role === 'TEACHER') return null;
     if (accessStatus.accessType === 'trial' || accessStatus.accessType === 'TRIAL') {
       if (accessStatus.expiresAt) {
@@ -455,7 +457,7 @@ export function Navbar() {
                   <div className="grid gap-1 sm:grid-cols-2">
                     {group.items.map(item => {
                       const ItemIcon = item.icon;
-                      const isLocked = !!item.premiumKey && !canUsePremium(item.premiumKey);
+                      const isLocked = FEATURE_PAYMENT && !!item.premiumKey && !canUsePremium(item.premiumKey);
                       return (
                         <Link
                           key={`${group.label}-${item.to}`}

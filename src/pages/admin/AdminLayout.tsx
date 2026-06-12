@@ -1,6 +1,7 @@
 import { Link, useNavigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.store';
 import { useSocketStore } from '../../services/socket';
+import { FEATURE_PAYMENT } from '../../config/edition';
 import { BookOpen, List, Users, Cpu, Settings, LogOut, BarChart3, FileText, Swords, ClipboardList, FolderTree, Upload, GraduationCap, CreditCard, Shield, Tag, Sparkles, ToggleLeft } from 'lucide-react';
 import { Suspense, useEffect } from 'react';
 
@@ -37,8 +38,10 @@ export function AdminLayout() {
     { path: '/admin/classes', label: '班级管理', icon: GraduationCap },
     { path: '/admin/ai-config', label: 'AI配置', icon: Cpu },
     { path: '/admin/ai-usage', label: 'AI用量统计', icon: BarChart3 },
-    { path: '/admin/payments', label: '付费管理', icon: CreditCard },
-    { path: '/admin/promotions', label: '销售推广', icon: Tag },
+    ...(FEATURE_PAYMENT ? [
+      { path: '/admin/payments', label: '付费管理', icon: CreditCard },
+      { path: '/admin/promotions', label: '销售推广', icon: Tag },
+    ] : []),
     { path: '/admin/access-config', label: '访问控制', icon: Shield },
     { path: '/admin/learning', label: '学习模块管理', icon: Sparkles },
     { path: '/admin/features', label: '功能开关', icon: ToggleLeft },
