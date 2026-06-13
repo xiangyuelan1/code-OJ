@@ -837,6 +837,9 @@ export const learningAdminAPI = {
   getBugScenarios: () => api.get('/api/learning-admin/bug-scenarios'),
   createBugScenario: (data: any) => api.post('/api/learning-admin/bug-scenario', data),
   deleteBugScenario: (id: string) => api.delete(`/api/learning-admin/bug-scenario/${id}`),
+  // 模块配置管理
+  getModules: () => api.get('/api/learning-admin/modules'),
+  updateModules: (modules: any[]) => api.put('/api/learning-admin/modules', { modules }),
 };
 
 // ── 小游戏内容管理 API ──

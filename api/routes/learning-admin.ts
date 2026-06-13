@@ -89,6 +89,28 @@ router.delete('/interview-template/:id', authMiddleware, roleMiddleware('ADMIN')
   }
 });
 
+/* ── 学习模块配置 ── */
+
+/** 获取模块配置（公开接口，前端用于决定显示哪些模块） */
+router.get('/modules', async (_req: Request, res: any) => {
+  try {
+    const modules = await learningAdminService.getLearningModules();
+    res.json({ success: true, data: modules });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+/** 更新模块配置（管理员操作） */
+router.put('/modules', authMiddleware, roleMiddleware('ADMIN'), async (req: Request, res: any) => {
+  try {
+    const modules = await learningAdminService.updateLearningModules(req.body.modules);
+    res.json({ success: true, data: modules });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
 router.get('/bug-scenarios', authMiddleware, roleMiddleware('ADMIN'), async (_req: Request, res: any) => {
   try {
     const scenarios = await learningAdminService.getBugScenarios();

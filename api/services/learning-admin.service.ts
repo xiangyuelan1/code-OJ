@@ -218,6 +218,66 @@ export class LearningAdminService {
   async deleteBugScenario(id: string) {
     return prisma.bugScenario.delete({ where: { id } });
   }
+
+  /* ── 学习模块可见性配置 ── */
+
+  /** 模块配置存储在 SystemConfig 表中，key 固定为 'learning_modules_config' */
+  private readonly MODULE_CONFIG_KEY = 'learning_modules_config';
+
+  /** 默认模块列表定义（所有可用模块的元数据） */
+  private getDefaultModules(): LearningModuleConfig[] {
+    return [
+      { key: 'starpath', name: '编程星途', description: '探索编程宇宙，在星途中发现知识的奥秘', icon: 'Sparkles', route: '/starpath', enabled: true, order: 0 },
+      { key: 'solved', name: '已解决题目', description: '查看你成功通过的所有题目，回顾成长轨迹', icon: 'Trophy', route: '/solved', enabled: true, order: 1 },
+      { key: 'interview', name: 'AI面试模拟', description: 'AI模拟真实面试场景，提升技术面试能力', icon: 'Briefcase', route: '/interview', enabled: true, order: 2 },
+      { key: 'bughunter', name: 'AI猎虫挑战', description: '找出代码中的Bug，锻炼调试能力', icon: 'Bug', route: '/bug-hunter', enabled: true, order: 3 },
+      { key: 'minigame_code_quiz', name: '快速代码挑战', description: '代码猜谜，预测输出结果', icon: 'Zap', route: '', enabled: true, order: 10, category: 'minigame' },
+      { key: 'minigame_daily_quiz', name: '每日一题', description: '每天一道编程选择题', icon: 'Target', route: '', enabled: true, order: 11, category: 'minigame' },
+      { key: 'minigame_flash_card', name: '知识闪卡', description: '快速复习编程核心概念', icon: 'Lightbulb', route: '', enabled: true, order: 12, category: 'minigame' },
+      { key: 'minigame_typing', name: '代码打字速度', description: '提升代码输入速度与准确率', icon: 'Code', route: '', enabled: true, order: 13, category: 'minigame' },
+    ];
+  }
+
+  /** 获取当前模块配置（合并默认值与已保存配置） */
+  async getLearningModules(): Promise<LearningModuleConfig[]> {
+    const record = await prisma.systemConfig.findUnique({
+      where: { key: this.MODULE_CONFIG_KEY },
+    });
+
+    const defaults = this.getDefaultModules();
+    if (!record) return defaults;
+
+    const saved: Partial<LearningModuleConfig>[] = safeJsonParse(record.value, []);
+    // 以 key 为索引合并：保存的配置覆盖默认值
+    return defaults.map(mod => {
+      const override = saved.find(s => s.key === mod.key);
+      return override ? { ...mod, ...override } : mod;
+    });
+  }
+
+  /** 更新模块配置（仅保存变更的字段） */
+  async updateLearningModules(modules: Partial<LearningModuleConfig>[]): Promise<LearningModuleConfig[]> {
+    const value = JSON.stringify(modules);
+    await prisma.systemConfig.upsert({
+      where: { key: this.MODULE_CONFIG_KEY },
+      update: { value },
+      create: { key: this.MODULE_CONFIG_KEY, value },
+    });
+    return this.getLearningModules();
+  }
+}
+
+/** 学习模块配置类型 */
+export interface LearningModuleConfig {
+  key: string;
+  name: string;
+  description: string;
+  icon: string;
+  route: string;
+  enabled: boolean;
+  order: number;
+  /** 分类：'minigame' 表示小游戏模块，undefined 表示主模块 */
+  category?: string;
 }
 
 export const learningAdminService = new LearningAdminService();

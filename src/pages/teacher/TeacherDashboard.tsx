@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.store';
-import { classAPI, enhancedAiAPI } from '../../services/api';
+import { classAPI, enhancedAiAPI, courseAPI } from '../../services/api';
 import {
   GraduationCap, Users, Code, CheckCircle,
   Loader2, ChevronDown, ChevronRight,
   Sparkles, Tags, AlertTriangle, UserCheck,
   Plus, X, Copy, RefreshCw,
   CheckCircle2, XCircle, Zap, Cpu, DollarSign, Save,
+  BookOpen, FolderOpen, BookMarked, ExternalLink,
 } from 'lucide-react';
 
 // ==================== 类型定义 ====================
@@ -79,6 +81,26 @@ const DEFAULT_DASHBOARD: DashboardData = {
 
 const EMPTY_CLASS_FORM: ClassForm = { name: '', description: '', grade: '' };
 
+// ==================== 课程相关类型 ====================
+
+interface CourseOverview {
+  id: string;
+  name: string;
+  description?: string;
+  classId: string;
+  className?: string;
+  stageCount: number;
+  sessionCount: number;
+  stages: CourseStageOverview[];
+}
+
+interface CourseStageOverview {
+  id: string;
+  name: string;
+  order: number;
+  sessions: { id: string; name: string; order: number }[];
+}
+
 // ==================== 工具函数 ====================
 
 /** 将后端返回的 difficultyDistribution 统一转为数组格式 */
@@ -116,6 +138,7 @@ function formatTokenCount(tokens: number): string {
 
 export function TeacherDashboard() {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
 
   // 核心数据
   const [dashboard, setDashboard] = useState<DashboardData>(DEFAULT_DASHBOARD);
@@ -123,6 +146,12 @@ export function TeacherDashboard() {
   const [aiUsage, setAiUsage] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // 课程资源数据
+  const [courses, setCourses] = useState<CourseOverview[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+  const [expandedCourseId, setExpandedCourseId] = useState<string | null>(null);
+  const [aiSyllabusLoading, setAiSyllabusLoading] = useState<string | null>(null);
 
   // 班级管理交互状态
   const [expandedClassId, setExpandedClassId] = useState<string | null>(null);
@@ -158,8 +187,9 @@ export function TeacherDashboard() {
         setDashboard(dashboardRes.value.data ?? DEFAULT_DASHBOARD);
       }
 
+      let teacherClasses: any[] = [];
       if (classesRes.status === 'fulfilled' && classesRes.value.success) {
-        const teacherClasses = (classesRes.value.data ?? []).filter(
+        teacherClasses = (classesRes.value.data ?? []).filter(
           (cls: any) => cls.createdBy === user?.id || cls.creator?.id === user?.id
         );
         setClasses(teacherClasses.map((cls: any) => ({
@@ -179,10 +209,73 @@ export function TeacherDashboard() {
       if (aiUsageRes.status === 'fulfilled' && aiUsageRes.value.success) {
         setAiUsage(aiUsageRes.value.data);
       }
+
+      // 获取课程数据：并行获取所有班级的课程
+      if (teacherClasses.length > 0) {
+        fetchCourses(teacherClasses);
+      }
     } catch (err: any) {
       setError(err?.error?.message || '加载仪表盘数据失败');
     } finally {
       setLoading(false);
+    }
+  };
+
+  /** 并行获取各班级课程，合并为全量课程列表 */
+  const fetchCourses = async (teacherClasses: any[]) => {
+    setCoursesLoading(true);
+    try {
+      const results = await Promise.allSettled(
+        teacherClasses.map(cls => courseAPI.getByClass(cls.id))
+      );
+      const allCourses: CourseOverview[] = [];
+      results.forEach((res, idx) => {
+        if (res.status === 'fulfilled' && res.value.success) {
+          const classCourses = (res.value.data || []).map((c: any) => {
+            const stages = (c.stages || []).map((s: any) => ({
+              id: s.id,
+              name: s.name,
+              order: s.order,
+              sessions: (s.sessions || []).map((sess: any) => ({
+                id: sess.id,
+                name: sess.name,
+                order: sess.order,
+              })),
+            }));
+            return {
+              id: c.id,
+              name: c.name,
+              description: c.description,
+              classId: teacherClasses[idx].id,
+              className: teacherClasses[idx].name,
+              stageCount: stages.length,
+              sessionCount: stages.reduce((sum: number, s: any) => sum + s.sessions.length, 0),
+              stages,
+            };
+          });
+          allCourses.push(...classCourses);
+        }
+      });
+      setCourses(allCourses);
+    } catch {
+      // 课程加载失败不阻塞主面板
+    } finally {
+      setCoursesLoading(false);
+    }
+  };
+
+  /** AI 补全大纲 */
+  const handleAiCompleteSyllabus = async (courseId: string) => {
+    setAiSyllabusLoading(courseId);
+    try {
+      await courseAPI.aiCompleteSyllabus(courseId, 12);
+      alert('AI 补全大纲完成！');
+      // 刷新课程列表
+      if (classes.length > 0) fetchCourses(classes);
+    } catch (err: any) {
+      alert(err?.error?.message || 'AI 补全大纲失败');
+    } finally {
+      setAiSyllabusLoading(null);
     }
   };
 
@@ -366,6 +459,11 @@ export function TeacherDashboard() {
     (sum, reqs) => sum + (reqs || []).filter((r: any) => r.status === 'PENDING').length,
     dashboard.pendingRequests
   );
+
+  // 课程统计
+  const totalCourses = courses.length;
+  const totalStages = courses.reduce((sum, c) => sum + c.stageCount, 0);
+  const totalSessions = courses.reduce((sum, c) => sum + c.sessionCount, 0);
 
   // ==================== 渲染 ====================
 
@@ -600,7 +698,166 @@ export function TeacherDashboard() {
         </div>
       </div>
 
-      {/* ==================== D. 班级管理区域 ==================== */}
+      {/* ==================== D. 课程资源管理区域 ==================== */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <BookOpen className="h-5 w-5 text-cyan-400" />
+            <h2 className="text-xl font-semibold text-white">课程资源</h2>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate('/teacher/classes')}
+              className="flex items-center px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm transition-colors"
+              title="在班级管理中进行完整课程编辑"
+            >
+              <ExternalLink className="h-4 w-4 mr-1.5" />
+              完整管理
+            </button>
+            <button
+              onClick={() => navigate('/teacher/classes')}
+              className="flex items-center px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              创建课程
+            </button>
+          </div>
+        </div>
+
+        {/* 课程统计卡片 */}
+        <div className="grid grid-cols-3 gap-4 mb-5">
+          <div className="bg-slate-800 rounded-xl p-4 shadow-xl border border-slate-700">
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen className="h-4 w-4 text-cyan-400" />
+              <span className="text-slate-400 text-sm">课程总数</span>
+            </div>
+            <div className="text-2xl font-bold text-cyan-400">{totalCourses}</div>
+          </div>
+          <div className="bg-slate-800 rounded-xl p-4 shadow-xl border border-slate-700">
+            <div className="flex items-center gap-2 mb-1">
+              <FolderOpen className="h-4 w-4 text-yellow-400" />
+              <span className="text-slate-400 text-sm">阶段总数</span>
+            </div>
+            <div className="text-2xl font-bold text-yellow-400">{totalStages}</div>
+          </div>
+          <div className="bg-slate-800 rounded-xl p-4 shadow-xl border border-slate-700">
+            <div className="flex items-center gap-2 mb-1">
+              <BookMarked className="h-4 w-4 text-purple-400" />
+              <span className="text-slate-400 text-sm">讲次总数</span>
+            </div>
+            <div className="text-2xl font-bold text-purple-400">{totalSessions}</div>
+          </div>
+        </div>
+
+        {/* 课程列表 */}
+        {coursesLoading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 text-cyan-500 animate-spin" />
+          </div>
+        ) : courses.length === 0 ? (
+          <div className="bg-slate-800 rounded-xl p-10 text-center shadow-xl border border-slate-700">
+            <BookOpen className="h-10 w-10 text-slate-500 mx-auto mb-3" />
+            <p className="text-slate-400">暂无课程</p>
+            <p className="text-slate-500 mt-1 text-sm">前往班级管理的"课程体系"标签页创建课程</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {courses.map(course => {
+              const isExpanded = expandedCourseId === course.id;
+              return (
+                <div key={course.id} className="bg-slate-800 rounded-xl shadow-xl border border-slate-700 overflow-hidden">
+                  {/* 课程头部 */}
+                  <div
+                    className="px-5 py-4 cursor-pointer hover:bg-slate-750 transition-colors"
+                    onClick={() => setExpandedCourseId(isExpanded ? null : course.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {isExpanded
+                          ? <ChevronDown className="h-5 w-5 text-slate-400 shrink-0" />
+                          : <ChevronRight className="h-5 w-5 text-slate-400 shrink-0" />}
+                        <BookOpen className="h-5 w-5 text-cyan-400 shrink-0" />
+                        <h3 className="text-lg font-semibold text-white truncate">{course.name}</h3>
+                        {course.className && (
+                          <span className="text-xs px-2 py-0.5 bg-slate-700 text-slate-400 rounded">
+                            {course.className}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-slate-400 shrink-0 ml-4">
+                        <span>{course.stageCount} 阶段</span>
+                        <span>{course.sessionCount} 讲次</span>
+                      </div>
+                    </div>
+                    {course.description && (
+                      <p className="text-slate-500 text-sm mt-1 ml-8 truncate">{course.description}</p>
+                    )}
+                  </div>
+
+                  {/* 展开显示阶段和讲次概览 + 操作按钮 */}
+                  {isExpanded && (
+                    <div className="border-t border-slate-700 px-5 py-4">
+                      {/* 快捷操作 */}
+                      <div className="flex items-center gap-2 mb-4">
+                        <button
+                          onClick={() => navigate('/teacher/classes')}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm transition-colors"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          编辑课程
+                        </button>
+                        <button
+                          onClick={() => handleAiCompleteSyllabus(course.id)}
+                          disabled={aiSyllabusLoading !== null}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-lg text-sm hover:bg-purple-500/30 transition-colors disabled:opacity-50"
+                        >
+                          {aiSyllabusLoading === course.id
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <Sparkles className="h-3.5 w-3.5" />}
+                          AI补全大纲
+                        </button>
+                      </div>
+
+                      {/* 阶段-讲次树形展示 */}
+                      {course.stages.length === 0 ? (
+                        <p className="text-slate-500 text-sm">暂无阶段，请前往完整管理页面添加</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {course.stages.map(stage => (
+                            <div key={stage.id} className="bg-slate-750 rounded-lg p-3">
+                              <div className="flex items-center gap-2 mb-1">
+                                <FolderOpen className="h-4 w-4 text-yellow-400" />
+                                <span className="font-medium text-slate-200 text-sm">
+                                  阶段 {stage.order}：{stage.name}
+                                </span>
+                                <span className="text-xs text-slate-500">
+                                  ({stage.sessions.length} 讲次)
+                                </span>
+                              </div>
+                              {stage.sessions.length > 0 && (
+                                <div className="ml-6 mt-1 space-y-0.5">
+                                  {stage.sessions.map(sess => (
+                                    <div key={sess.id} className="flex items-center gap-2 text-xs text-slate-400">
+                                      <BookMarked className="h-3 w-3 text-purple-400" />
+                                      <span>讲次 {sess.order}：{sess.name}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ==================== E. 班级管理区域 ==================== */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-white">班级管理</h2>
@@ -878,7 +1135,7 @@ export function TeacherDashboard() {
         )}
       </div>
 
-      {/* ==================== E. AI 快捷操作 & F. 待审核提醒 ==================== */}
+      {/* ==================== F. AI 快捷操作 & G. 待审核提醒 ==================== */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* AI 快捷操作 */}
         <div className="bg-slate-800 rounded-xl p-6 shadow-xl border border-slate-700">

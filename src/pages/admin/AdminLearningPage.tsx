@@ -9,10 +9,10 @@ import {
 import {
   Globe, Plus, Trash2, Edit3, ChevronRight,
   Loader2, Save, X, Search, Bug, Briefcase,
-  Gamepad2, Sparkles, ToggleLeft, ToggleRight, PawPrint,
+  Gamepad2, Sparkles, ToggleLeft, ToggleRight, PawPrint, Settings2,
 } from 'lucide-react';
 
-type TabKey = 'starpath' | 'interview' | 'bughunter' | 'minigame' | 'companion';
+type TabKey = 'modules' | 'starpath' | 'interview' | 'bughunter' | 'minigame' | 'companion';
 
 interface PlanetItem {
   id: string;
@@ -45,8 +45,20 @@ interface BugScenarioItem {
   language: string;
 }
 
+/** 模块配置项类型 */
+interface LearningModuleItem {
+  key: string;
+  name: string;
+  description: string;
+  icon: string;
+  route: string;
+  enabled: boolean;
+  order: number;
+  category?: string;
+}
+
 export function AdminLearningPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>('starpath');
+  const [activeTab, setActiveTab] = useState<TabKey>('modules');
   const [loading, setLoading] = useState(true);
 
   /* 星途管理状态 */
@@ -80,6 +92,10 @@ export function AdminLearningPage() {
   const [aiGeneratedItems, setAiGeneratedItems] = useState<any[]>([]);
   const [aiSelectedItems, setAiSelectedItems] = useState<Set<number>>(new Set());
 
+  /* 模块配置状态 */
+  const [moduleList, setModuleList] = useState<LearningModuleItem[]>([]);
+  const [moduleSaving, setModuleSaving] = useState(false);
+
   /* 太空伙伴管理状态 */
   const [companions, setCompanions] = useState<any[]>([]);
   const [companionLoading, setCompanionLoading] = useState(false);
@@ -92,12 +108,40 @@ export function AdminLearningPage() {
   const [companionAiSelected, setCompanionAiSelected] = useState<Set<number>>(new Set());
 
   const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+    { key: 'modules', label: '模块配置', icon: <Settings2 className="h-4 w-4" /> },
     { key: 'starpath', label: '星途管理', icon: <Globe className="h-4 w-4" /> },
     { key: 'interview', label: '面试题库', icon: <Briefcase className="h-4 w-4" /> },
     { key: 'bughunter', label: 'Bug场景库', icon: <Bug className="h-4 w-4" /> },
     { key: 'minigame', label: '小游戏管理', icon: <Gamepad2 className="h-4 w-4" /> },
     { key: 'companion', label: '太空伙伴', icon: <PawPrint className="h-4 w-4" /> },
   ];
+
+  const fetchModules = useCallback(async () => {
+    try {
+      const res = await learningAdminAPI.getModules();
+      if (res.success && res.data) {
+        setModuleList(res.data);
+      }
+    } catch (error: any) {
+      console.error('获取模块配置失败', error);
+    }
+  }, []);
+
+  const handleToggleModule = async (key: string, currentEnabled: boolean) => {
+    // 乐观更新
+    setModuleList(prev => prev.map(m => m.key === key ? { ...m, enabled: !currentEnabled } : m));
+    setModuleSaving(true);
+    try {
+      const updated = moduleList.map(m => m.key === key ? { ...m, enabled: !currentEnabled } : m);
+      await learningAdminAPI.updateModules(updated);
+    } catch (error: any) {
+      // 回滚
+      setModuleList(prev => prev.map(m => m.key === key ? { ...m, enabled: currentEnabled } : m));
+      alert(error.error?.message || error.message || '操作失败');
+    } finally {
+      setModuleSaving(false);
+    }
+  };
 
   const fetchRegions = useCallback(async () => {
     try {
@@ -165,7 +209,8 @@ export function AdminLearningPage() {
 
   useEffect(() => {
     fetchRegions();
-  }, [fetchRegions]);
+    fetchModules();
+  }, [fetchRegions, fetchModules]);
 
   const fetchMiniGameContent = useCallback(async (gameType: MiniGameTab) => {
     setMiniGameLoading(true);
@@ -576,6 +621,62 @@ export function AdminLearningPage() {
           </button>
         ))}
       </div>
+
+      {/* 模块配置 */}
+      {activeTab === 'modules' && (
+        <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white">学习模块可见性配置</h2>
+            <span className="text-xs text-slate-400">
+              {moduleSaving ? '保存中...' : '切换开关即时生效，控制前端学习中心模块的显示/隐藏'}
+            </span>
+          </div>
+
+          {/* 主模块 */}
+          <h3 className="text-sm font-medium text-slate-300 mb-3">核心模块</h3>
+          <div className="space-y-2 mb-6">
+            {moduleList.filter(m => !m.category).map(mod => (
+              <div key={mod.key} className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
+                <div>
+                  <div className="text-sm font-medium text-white">{mod.name}</div>
+                  <div className="text-xs text-slate-400">{mod.description} {mod.route && <span className="text-slate-500">→ {mod.route}</span>}</div>
+                </div>
+                <button
+                  onClick={() => handleToggleModule(mod.key, mod.enabled)}
+                  className="p-1 text-slate-400 hover:text-cyan-400"
+                  title={mod.enabled ? '点击隐藏' : '点击显示'}
+                >
+                  {mod.enabled ? <ToggleRight className="h-6 w-6 text-green-400" /> : <ToggleLeft className="h-6 w-6" />}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* 小游戏模块 */}
+          <h3 className="text-sm font-medium text-slate-300 mb-3">小游戏模块</h3>
+          <div className="space-y-2">
+            {moduleList.filter(m => m.category === 'minigame').map(mod => (
+              <div key={mod.key} className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
+                <div>
+                  <div className="text-sm font-medium text-white">{mod.name}</div>
+                  <div className="text-xs text-slate-400">{mod.description}</div>
+                </div>
+                <button
+                  onClick={() => handleToggleModule(mod.key, mod.enabled)}
+                  className="p-1 text-slate-400 hover:text-cyan-400"
+                  title={mod.enabled ? '点击隐藏' : '点击显示'}
+                >
+                  {mod.enabled ? <ToggleRight className="h-6 w-6 text-green-400" /> : <ToggleLeft className="h-6 w-6" />}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {moduleList.length === 0 && (
+            <p className="text-sm text-slate-500 text-center py-8">加载中...</p>
+          )}
+        </div>
+      )}
 
       {/* 星途管理 */}
       {activeTab === 'starpath' && (

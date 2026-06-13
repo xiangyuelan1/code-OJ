@@ -3,12 +3,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { problemsAPI, pointsAPI, profileAPI, dailyAPI, discussionAPI, matchAPI, starpathAPI, checkinAPI } from '../services/api';
 import { useAuthStore } from '../stores/auth.store';
 import { usePointsStore } from '../stores/points.store';
+import { FEATURE_PAYMENT } from '../config/edition';
 import {
   Code2, Swords, FileCheck, Trophy, Users, Zap,
   ArrowRight, ChevronRight, BookOpen, Target, Flame,
   Terminal, Shield, Brain, Sparkles, CalendarCheck,
   TrendingUp, MessageSquare, AlertTriangle, CheckCircle2,
   ThumbsUp, BarChart3, Clock, Play, Gift, Star, Check,
+  Crown, Rocket, GraduationCap,
 } from 'lucide-react';
 
 interface PublicStats {
@@ -209,8 +211,114 @@ function AbilityRadar({ data }: { data: Record<string, number> }) {
   );
 }
 
+/**
+ * 升级服务推广区块
+ * 仅在全量版（FEATURE_PAYMENT === true）且用户未付费时展示
+ * 包含会员等级卡片和跳转到 /payment 页面的 CTA
+ */
+function UpgradeServiceSection() {
+  const tiers = [
+    {
+      name: '基础会员',
+      icon: BookOpen,
+      color: 'from-emerald-500/20 to-emerald-600/10',
+      border: 'border-emerald-500/30',
+      iconColor: 'text-emerald-400',
+      features: ['全量题库解锁', '每日 AI 提示 5 次', '社区发帖权限'],
+    },
+    {
+      name: '标准会员',
+      icon: Rocket,
+      color: 'from-cyan-500/20 to-indigo-600/10',
+      border: 'border-cyan-500/30',
+      iconColor: 'text-cyan-400',
+      highlight: true,
+      features: ['无限 AI 辅助', '对战模式', '个性化学习路径', '完整数据分析'],
+    },
+    {
+      name: '尊享会员',
+      icon: Crown,
+      color: 'from-amber-500/20 to-orange-600/10',
+      border: 'border-amber-500/30',
+      iconColor: 'text-amber-400',
+      features: ['专属导师答疑', '模拟面试', '优先新功能体验', '不限量 AI 额度'],
+    },
+  ];
+
+  return (
+    <section className="relative overflow-hidden rounded-2xl border border-indigo-500/20 mb-12">
+      {/* 背景渐变 */}
+      <div className="absolute inset-0 bg-gradient-to-br from-indigo-600/15 via-slate-900 to-cyan-600/15" />
+      <div className="absolute inset-0 opacity-[0.02]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%236366f1' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+        }}
+      />
+
+      <div className="relative px-6 py-10 md:px-10 md:py-14">
+        {/* 标题区域 */}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-sm mb-4">
+            <GraduationCap className="h-4 w-4" />
+            <span>升级服务</span>
+          </div>
+          <h2 className="text-2xl md:text-3xl font-bold text-white mb-3">
+            解锁全部学习能力
+          </h2>
+          <p className="text-slate-400 max-w-xl mx-auto leading-relaxed">
+            AI 智能辅助 · 全量题库 · 对战模式 · 社区互动 · 个性化学习路径，让你的编程之旅更高效
+          </p>
+        </div>
+
+        {/* 会员等级卡片 */}
+        <div className="grid md:grid-cols-3 gap-5 mb-10">
+          {tiers.map(({ name, icon: Icon, color, border, iconColor, highlight, features }) => (
+            <div key={name}
+              className={`relative rounded-xl border ${border} bg-gradient-to-br ${color} p-6 transition-all hover:scale-[1.02] ${
+                highlight ? 'ring-1 ring-cyan-500/40 shadow-lg shadow-cyan-500/10' : ''
+              }`}
+            >
+              {highlight && (
+                <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-cyan-500 text-white text-xs font-semibold">
+                  推荐
+                </span>
+              )}
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`p-2 rounded-lg bg-slate-800/60 border border-slate-700/50`}>
+                  <Icon className={`h-5 w-5 ${iconColor}`} />
+                </div>
+                <h3 className="text-lg font-semibold text-white">{name}</h3>
+              </div>
+              <ul className="space-y-2.5">
+                {features.map((feat) => (
+                  <li key={feat} className="flex items-center gap-2 text-sm text-slate-300">
+                    <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    {feat}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        {/* CTA 按钮 */}
+        <div className="text-center">
+          <Link
+            to="/payment"
+            className="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-500 hover:from-indigo-400 hover:to-cyan-400 text-white font-semibold shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 transition-all hover:scale-[1.02]"
+          >
+            <Crown className="h-5 w-5" />
+            查看完整方案与价格
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function HomePage() {
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated, user, accessStatus } = useAuthStore();
   const { points, levelName, fetchMyPoints } = usePointsStore();
 
   const [stats, setStats] = useState<PublicStats | null>(null);
@@ -399,6 +507,9 @@ export function HomePage() {
             ))}
           </section>
         )}
+
+        {/* 升级服务：未登录访客可见（仅全量版） */}
+        {FEATURE_PAYMENT && <UpgradeServiceSection />}
 
         <section className="grid md:grid-cols-4 gap-6 mb-12">
           {[
@@ -604,6 +715,12 @@ export function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* 升级服务：已登录 TRIAL 用户可见（仅全量版，排除 ADMIN/PAID/CLASS） */}
+      {FEATURE_PAYMENT && user?.role !== 'ADMIN' && (() => {
+        const type = accessStatus?.accessType?.toUpperCase();
+        return !type || type === 'TRIAL';
+      })() && <UpgradeServiceSection />}
 
       {/* 编程星途特色卡片 */}
       <section className="relative overflow-hidden rounded-xl border border-purple-500/20">

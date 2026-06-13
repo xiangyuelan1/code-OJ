@@ -5,7 +5,7 @@ import {
   Brain, Code, Trophy, Zap, Target, Lightbulb,
   Shuffle, Clock, Star, ChevronRight, Play,
 } from 'lucide-react';
-import { starpathAPI, starpathAchievementAPI, submissionsAPI, minigameAPI } from '../services/api';
+import { starpathAPI, starpathAchievementAPI, submissionsAPI, minigameAPI, learningAdminAPI } from '../services/api';
 
 function TwinklingStars({ count = 60 }: { count?: number }) {
   const stars = useMemo(() => {
@@ -398,6 +398,18 @@ function DailyQuiz() {
   );
 }
 
+/* ── 模块配置类型 ── */
+interface LearningModuleConfig {
+  key: string;
+  name: string;
+  description: string;
+  icon: string;
+  route: string;
+  enabled: boolean;
+  order: number;
+  category?: string;
+}
+
 /* ── 主页面 ── */
 
 interface ModuleCardProps {
@@ -441,13 +453,16 @@ export function LearningHub() {
   const [starStats, setStarStats] = useState({ explored: 0, total: 0, mastered: 0 });
   const [solvedCount, setSolvedCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  // 模块配置：控制哪些模块可见
+  const [moduleConfig, setModuleConfig] = useState<LearningModuleConfig[]>([]);
 
   useEffect(() => {
     async function fetchStats() {
       try {
-        const [mapRes, solvedRes] = await Promise.allSettled([
+        const [mapRes, solvedRes, modulesRes] = await Promise.allSettled([
           starpathAPI.getMap(),
           submissionsAPI.getSolvedProblems(),
+          learningAdminAPI.getModules(),
         ]);
         if (mapRes.status === 'fulfilled' && mapRes.value.success) {
           const data = mapRes.value.data;
@@ -456,13 +471,24 @@ export function LearningHub() {
         if (solvedRes.status === 'fulfilled' && solvedRes.value.success) {
           setSolvedCount(solvedRes.value.data?.length || 0);
         }
+        if (modulesRes.status === 'fulfilled' && modulesRes.value.success) {
+          setModuleConfig(modulesRes.value.data);
+        }
       } catch { /* 非关键数据 */ } finally { setLoading(false); }
     }
     fetchStats();
   }, []);
 
-  const modules: ModuleCardProps[] = [
+  // 辅助函数：检查某模块是否启用（配置未加载时默认全部显示）
+  const isModuleEnabled = (key: string): boolean => {
+    if (moduleConfig.length === 0) return true; // 配置未加载前全部显示
+    const mod = moduleConfig.find(m => m.key === key);
+    return mod ? mod.enabled : true;
+  };
+
+  const allModules: (ModuleCardProps & { key: string })[] = [
     {
+      key: 'starpath',
       icon: <Sparkles className="h-6 w-6 text-purple-300" />,
       title: '编程星途',
       description: '探索编程宇宙，在星途中发现知识的奥秘',
@@ -473,6 +499,7 @@ export function LearningHub() {
       statLabel: '星球已探索',
     },
     {
+      key: 'solved',
       icon: <Trophy className="h-6 w-6 text-amber-300" />,
       title: '已解决题目',
       description: '查看你成功通过的所有题目，回顾成长轨迹',
@@ -483,6 +510,7 @@ export function LearningHub() {
       statLabel: '题目已AC',
     },
     {
+      key: 'interview',
       icon: <Briefcase className="h-6 w-6 text-blue-300" />,
       title: 'AI面试模拟',
       description: 'AI模拟真实面试场景，提升技术面试能力',
@@ -493,6 +521,7 @@ export function LearningHub() {
       statLabel: '开始面试',
     },
     {
+      key: 'bughunter',
       icon: <Bug className="h-6 w-6 text-green-300" />,
       title: 'AI猎虫挑战',
       description: '找出代码中的Bug，锻炼调试能力',
@@ -503,6 +532,9 @@ export function LearningHub() {
       statLabel: '开始猎虫',
     },
   ];
+
+  // 根据管理员配置过滤可见模块
+  const modules = allModules.filter(m => isModuleEnabled(m.key));
 
   return (
     <div className="relative min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
@@ -527,21 +559,25 @@ export function LearningHub() {
           ))}
         </div>
 
-        {/* 即时互动区域 */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-            <Play className="h-5 w-5 text-violet-400" />
-            即刻体验
-          </h2>
-          <p className="text-sm text-slate-400 mb-6">不需要刷题，直接开始玩！这些互动小游戏帮你随时提升编程素养</p>
-        </div>
+        {/* 即时互动区域：至少有一个小游戏启用时显示 */}
+        {(isModuleEnabled('minigame_code_quiz') || isModuleEnabled('minigame_daily_quiz') || isModuleEnabled('minigame_flash_card') || isModuleEnabled('minigame_typing')) && (
+          <>
+            <div className="mb-8">
+              <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                <Play className="h-5 w-5 text-violet-400" />
+                即刻体验
+              </h2>
+              <p className="text-sm text-slate-400 mb-6">不需要刷题，直接开始玩！这些互动小游戏帮你随时提升编程素养</p>
+            </div>
 
-        <div className="grid gap-5 md:grid-cols-2 mb-8">
-          <QuickCodeQuiz />
-          <DailyQuiz />
-          <FlashCardDeck />
-          <TypingChallenge />
-        </div>
+            <div className="grid gap-5 md:grid-cols-2 mb-8">
+              {isModuleEnabled('minigame_code_quiz') && <QuickCodeQuiz />}
+              {isModuleEnabled('minigame_daily_quiz') && <DailyQuiz />}
+              {isModuleEnabled('minigame_flash_card') && <FlashCardDeck />}
+              {isModuleEnabled('minigame_typing') && <TypingChallenge />}
+            </div>
+          </>
+        )}
 
         {/* 学习数据概览 */}
         <div className="bg-slate-900/40 rounded-2xl border border-slate-700/30 p-6">
