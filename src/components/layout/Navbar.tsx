@@ -301,7 +301,6 @@ export function Navbar() {
 
   const userMenuItems: NavItem[] = [
     { label: '个人中心', to: '/profile', icon: User, description: '资料、能力画像和学习统计', auth: true },
-    { label: '签到', to: '/checkin', icon: CalendarCheck, description: '领取连续学习奖励', auth: true },
     { label: '下载 App', to: '/app-download', icon: MonitorSmartphone, description: '移动端访问和安装说明' },
   ];
 

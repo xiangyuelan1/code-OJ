@@ -839,6 +839,35 @@ export const learningAdminAPI = {
   deleteBugScenario: (id: string) => api.delete(`/api/learning-admin/bug-scenario/${id}`),
 };
 
+// ── 小游戏内容管理 API ──
+export const minigameAPI = {
+  // 公开接口：获取活跃内容
+  getContent: (gameType: string, limit?: number) =>
+    api.get('/api/minigame/content', { params: { gameType, limit } }),
+  // 管理接口
+  getAdminContent: (params?: { gameType?: string; page?: number; pageSize?: number }) =>
+    api.get('/api/minigame/admin/content', { params }),
+  createContent: (data: any) => api.post('/api/minigame/admin/content', data),
+  updateContent: (id: string, data: any) => api.put(`/api/minigame/admin/content/${id}`, data),
+  deleteContent: (id: string) => api.delete(`/api/minigame/admin/content/${id}`),
+  aiGenerate: (data: { gameType: string; count: number; difficulty?: string; topic?: string }) =>
+    api.post('/api/minigame/admin/ai-generate', data),
+};
+
+export const companionAPI = {
+  // 公开接口：获取已上架伙伴列表
+  getList: () => api.get('/api/companion/list'),
+  // 管理接口
+  getAdminList: (params?: { rarity?: string }) =>
+    api.get('/api/companion/admin/list', { params }),
+  create: (data: any) => api.post('/api/companion/admin/create', data),
+  update: (id: string, data: any) => api.put(`/api/companion/admin/${id}`, data),
+  delete: (id: string) => api.delete(`/api/companion/admin/${id}`),
+  togglePublish: (id: string) => api.put(`/api/companion/admin/${id}/publish`),
+  aiGenerate: (data: { count: number; rarity?: string; theme?: string }) =>
+    api.post('/api/companion/admin/ai-generate', data),
+};
+
 export const featureAPI = {
   getAll: () => api.get('/api/features'),
   update: (featureKey: string, data: any) => api.put(`/api/features/${featureKey}`, data),

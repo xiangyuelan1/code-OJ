@@ -1275,3 +1275,40 @@ model ClassAnnouncement {
   updatedAt DateTime @updatedAt
   @@index([classId])
 }
+
+/// 小游戏内容管理
+model MiniGameContent {
+  id         String   @id @default(uuid())
+  gameType   String   // "code_quiz" | "daily_quiz" | "flash_card" | "typing_challenge"
+  title      String
+  content    String   // JSON 格式，存储游戏特定内容结构
+  difficulty String   @default("MEDIUM") // EASY, MEDIUM, HARD
+  tags       String   @default("[]")     // JSON 数组字符串
+  isActive   Boolean  @default(true)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  createdBy  String?  // 管理员用户ID
+
+  @@index([gameType, isActive])
+}
+
+/// 太空伙伴资源定义 - 管理员创建/AI生成的伙伴模板
+model SpaceCompanion {
+  id              String   @id @default(cuid())
+  name            String
+  description     String   @default("")
+  rarity          String   @default("COMMON")   // COMMON, RARE, EPIC, LEGENDARY
+  personality     String   @default("")          // AI生成的性格描述
+  appearance      String   @default("")          // 外观描述（用于前端展示/图片prompt）
+  stats           String   @default("{}")        // JSON: { intelligence, creativity, persistence, speed, luck }
+  skills          String   @default("[]")        // JSON array of skill objects
+  unlockCondition String   @default("")          // 解锁条件描述
+  unlockType      String   @default("level")     // level, achievement, streak, purchase
+  unlockValue     Int      @default(1)           // 解锁所需数值
+  isActive        Boolean  @default(false)       // 是否已上架（需管理员审核）
+  isDefault       Boolean  @default(false)       // 是否为默认免费伙伴
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

@@ -5,7 +5,7 @@ import {
   Brain, Code, Trophy, Zap, Target, Lightbulb,
   Shuffle, Clock, Star, ChevronRight, Play,
 } from 'lucide-react';
-import { starpathAPI, starpathAchievementAPI, submissionsAPI } from '../services/api';
+import { starpathAPI, starpathAchievementAPI, submissionsAPI, minigameAPI } from '../services/api';
 
 function TwinklingStars({ count = 60 }: { count?: number }) {
   const stars = useMemo(() => {
@@ -26,7 +26,7 @@ function TwinklingStars({ count = 60 }: { count?: number }) {
 }
 
 /* ── 快速代码挑战：随机生成一个简单的代码片段让用户预测输出 ── */
-const CODE_QUIZZES = [
+const FALLBACK_CODE_QUIZZES = [
   { code: 'print([1,2,3][1:])', options: ['[1, 2]', '[2, 3]', '[1, 2, 3]', '[2]'], answer: 1, lang: 'Python' },
   { code: 'console.log(typeof null)', options: ['null', 'undefined', 'object', 'string'], answer: 2, lang: 'JavaScript' },
   { code: 'print(2 ** 3 ** 0)', options: ['8', '1', '2', '6'], answer: 0, lang: 'Python' },
@@ -40,12 +40,30 @@ const CODE_QUIZZES = [
 ];
 
 function QuickCodeQuiz() {
-  const [quizIdx, setQuizIdx] = useState(() => Math.floor(Math.random() * CODE_QUIZZES.length));
+  const [quizzes, setQuizzes] = useState(FALLBACK_CODE_QUIZZES);
+  const [quizIdx, setQuizIdx] = useState(() => Math.floor(Math.random() * FALLBACK_CODE_QUIZZES.length));
   const [selected, setSelected] = useState<number | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [streak, setStreak] = useState(0);
+  const [dataLoading, setDataLoading] = useState(true);
 
-  const quiz = CODE_QUIZZES[quizIdx];
+  // 从 API 加载内容，失败则使用硬编码兜底
+  useEffect(() => {
+    minigameAPI.getContent('code_quiz', 20).then(res => {
+      if (res.success && res.data && res.data.length > 0) {
+        const mapped = res.data.map((item: any) => ({
+          code: item.content.code,
+          options: item.content.options,
+          answer: item.content.answer,
+          lang: item.content.lang || 'JavaScript',
+        }));
+        setQuizzes(mapped);
+        setQuizIdx(Math.floor(Math.random() * mapped.length));
+      }
+    }).catch(() => { /* 使用默认数据 */ }).finally(() => setDataLoading(false));
+  }, []);
+
+  const quiz = quizzes[quizIdx % quizzes.length];
 
   const handleSelect = (idx: number) => {
     if (showResult) return;
@@ -58,8 +76,16 @@ function QuickCodeQuiz() {
   const nextQuiz = () => {
     setSelected(null);
     setShowResult(false);
-    setQuizIdx((prev) => (prev + 1) % CODE_QUIZZES.length);
+    setQuizIdx((prev) => (prev + 1) % quizzes.length);
   };
+
+  if (dataLoading) {
+    return (
+      <div className="bg-slate-900/60 rounded-2xl border border-slate-700/50 p-5 flex items-center justify-center min-h-[200px]">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="bg-slate-900/60 rounded-2xl border border-slate-700/50 p-5">
@@ -109,7 +135,7 @@ function QuickCodeQuiz() {
 }
 
 /* ── 知识闪卡：快速复习编程概念 ── */
-const FLASH_CARDS = [
+const FALLBACK_FLASH_CARDS = [
   { q: '时间复杂度 O(n log n) 的排序算法有哪些？', a: '归并排序、快速排序（平均）、堆排序' },
   { q: 'HTTP 状态码 304 表示什么？', a: 'Not Modified - 资源未修改，使用缓存' },
   { q: 'TCP 三次握手的目的是？', a: '确认双方收发能力正常，同步序列号，建立可靠连接' },
@@ -123,24 +149,46 @@ const FLASH_CARDS = [
 ];
 
 function FlashCardDeck() {
+  const [cards, setCards] = useState(FALLBACK_FLASH_CARDS);
   const [idx, setIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [known, setKnown] = useState(0);
+  const [dataLoading, setDataLoading] = useState(true);
 
-  const card = FLASH_CARDS[idx];
+  useEffect(() => {
+    minigameAPI.getContent('flash_card', 20).then(res => {
+      if (res.success && res.data && res.data.length > 0) {
+        const mapped = res.data.map((item: any) => ({
+          q: item.content.front,
+          a: item.content.back,
+        }));
+        setCards(mapped);
+      }
+    }).catch(() => { /* 使用默认数据 */ }).finally(() => setDataLoading(false));
+  }, []);
+
+  const card = cards[idx % cards.length];
 
   const next = (knew: boolean) => {
     if (knew) setKnown((k) => k + 1);
     setFlipped(false);
-    setIdx((prev) => (prev + 1) % FLASH_CARDS.length);
+    setIdx((prev) => (prev + 1) % cards.length);
   };
+
+  if (dataLoading) {
+    return (
+      <div className="bg-slate-900/60 rounded-2xl border border-slate-700/50 p-5 flex items-center justify-center min-h-[200px]">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="bg-slate-900/60 rounded-2xl border border-slate-700/50 p-5">
       <div className="flex items-center gap-2 mb-4">
         <Lightbulb className="h-5 w-5 text-yellow-400" />
         <h3 className="text-base font-semibold text-white">知识闪卡</h3>
-        <span className="ml-auto text-xs text-slate-400">{idx + 1}/{FLASH_CARDS.length}</span>
+        <span className="ml-auto text-xs text-slate-400">{idx + 1}/{cards.length}</span>
       </div>
       <div
         onClick={() => setFlipped(!flipped)}
@@ -167,7 +215,7 @@ function FlashCardDeck() {
 }
 
 /* ── 打字速度挑战 ── */
-const CODE_SNIPPETS = [
+const FALLBACK_CODE_SNIPPETS = [
   'function add(a, b) { return a + b; }',
   'const arr = [1, 2, 3].map(x => x * 2);',
   'for (let i = 0; i < n; i++) { sum += i; }',
@@ -179,13 +227,25 @@ const CODE_SNIPPETS = [
 ];
 
 function TypingChallenge() {
-  const [snippetIdx, setSnippetIdx] = useState(() => Math.floor(Math.random() * CODE_SNIPPETS.length));
+  const [snippets, setSnippets] = useState(FALLBACK_CODE_SNIPPETS);
+  const [snippetIdx, setSnippetIdx] = useState(() => Math.floor(Math.random() * FALLBACK_CODE_SNIPPETS.length));
   const [input, setInput] = useState('');
   const [startTime, setStartTime] = useState<number | null>(null);
   const [wpm, setWpm] = useState<number | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [dataLoading, setDataLoading] = useState(true);
 
-  const snippet = CODE_SNIPPETS[snippetIdx];
+  useEffect(() => {
+    minigameAPI.getContent('typing_challenge', 20).then(res => {
+      if (res.success && res.data && res.data.length > 0) {
+        const mapped = res.data.map((item: any) => item.content.code);
+        setSnippets(mapped);
+        setSnippetIdx(Math.floor(Math.random() * mapped.length));
+      }
+    }).catch(() => { /* 使用默认数据 */ }).finally(() => setDataLoading(false));
+  }, []);
+
+  const snippet = snippets[snippetIdx % snippets.length];
 
   const handleInput = useCallback((val: string) => {
     if (!startTime && val.length > 0) setStartTime(Date.now());
@@ -208,8 +268,16 @@ function TypingChallenge() {
     setStartTime(null);
     setWpm(null);
     setAccuracy(null);
-    setSnippetIdx(Math.floor(Math.random() * CODE_SNIPPETS.length));
+    setSnippetIdx(Math.floor(Math.random() * snippets.length));
   };
+
+  if (dataLoading) {
+    return (
+      <div className="bg-slate-900/60 rounded-2xl border border-slate-700/50 p-5 flex items-center justify-center min-h-[200px]">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="bg-slate-900/60 rounded-2xl border border-slate-700/50 p-5">
@@ -256,7 +324,7 @@ function TypingChallenge() {
 }
 
 /* ── 每日一题：快速选择题 ── */
-const DAILY_QUIZZES = [
+const FALLBACK_DAILY_QUIZZES = [
   { q: '以下哪种数据结构适合实现"撤销"功能？', options: ['队列', '栈', '链表', '哈希表'], answer: 1 },
   { q: 'HTTP 默认端口号是？', options: ['443', '8080', '80', '3000'], answer: 2 },
   { q: '二叉搜索树查找的最坏时间复杂度？', options: ['O(1)', 'O(log n)', 'O(n)', 'O(n²)'], answer: 2 },
@@ -265,10 +333,34 @@ const DAILY_QUIZZES = [
 ];
 
 function DailyQuiz() {
+  const [quizzes, setQuizzes] = useState(FALLBACK_DAILY_QUIZZES);
   const [answered, setAnswered] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
-  const dayIdx = new Date().getDate() % DAILY_QUIZZES.length;
-  const quiz = DAILY_QUIZZES[dayIdx];
+  const [dataLoading, setDataLoading] = useState(true);
+
+  useEffect(() => {
+    minigameAPI.getContent('daily_quiz', 10).then(res => {
+      if (res.success && res.data && res.data.length > 0) {
+        const mapped = res.data.map((item: any) => ({
+          q: item.content.question,
+          options: item.content.options,
+          answer: item.content.answer,
+        }));
+        setQuizzes(mapped);
+      }
+    }).catch(() => { /* 使用默认数据 */ }).finally(() => setDataLoading(false));
+  }, []);
+
+  const dayIdx = new Date().getDate() % quizzes.length;
+  const quiz = quizzes[dayIdx];
+
+  if (dataLoading) {
+    return (
+      <div className="bg-slate-900/60 rounded-2xl border border-amber-500/20 p-5 flex items-center justify-center min-h-[200px]">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="bg-slate-900/60 rounded-2xl border border-amber-500/20 p-5">

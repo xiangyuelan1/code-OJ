@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { problemsAPI, pointsAPI, profileAPI, dailyAPI, discussionAPI, matchAPI, starpathAPI } from '../services/api';
+import { Link, useNavigate } from 'react-router-dom';
+import { problemsAPI, pointsAPI, profileAPI, dailyAPI, discussionAPI, matchAPI, starpathAPI, checkinAPI } from '../services/api';
 import { useAuthStore } from '../stores/auth.store';
 import { usePointsStore } from '../stores/points.store';
 import {
@@ -8,7 +8,7 @@ import {
   ArrowRight, ChevronRight, BookOpen, Target, Flame,
   Terminal, Shield, Brain, Sparkles, CalendarCheck,
   TrendingUp, MessageSquare, AlertTriangle, CheckCircle2,
-  ThumbsUp, Globe, BarChart3, Clock, Play,
+  ThumbsUp, BarChart3, Clock, Play, Gift, Star, Check,
 } from 'lucide-react';
 
 interface PublicStats {
@@ -85,6 +85,36 @@ interface LastPracticeData {
   nextProblem: { id: string; title: string; difficulty: string; type: string } | null;
 }
 
+interface CheckInStatus {
+  todayCheckedIn: boolean;
+  streakDays: number;
+  thisWeekCheckIns: string[];
+  totalCheckIns: number;
+}
+
+/** 签到里程碑奖励配置 */
+const CHECKIN_MILESTONES = [
+  { days: 7, bonus: 20, label: '7天' },
+  { days: 14, bonus: 50, label: '14天' },
+  { days: 30, bonus: 100, label: '30天' },
+];
+
+const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
+
+/** 获取当前自然周（周一至周日）的日期字符串数组 */
+function getWeekDates(): string[] {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=周日
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + mondayOffset);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d.toISOString().slice(0, 10);
+  });
+}
+
 const RADAR_DIMENSIONS = ['算法思维', '代码实现', '调试能力', '优化意识', '数学建模'];
 const RADAR_COLORS: Record<string, string> = {
   '算法思维': 'text-cyan-400',
@@ -121,16 +151,6 @@ function getTypeLabel(t: string) {
   }
 }
 
-/** 生成最近7天日期标签 */
-function getLast7Days(): string[] {
-  const days: string[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    days.push(d.toLocaleDateString('zh-CN', { weekday: 'short' }));
-  }
-  return days;
-}
 
 /** SVG 能力雷达图：五边形 + 数据填充 */
 function AbilityRadar({ data }: { data: Record<string, number> }) {
@@ -209,6 +229,13 @@ export function HomePage() {
   const [dailyGoalProgress, setDailyGoalProgress] = useState(0);
   const [lastPractice, setLastPractice] = useState<LastPracticeData | null>(null);
 
+  /** 签到状态 */
+  const [checkinStatus, setCheckinStatus] = useState<CheckInStatus | null>(null);
+  const [checkinLoading, setCheckinLoading] = useState(false);
+  const [checkinPointsEarned, setCheckinPointsEarned] = useState<number | null>(null);
+
+  const navigate = useNavigate();
+
   useEffect(() => {
     if (isAuthenticated) {
       loadAuthData();
@@ -219,7 +246,7 @@ export function HomePage() {
 
   const loadAuthData = async () => {
     try {
-      const [profileRes, recRes, dailyRes, statsRes, lbRes, hotRes, matchRes, starMapRes, lastPracticeRes] = await Promise.all([
+      const [profileRes, recRes, dailyRes, statsRes, lbRes, hotRes, matchRes, starMapRes, lastPracticeRes, checkinRes] = await Promise.all([
         profileAPI.getMine(),
         profileAPI.getRecommendations(5),
         dailyAPI.getToday(),
@@ -229,6 +256,7 @@ export function HomePage() {
         matchAPI.getHistory(5).catch(() => ({ success: false, data: [] })),
         starpathAPI.getMap().catch(() => ({ success: false, data: null })),
         problemsAPI.getLastPractice().catch(() => ({ success: false, data: null })),
+        checkinAPI.getStatus().catch(() => ({ success: false, data: null })),
       ]);
       if (profileRes.success) setProfileData(profileRes.data);
       if (recRes.success) setRecommendations(recRes.data || []);
@@ -237,6 +265,7 @@ export function HomePage() {
       if (lbRes.success) setLeaderboard(lbRes.data || []);
       if (hotRes.success) setHotDiscussions(hotRes.data || []);
       if (matchRes.success) setMatchHistory(matchRes.data || []);
+      if (checkinRes.success && checkinRes.data) setCheckinStatus(checkinRes.data);
       if (starMapRes.success && starMapRes.data) {
         setStarMapSummary({
           totalPlanets: starMapRes.data.totalPlanets || 0,
@@ -268,6 +297,28 @@ export function HomePage() {
     setDailyGoalProgress(todayProgress);
   };
 
+  /** 执行签到 */
+  const handleCheckin = async () => {
+    if (checkinLoading || checkinStatus?.todayCheckedIn) return;
+    setCheckinLoading(true);
+    try {
+      const res = await checkinAPI.checkin();
+      if (res.success && res.data) {
+        setCheckinPointsEarned(res.data.pointsEarned);
+        // 刷新签到状态
+        const statusRes = await checkinAPI.getStatus();
+        if (statusRes.success && statusRes.data) setCheckinStatus(statusRes.data);
+        fetchMyPoints();
+        // 3秒后隐藏积分提示
+        setTimeout(() => setCheckinPointsEarned(null), 3000);
+      }
+    } catch {
+      /* 签到失败不阻塞 */
+    } finally {
+      setCheckinLoading(false);
+    }
+  };
+
   const loadPublicData = async () => {
     try {
       const [statsRes, lbRes, problemsRes, hotRes] = await Promise.all([
@@ -288,7 +339,6 @@ export function HomePage() {
   const streakDays = profileData?.profile?.streakDays ?? 0;
   const abilityRadar = profileData?.profile?.abilityRadar ?? {};
   const weakPoints = (profileData?.profile?.weakPoints ?? []).slice(0, 3);
-  const last7Days = getLast7Days();
 
   /* ── 未登录用户 ── */
   if (!isAuthenticated) {
@@ -675,78 +725,217 @@ export function HomePage() {
         </section>
       )}
 
-      {/* 今日任务 + 每日一题 */}
-      <section className="grid lg:grid-cols-5 gap-6">
-
-        {/* AI 推荐题目 */}
-        <div className="lg:col-span-3 bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-cyan-400" />
-              今日推荐
+      {/* ═══ 每日一题 & 签到 ═══ 统一模块，作为核心展示区域 */}
+      <section className="relative overflow-hidden rounded-2xl border border-amber-500/20">
+        {/* 渐变背景 */}
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-600/10 via-slate-900 to-cyan-600/10" />
+        <div className="absolute inset-0 opacity-[0.02]"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23fbbf24' fill-opacity='1'%3E%3Cpath d='M20 20.5V18H0v-2h20v-2l2 3-2 3zm0-7V11H0V9h20V7l2 3-2 3z'/%3E%3C/g%3E%3C/svg%3E")`,
+          }}
+        />
+        <div className="relative">
+          {/* 标题栏 */}
+          <div className="flex items-center justify-between px-6 py-5 md:px-8 border-b border-slate-700/30">
+            <h2 className="text-xl font-bold text-white flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-amber-500/15 border border-amber-500/25">
+                <CalendarCheck className="h-6 w-6 text-amber-400" />
+              </div>
+              每日一题 & 签到
             </h2>
-            <Link to="/categories" className="text-sm text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
-              更多题目 <ArrowRight className="h-3.5 w-3.5" />
+            <Link to="/checkin" className="text-sm text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors">
+              查看完整记录 <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
-          <div className="divide-y divide-slate-700/50">
-            {recommendations.length === 0 ? (
-              <div className="px-6 py-10 text-center text-slate-500">暂无推荐题目，先做几道题吧</div>
-            ) : (
-              recommendations.map((p) => (
-                <div key={p.id} className="flex items-center justify-between px-6 py-3.5 hover:bg-slate-700/30 transition-colors group">
-                  <Link to={`/problem/${p.id}/solve`} className="flex items-center gap-3 min-w-0 flex-1">
-                    <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium border ${getDifficultyStyle(p.difficulty)}`}>
-                      {getDifficultyLabel(p.difficulty)}
-                    </span>
-                    <span className="text-white font-medium truncate group-hover:text-cyan-400 transition-colors">{p.title}</span>
-                  </Link>
-                  <Link to={`/problem/${p.id}/solve`}
-                    className="shrink-0 ml-3 text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    开始 <ChevronRight className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
 
-        {/* 每日一题 */}
-        <div className="lg:col-span-2 bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-700/50">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <CalendarCheck className="h-5 w-5 text-amber-400" />
-              每日一题
-            </h2>
-          </div>
-          {dailyChallenge?.problem ? (
-            <div className="p-6">
-              <div className="flex items-center gap-2 mb-3">
-                <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getDifficultyStyle(dailyChallenge.difficulty)}`}>
-                  {getDifficultyLabel(dailyChallenge.difficulty)}
-                </span>
-                {dailyChallenge.completed && (
-                  <span className="flex items-center gap-1 text-xs text-emerald-400">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> 已完成
-                  </span>
-                )}
-              </div>
-              <h3 className="text-white font-semibold text-lg mb-4">{dailyChallenge.problem.title}</h3>
-              <Link
-                to={`/problem/${dailyChallenge.problem.id}/solve`}
-                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all ${
-                  dailyChallenge.completed
-                    ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25'
-                    : 'bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white shadow-lg shadow-cyan-500/25'
-                }`}
-              >
-                {dailyChallenge.completed ? '再来一次' : '开始挑战'}
-                <ArrowRight className="h-4 w-4" />
-              </Link>
+          <div className="grid lg:grid-cols-2 gap-0 lg:divide-x divide-slate-700/30">
+            {/* 左侧：今日题目 + 推荐列表 */}
+            <div className="p-6 md:p-8">
+              {/* 今日挑战题目 */}
+              {dailyChallenge?.problem ? (
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Today&apos;s Challenge</span>
+                    {dailyChallenge.completed && (
+                      <span className="flex items-center gap-1 text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                        <CheckCircle2 className="h-3 w-3" /> 已完成
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-white font-bold text-xl mb-3">{dailyChallenge.problem.title}</h3>
+                  <div className="flex flex-wrap items-center gap-2 mb-4">
+                    <span className={`px-2.5 py-1 rounded-md text-xs font-semibold border ${getDifficultyStyle(dailyChallenge.difficulty)}`}>
+                      {getDifficultyLabel(dailyChallenge.difficulty)}
+                    </span>
+                    {dailyChallenge.problem.tags && dailyChallenge.problem.tags.split(',').slice(0, 3).map(tag => (
+                      <span key={tag.trim()} className="px-2 py-0.5 rounded text-xs text-slate-400 bg-slate-700/50 border border-slate-600/50">
+                        {tag.trim()}
+                      </span>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => navigate(`/problem/${dailyChallenge.problem.id}/solve`)}
+                    className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all ${
+                      dailyChallenge.completed
+                        ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25'
+                        : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 hover:scale-[1.02]'
+                    }`}
+                  >
+                    <Play className="h-4 w-4" />
+                    {dailyChallenge.completed ? '再来一次' : '开始做题'}
+                  </button>
+                </div>
+              ) : (
+                <div className="mb-6 py-8 text-center text-slate-500">今日挑战题目准备中…</div>
+              )}
+
+              {/* AI 推荐题目列表 */}
+              {recommendations.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-cyan-400" />
+                      AI 推荐
+                    </span>
+                    <Link to="/categories" className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+                      更多 <ChevronRight className="h-3 w-3" />
+                    </Link>
+                  </div>
+                  <div className="space-y-1.5">
+                    {recommendations.slice(0, 4).map((p) => (
+                      <Link key={p.id} to={`/problem/${p.id}/solve`}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-700/40 transition-colors group">
+                        <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium border ${getDifficultyStyle(p.difficulty)}`}>
+                          {getDifficultyLabel(p.difficulty)}
+                        </span>
+                        <span className="text-sm text-white font-medium truncate group-hover:text-cyan-400 transition-colors">{p.title}</span>
+                        <ChevronRight className="h-3.5 w-3.5 text-slate-600 ml-auto shrink-0 group-hover:text-cyan-400 transition-colors" />
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="p-6 text-center text-slate-500">今日挑战题目准备中…</div>
-          )}
+
+            {/* 右侧：签到区域 */}
+            <div className="p-6 md:p-8">
+              {/* 签到按钮 + 连续天数 */}
+              <div className="flex items-center gap-5 mb-6">
+                <button
+                  onClick={handleCheckin}
+                  disabled={checkinLoading || checkinStatus?.todayCheckedIn}
+                  className={`relative shrink-0 w-20 h-20 rounded-2xl font-bold text-sm transition-all ${
+                    checkinStatus?.todayCheckedIn
+                      ? 'bg-emerald-500/15 border-2 border-emerald-500/40 text-emerald-400'
+                      : 'bg-gradient-to-br from-amber-500 to-orange-500 border-2 border-amber-400/50 text-white shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50 hover:scale-105 active:scale-95'
+                  } flex flex-col items-center justify-center gap-1`}
+                >
+                  {checkinStatus?.todayCheckedIn ? (
+                    <>
+                      <Check className="h-6 w-6" />
+                      <span className="text-xs">已签到</span>
+                    </>
+                  ) : (
+                    <>
+                      <CalendarCheck className="h-6 w-6" />
+                      <span className="text-xs">{checkinLoading ? '签到中' : '签到'}</span>
+                    </>
+                  )}
+                  {/* 积分浮动提示 */}
+                  {checkinPointsEarned !== null && (
+                    <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-sm font-bold text-cyan-300 animate-bounce">
+                      +{checkinPointsEarned} 积分
+                    </span>
+                  )}
+                </button>
+                <div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl font-extrabold text-white">{checkinStatus?.streakDays ?? streakDays}</span>
+                    <span className="text-sm text-slate-400">天连续</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    累计签到 {checkinStatus?.totalCheckIns ?? 0} 天
+                  </p>
+                </div>
+              </div>
+
+              {/* 本周签到日历 */}
+              <div className="mb-6">
+                <h4 className="text-sm font-semibold text-slate-300 mb-3">本周签到</h4>
+                <div className="grid grid-cols-7 gap-2">
+                  {(() => {
+                    const weekDates = getWeekDates();
+                    const checkedSet = new Set(checkinStatus?.thisWeekCheckIns ?? []);
+                    const todayStr = new Date().toISOString().slice(0, 10);
+                    return weekDates.map((dateStr, i) => {
+                      const isChecked = checkedSet.has(dateStr);
+                      const isToday = dateStr === todayStr;
+                      return (
+                        <div key={dateStr} className="flex flex-col items-center gap-1.5">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold transition-all ${
+                            isChecked
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-sm shadow-emerald-500/20'
+                              : isToday
+                                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                : 'bg-slate-800/60 text-slate-600 border border-slate-700/50'
+                          }`}>
+                            {isChecked ? <Check className="h-4 w-4" /> : ''}
+                          </div>
+                          <span className={`text-[10px] ${isToday ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
+                            {WEEKDAY_LABELS[i]}
+                          </span>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+
+              {/* 里程碑奖励进度 */}
+              <div>
+                <h4 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                  <Gift className="h-4 w-4 text-purple-400" />
+                  里程碑奖励
+                </h4>
+                <div className="space-y-3">
+                  {CHECKIN_MILESTONES.map(({ days, bonus, label }) => {
+                    const currentStreak = checkinStatus?.streakDays ?? streakDays;
+                    const progress = Math.min(100, Math.round((currentStreak / days) * 100));
+                    const achieved = currentStreak >= days;
+                    return (
+                      <div key={days} className="flex items-center gap-3">
+                        <div className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${
+                          achieved
+                            ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                            : 'bg-slate-800 text-slate-500 border border-slate-700'
+                        }`}>
+                          {achieved ? <Star className="h-4 w-4" /> : <span className="text-[10px] font-bold">{label}</span>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className={`text-xs font-medium ${achieved ? 'text-purple-400' : 'text-slate-400'}`}>
+                              连续 {days} 天
+                            </span>
+                            <span className={`text-xs font-semibold ${achieved ? 'text-amber-400' : 'text-slate-500'}`}>
+                              +{bonus} 积分
+                            </span>
+                          </div>
+                          <div className="h-1.5 bg-slate-700/80 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                achieved ? 'bg-gradient-to-r from-purple-500 to-purple-400' : 'bg-gradient-to-r from-slate-500 to-slate-400'
+                              }`}
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -892,9 +1081,8 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* 学习进度 */}
-      <section className="grid lg:grid-cols-3 gap-6">
-        {/* 本周进度 */}
+      {/* 学习进度 - 本周刷题 + 每日目标 */}
+      <section className="grid lg:grid-cols-2 gap-6">
         <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-700/50">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -915,36 +1103,6 @@ export function HomePage() {
           </div>
         </div>
 
-        {/* 7天连续打卡 */}
-        <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-700/50">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <CalendarCheck className="h-5 w-5 text-emerald-400" />
-              连续打卡
-            </h2>
-          </div>
-          <div className="p-6">
-            <div className="grid grid-cols-7 gap-2">
-              {last7Days.map((day, i) => {
-                const checked = i < streakDays && i >= 7 - streakDays;
-                return (
-                  <div key={i} className="flex flex-col items-center gap-1.5">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
-                      checked
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-slate-700/50 text-slate-600 border border-slate-700'
-                    }`}>
-                      {checked ? '✓' : ''}
-                    </div>
-                    <span className="text-[10px] text-slate-500">{day}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* 每日目标 */}
         <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-700/50">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
