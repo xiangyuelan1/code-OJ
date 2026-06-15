@@ -301,6 +301,7 @@ export function Navbar() {
 
   const userMenuItems: NavItem[] = [
     { label: '个人中心', to: '/profile', icon: User, description: '资料、能力画像和学习统计', auth: true },
+    ...(FEATURE_PAYMENT ? [{ label: '升级服务', to: '/payment', icon: Crown, description: '查看会员权益和定价方案' }] : []),
     { label: '下载 App', to: '/app-download', icon: MonitorSmartphone, description: '移动端访问和安装说明' },
   ];
 
@@ -325,6 +326,24 @@ export function Navbar() {
           </div>
 
           <div className="hidden items-center gap-3 lg:flex">
+            {/* 全量版：升级服务独立按钮（未登录或试用/免费用户可见） */}
+            {FEATURE_PAYMENT && (() => {
+              if (!isAuthenticated) return (
+                <Link to="/payment" className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-1.5 text-sm font-medium text-white shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition">
+                  <Crown className="h-3.5 w-3.5" />
+                  <span>升级服务</span>
+                </Link>
+              );
+              const type = accessStatus?.accessType?.toUpperCase?.();
+              if (user?.role === 'ADMIN' || type === 'PAID' || type === 'CLASS') return null;
+              return (
+                <Link to="/payment" className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-1.5 text-sm font-medium text-white shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition">
+                  <Crown className="h-3.5 w-3.5" />
+                  <span>升级服务</span>
+                </Link>
+              );
+            })()}
+
             {isAuthenticated ? (
               <>
                 {(() => {
