@@ -123,6 +123,7 @@ export function AdminProblemsPage() {
   const [batchApplyingSuggestions, setBatchApplyingSuggestions] = useState(false);
   const [organizeLoading, setOrganizeLoading] = useState(false);
   const [organizeReport, setOrganizeReport] = useState<OrganizeReport | null>(null);
+  const [organizeBatchSize, setOrganizeBatchSize] = useState(30);
 
   const [showAiGenerate, setShowAiGenerate] = useState(false);
   const [aiKeywords, setAiKeywords] = useState('');
@@ -414,7 +415,7 @@ export function AdminProblemsPage() {
     setOrganizeLoading(true);
     setShowClassificationSuggestions(true);
     try {
-      const res = await knowledgeTreeAPI.organizeUnassignedProblems({ limit: 30, autoApplyThreshold: 85 });
+      const res = await knowledgeTreeAPI.organizeUnassignedProblems({ limit: organizeBatchSize, autoApplyThreshold: 85 });
       if (res.success) {
         setOrganizeReport(res.data);
         await loadClassificationSuggestions();
@@ -664,14 +665,29 @@ export function AdminProblemsPage() {
             <Upload className="h-5 w-5 mr-2" />
             批量导入
           </button>
-          <button
-            onClick={handleOrganizeKnowledgeBase}
-            disabled={organizeLoading || classifyLoading}
-            className="flex items-center bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-cyan-900/20"
-          >
-            {organizeLoading ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Sparkles className="h-5 w-5 mr-2" />}
-            {organizeLoading ? '整理中...' : '一键整理知识库'}
-          </button>
+          <div className="flex items-center bg-slate-700/50 rounded-lg overflow-hidden">
+            <select
+              value={organizeBatchSize}
+              onChange={e => setOrganizeBatchSize(Number(e.target.value))}
+              disabled={organizeLoading || classifyLoading}
+              className="bg-transparent text-sm text-slate-200 px-3 py-3 border-r border-slate-600 focus:outline-none disabled:opacity-50 cursor-pointer"
+            >
+              <option value={10}>10题</option>
+              <option value={20}>20题</option>
+              <option value={30}>30题</option>
+              <option value={50}>50题</option>
+              <option value={100}>100题</option>
+              <option value={200}>全部</option>
+            </select>
+            <button
+              onClick={handleOrganizeKnowledgeBase}
+              disabled={organizeLoading || classifyLoading}
+              className="flex items-center bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-semibold py-3 px-6 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-cyan-900/20"
+            >
+              {organizeLoading ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Sparkles className="h-5 w-5 mr-2" />}
+              {organizeLoading ? '整理中...' : '一键整理知识库'}
+            </button>
+          </div>
           <button
             onClick={handleClassifyUnassignedProblems}
             disabled={classifyLoading || organizeLoading}
@@ -813,7 +829,7 @@ export function AdminProblemsPage() {
                 className="flex items-center px-4 py-2 bg-cyan-500/20 text-cyan-300 rounded-lg hover:bg-cyan-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {organizeLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-                再整理30题
+                再整理{organizeBatchSize}题
               </button>
               <button
                 onClick={handleApplyHighConfidenceSuggestions}

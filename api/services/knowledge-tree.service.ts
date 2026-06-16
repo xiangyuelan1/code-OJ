@@ -110,7 +110,8 @@ export class KnowledgeTreeService {
     }
   }
 
-  private clampLimit(limit: number, max = 30) {
+  /** 限制批次大小，默认最大200（可按调用方需要指定） */
+  private clampLimit(limit: number, max = 200) {
     return Math.max(1, Math.min(max, Math.floor(Number(limit) || 20)));
   }
 

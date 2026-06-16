@@ -88,6 +88,8 @@ export function AdminKnowledgeTreePage() {
   const [organizeLoading, setOrganizeLoading] = useState(false);
   const [organizeReport, setOrganizeReport] = useState<OrganizeReport | null>(null);
   const [organizeProgress, setOrganizeProgress] = useState<{ current: number; total: number; phase: string } | null>(null);
+  // 一键整理的批次数量配置
+  const [organizeBatchSize, setOrganizeBatchSize] = useState(30);
 
   useEffect(() => {
     loadTree();
@@ -292,7 +294,7 @@ export function AdminKnowledgeTreePage() {
     setOrganizeProgress(null);
     setOrganizeReport(null);
     try {
-      const res = await knowledgeTreeAPI.organizeUnassignedProblems({ limit: 30, autoApplyThreshold: 85 });
+      const res = await knowledgeTreeAPI.organizeUnassignedProblems({ limit: organizeBatchSize, autoApplyThreshold: 85 });
       if (!res.success || !res.data?.taskId) {
         throw new Error('启动整理任务失败');
       }
@@ -594,14 +596,30 @@ export function AdminKnowledgeTreePage() {
           <p className="text-slate-400 mt-2">管理题目分类的知识树结构</p>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleOrganizeKnowledgeBase}
-            disabled={organizeLoading}
-            className="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-          >
-            {organizeLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-            {organizeLoading ? '整理中...' : '一键整理知识库'}
-          </button>
+          {/* 批次数量选择 + 一键整理按钮 */}
+          <div className="flex items-center bg-slate-700/50 rounded-lg overflow-hidden">
+            <select
+              value={organizeBatchSize}
+              onChange={e => setOrganizeBatchSize(Number(e.target.value))}
+              disabled={organizeLoading}
+              className="bg-transparent text-sm text-slate-200 px-3 py-2 border-r border-slate-600 focus:outline-none disabled:opacity-50 cursor-pointer"
+            >
+              <option value={10}>10题</option>
+              <option value={20}>20题</option>
+              <option value={30}>30题</option>
+              <option value={50}>50题</option>
+              <option value={100}>100题</option>
+              <option value={200}>全部</option>
+            </select>
+            <button
+              onClick={handleOrganizeKnowledgeBase}
+              disabled={organizeLoading}
+              className="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+            >
+              {organizeLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+              {organizeLoading ? '整理中...' : '一键整理知识库'}
+            </button>
+          </div>
           <button
             onClick={() => { setShowAutoComposeModal(true); setAutoComposeResult(null); }}
             className="flex items-center px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors"
