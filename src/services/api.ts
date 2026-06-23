@@ -392,12 +392,19 @@ export const promotionAPI = {
   createPlan: (data: any) => api.post('/api/promotions/plans', data),
   getPlans: () => api.get('/api/promotions/plans'),
   getActivePlans: () => api.get('/api/promotions/plans/active'),
+  getActivePlansGrouped: () => api.get('/api/promotions/plans/grouped'),
   updatePlan: (id: string, data: any) => api.put(`/api/promotions/plans/${id}`, data),
   togglePlan: (id: string) => api.patch(`/api/promotions/plans/${id}/toggle`),
   deletePlan: (id: string) => api.delete(`/api/promotions/plans/${id}`),
   createOrder: (data: any) => api.post('/api/promotions/orders', data),
   getOrders: () => api.get('/api/promotions/orders'),
   getFinancial: () => api.get('/api/promotions/financial'),
+  // FAQ 管理
+  getFaq: () => api.get('/api/promotions/faq'),
+  updateFaq: (faqList: any[]) => api.put('/api/promotions/admin/faq', { faqList }),
+  // 种子数据 & 重置
+  seedDefaults: () => api.post('/api/promotions/admin/seed-defaults'),
+  resetDefaults: () => api.post('/api/promotions/admin/reset-defaults'),
 };
 
 export const profileAPI = {

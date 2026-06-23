@@ -124,11 +124,17 @@ export class PromotionService {
   async createPlan(data: {
     name: string;
     price: number;
-    duration: number;
-    unit: string;
+    priceDisplay?: string;
+    duration?: number;
+    unit?: string;
+    period?: string;
+    altPrice?: string | null;
     features: string[];
-    isPopular: boolean;
-    sortOrder: number;
+    category?: string;
+    highlight?: boolean;
+    color?: string;
+    isPopular?: boolean;
+    sortOrder?: number;
     studentQuota?: number;
     classQuota?: number;
     aiTokenQuota?: number;
@@ -137,10 +143,16 @@ export class PromotionService {
       data: {
         name: data.name,
         price: data.price,
+        priceDisplay: data.priceDisplay || `¥${data.price}`,
         duration: data.duration || 30,
         unit: data.unit || 'DAY',
+        period: data.period || '',
+        altPrice: data.altPrice || null,
         features: JSON.stringify(data.features || []),
-        isPopular: data.isPopular || false,
+        category: data.category || 'student',
+        highlight: data.highlight || false,
+        color: data.color || 'cyan',
+        isPopular: data.isPopular ?? data.highlight ?? false,
         sortOrder: data.sortOrder || 0,
         studentQuota: data.studentQuota ?? 50,
         classQuota: data.classQuota ?? 10,
@@ -162,12 +174,49 @@ export class PromotionService {
     });
   }
 
+  /** 获取按 category 分组的活跃方案（供前端 PaymentPage 使用） */
+  async getActivePlansGrouped() {
+    const plans = await prisma.pricingPlan.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { price: 'asc' }],
+    });
+    const grouped: Record<string, any[]> = { student: [], teacher: [], deploy: [] };
+    for (const plan of plans) {
+      const cat = plan.category || 'student';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(plan);
+    }
+    return grouped;
+  }
+
+  /** 获取FAQ数据 */
+  async getFaq(): Promise<{ question: string; answer: string }[]> {
+    const config = await prisma.systemConfig.findUnique({ where: { key: 'payment_faq' } });
+    if (!config) return [];
+    try { return JSON.parse(config.value); } catch { return []; }
+  }
+
+  /** 更新FAQ数据 */
+  async updateFaq(faqList: { question: string; answer: string }[]): Promise<void> {
+    await prisma.systemConfig.upsert({
+      where: { key: 'payment_faq' },
+      update: { value: JSON.stringify(faqList) },
+      create: { key: 'payment_faq', value: JSON.stringify(faqList) },
+    });
+  }
+
   async updatePlan(id: string, data: {
     name?: string;
     price?: number;
+    priceDisplay?: string;
     duration?: number;
     unit?: string;
+    period?: string;
+    altPrice?: string | null;
     features?: string[];
+    category?: string;
+    highlight?: boolean;
+    color?: string;
     isPopular?: boolean;
     sortOrder?: number;
     studentQuota?: number;
@@ -177,9 +226,15 @@ export class PromotionService {
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.price !== undefined) updateData.price = data.price;
+    if (data.priceDisplay !== undefined) updateData.priceDisplay = data.priceDisplay;
     if (data.duration !== undefined) updateData.duration = data.duration;
     if (data.unit !== undefined) updateData.unit = data.unit;
+    if (data.period !== undefined) updateData.period = data.period;
+    if (data.altPrice !== undefined) updateData.altPrice = data.altPrice;
     if (data.features !== undefined) updateData.features = JSON.stringify(data.features);
+    if (data.category !== undefined) updateData.category = data.category;
+    if (data.highlight !== undefined) updateData.highlight = data.highlight;
+    if (data.color !== undefined) updateData.color = data.color;
     if (data.isPopular !== undefined) updateData.isPopular = data.isPopular;
     if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
     if (data.studentQuota !== undefined) updateData.studentQuota = data.studentQuota;

@@ -25,183 +25,63 @@ interface FAQItem {
   answer: string;
 }
 
-// ─── 静态定价数据 ────────────────────────────────────────────────────────────────
+interface PlanItem {
+  id: string;
+  name: string;
+  priceDisplay: string;
+  period: string;
+  altPrice?: string | null;
+  highlight: boolean;
+  features: string[];
+  color: string;
+}
 
-const STUDENT_PLANS = [
-  {
-    id: 'free',
-    name: '免费版',
-    price: '¥0',
-    period: '',
-    highlight: false,
-    features: [
-      '3个知识树节点做题',
-      '基础判题服务',
-      '能力雷达（只读）',
-      '社区浏览',
-    ],
-  },
-  {
-    id: 'member',
-    name: '会员',
-    price: '¥19.9',
-    period: '/月',
-    altPrice: '¥169/年',
-    highlight: true,
-    features: [
-      '全量知识树无限做题',
-      'AI 提示 / AI 学伴 / AI 判题',
-      '社区发帖与互动',
-      '在线对战系统',
-      '成就系统',
-      '编程星途规划',
-    ],
-  },
-  {
-    id: 'class',
-    name: '班级会员',
-    price: '免费',
-    period: '（跟随教师）',
-    highlight: false,
-    features: [
-      '等同会员全部权益',
-      '由教师开通，无需自行付费',
-      '教师订阅失效则自动失效',
-    ],
-  },
+// ─── 静态兜底数据（仅在API未返回时使用） ──────────────────────────────────────────
+
+const FALLBACK_STUDENT_PLANS: PlanItem[] = [
+  { id: 'free', name: '免费版', priceDisplay: '¥0', period: '', highlight: false, color: 'cyan', features: ['3个知识树节点做题', '基础判题服务', '能力雷达（只读）', '社区浏览'] },
+  { id: 'member', name: '会员', priceDisplay: '¥19.9', period: '/月', altPrice: '¥169/年', highlight: true, color: 'cyan', features: ['全量知识树无限做题', 'AI 提示 / AI 学伴 / AI 判题', '社区发帖与互动', '在线对战系统', '成就系统', '编程星途规划'] },
+  { id: 'class', name: '班级会员', priceDisplay: '免费', period: '（跟随教师）', highlight: false, color: 'cyan', features: ['等同会员全部权益', '由教师开通，无需自行付费', '教师订阅失效则自动失效'] },
 ];
 
-const TEACHER_PLANS = [
-  {
-    id: 'entry',
-    name: '入门版',
-    price: '¥998',
-    period: '/年',
-    highlight: false,
-    color: 'cyan',
-    features: [
-      '30 学生名额',
-      '3 个班级',
-      'AI 月额度 5 万 tokens',
-      '基础数据看板',
-      '在线作业批改',
-    ],
-  },
-  {
-    id: 'standard',
-    name: '标准版',
-    price: '¥2,998',
-    period: '/年',
-    highlight: true,
-    color: 'cyan',
-    features: [
-      '100 学生名额',
-      '10 个班级',
-      'AI 月额度 20 万 tokens',
-      '完整数据看板',
-      '学情分析报告',
-      '自定义题目',
-    ],
-  },
-  {
-    id: 'pro',
-    name: '专业版',
-    price: '¥6,998',
-    period: '/年',
-    highlight: false,
-    color: 'cyan',
-    features: [
-      '300 学生名额',
-      '不限班级数量',
-      'AI 月额度 50 万 tokens',
-      '定制考试系统',
-      '高级学情分析',
-      '优先技术支持',
-    ],
-  },
-  {
-    id: 'enterprise',
-    name: '企业/学校',
-    price: '面议',
-    period: '',
-    highlight: false,
-    color: 'purple',
-    features: [
-      '不限学生名额',
-      '私有部署可选',
-      '定制开发服务',
-      '专属技术支持',
-      '数据迁移服务',
-      'SLA 保障',
-    ],
-  },
+const FALLBACK_TEACHER_PLANS: PlanItem[] = [
+  { id: 'entry', name: '入门版', priceDisplay: '¥998', period: '/年', highlight: false, color: 'cyan', features: ['30 学生名额', '3 个班级', 'AI 月额度 5 万 tokens', '基础数据看板', '在线作业批改'] },
+  { id: 'standard', name: '标准版', priceDisplay: '¥2,998', period: '/年', highlight: true, color: 'cyan', features: ['100 学生名额', '10 个班级', 'AI 月额度 20 万 tokens', '完整数据看板', '学情分析报告', '自定义题目'] },
+  { id: 'pro', name: '专业版', priceDisplay: '¥6,998', period: '/年', highlight: false, color: 'cyan', features: ['300 学生名额', '不限班级数量', 'AI 月额度 50 万 tokens', '定制考试系统', '高级学情分析', '优先技术支持'] },
+  { id: 'enterprise', name: '企业/学校', priceDisplay: '面议', period: '', highlight: false, color: 'purple', features: ['不限学生名额', '私有部署可选', '定制开发服务', '专属技术支持', '数据迁移服务', 'SLA 保障'] },
 ];
 
-const DEPLOY_PLANS = [
-  {
-    id: 'basic-deploy',
-    name: '基础部署',
-    price: '¥20,000',
-    extra: '+ ¥5,000/年维护',
-    highlight: false,
-    features: [
-      '全功能系统部署',
-      'AI 功能需自备 API Key',
-      '安装部署指导',
-      '首年含基础维护',
-    ],
-  },
-  {
-    id: 'enterprise-deploy',
-    name: '企业部署',
-    price: '¥50,000+',
-    extra: '按需定制',
-    highlight: true,
-    features: [
-      '全功能 + 定制开发',
-      '专属技术支持',
-      '数据迁移服务',
-      'AI 功能全集成',
-      '持续运维保障',
-    ],
-  },
-  {
-    id: 'community',
-    name: '社区版',
-    price: '免费',
-    extra: '开源',
-    highlight: false,
-    features: [
-      '核心做题判题功能',
-      '无 AI 功能',
-      '无高级分析',
-      '社区支持',
-    ],
-  },
+const FALLBACK_DEPLOY_PLANS: PlanItem[] = [
+  { id: 'basic-deploy', name: '基础部署', priceDisplay: '¥20,000', period: '+ ¥5,000/年维护', highlight: false, color: 'cyan', features: ['全功能系统部署', 'AI 功能需自备 API Key', '安装部署指导', '首年含基础维护'] },
+  { id: 'enterprise-deploy', name: '企业部署', priceDisplay: '¥50,000+', period: '按需定制', highlight: true, color: 'cyan', features: ['全功能 + 定制开发', '专属技术支持', '数据迁移服务', 'AI 功能全集成', '持续运维保障'] },
+  { id: 'community', name: '社区版', priceDisplay: '免费', period: '开源', highlight: false, color: 'cyan', features: ['核心做题判题功能', '无 AI 功能', '无高级分析', '社区支持'] },
 ];
 
-const FAQ_LIST: FAQItem[] = [
-  {
-    question: '班级会员何时失效？',
-    answer: '班级会员的有效期跟随教师订阅。当教师订阅到期或取消时，其下所有班级会员将自动失效。教师续费后会自动恢复。',
-  },
-  {
-    question: '能否中途升级套餐？',
-    answer: '可以随时升级。升级时会按剩余天数折算差价，无需重复付费已使用的时间。',
-  },
-  {
-    question: '学生名额用完了怎么办？',
-    answer: '可以联系管理员升级到更高版本，也可以单独购买额外名额包。升级后已有数据完整保留。',
-  },
-  {
-    question: '私有部署支持哪些环境？',
-    answer: '支持 Linux 服务器部署（推荐 Ubuntu 20.04+），提供 Docker 一键部署方案。最低配置：4核8G内存，50G存储。',
-  },
-  {
-    question: '推广码和优惠可以叠加吗？',
-    answer: '推广码优惠与其他活动优惠不可叠加，以最优惠价格为准。推广码有有效期限制，请在有效期内使用。',
-  },
+const FALLBACK_FAQ_LIST: FAQItem[] = [
+  { question: '班级会员何时失效？', answer: '班级会员的有效期跟随教师订阅。当教师订阅到期或取消时，其下所有班级会员将自动失效。教师续费后会自动恢复。' },
+  { question: '能否中途升级套餐？', answer: '可以随时升级。升级时会按剩余天数折算差价，无需重复付费已使用的时间。' },
+  { question: '学生名额用完了怎么办？', answer: '可以联系管理员升级到更高版本，也可以单独购买额外名额包。升级后已有数据完整保留。' },
+  { question: '私有部署支持哪些环境？', answer: '支持 Linux 服务器部署（推荐 Ubuntu 20.04+），提供 Docker 一键部署方案。最低配置：4核8G内存，50G存储。' },
+  { question: '推广码和优惠可以叠加吗？', answer: '推广码优惠与其他活动优惠不可叠加，以最优惠价格为准。推广码有有效期限制，请在有效期内使用。' },
 ];
+
+// ─── 工具函数：将API返回的plan对象转为前端PlanItem ────────────────────────────────
+
+function parsePlanFromAPI(plan: any): PlanItem {
+  const features: string[] = (() => {
+    try { return JSON.parse(plan.features || '[]'); } catch { return []; }
+  })();
+  return {
+    id: plan.id,
+    name: plan.name,
+    priceDisplay: plan.priceDisplay || `¥${plan.price}`,
+    period: plan.period || '',
+    altPrice: plan.altPrice || null,
+    highlight: plan.highlight ?? plan.isPopular ?? false,
+    features,
+    color: plan.color || 'cyan',
+  };
+}
 
 // ─── 组件 ────────────────────────────────────────────────────────────────────────
 
@@ -213,6 +93,10 @@ export function PaymentPage() {
 
   // ── FAQ 展开状态 ──
   const [expandedFAQ, setExpandedFAQ] = useState<number | null>(null);
+
+  // ── 从API加载的分组方案数据 ──
+  const [groupedPlans, setGroupedPlans] = useState<Record<string, PlanItem[]> | null>(null);
+  const [faqList, setFaqList] = useState<FAQItem[]>(FALLBACK_FAQ_LIST);
 
   // ── 现有功能相关状态 ──
   const [paymentStatus, setPaymentStatus] = useState<any>(null);
@@ -226,7 +110,6 @@ export function PaymentPage() {
   const [promoCode, setPromoCode] = useState('');
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoMessage, setPromoMessage] = useState('');
-  const [pricingPlans, setPricingPlans] = useState<any[]>([]);
   const [contactQrCode, setContactQrCode] = useState<string | null>(null);
 
   // ── 数据加载 ──
@@ -235,7 +118,8 @@ export function PaymentPage() {
       fetchPaymentStatus(),
       fetchPaymentMethods(),
       fetchPaymentConfig(),
-      fetchPlans(),
+      fetchGroupedPlans(),
+      fetchFaq(),
       fetchContactQr(),
     ]).finally(() => setLoading(false));
   }, []);
@@ -285,11 +169,37 @@ export function PaymentPage() {
     }
   };
 
-  const fetchPlans = async () => {
+  /** 从API获取按分类分组的活跃方案 */
+  const fetchGroupedPlans = async () => {
     try {
-      const res = await promotionAPI.getActivePlans();
-      if (res.success) setPricingPlans(res.data || []);
-    } catch {}
+      const res = await promotionAPI.getActivePlansGrouped();
+      if (res.success && res.data) {
+        const data = res.data as Record<string, any[]>;
+        // 检查是否有任何分类包含数据
+        const hasAnyPlans = Object.values(data).some(arr => arr.length > 0);
+        if (hasAnyPlans) {
+          const grouped: Record<string, PlanItem[]> = {};
+          for (const [category, plans] of Object.entries(data)) {
+            grouped[category] = plans.map(parsePlanFromAPI);
+          }
+          setGroupedPlans(grouped);
+        }
+      }
+    } catch {
+      // API失败时使用兜底数据，不报错
+    }
+  };
+
+  /** 从API获取FAQ数据 */
+  const fetchFaq = async () => {
+    try {
+      const res = await promotionAPI.getFaq();
+      if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+        setFaqList(res.data);
+      }
+    } catch {
+      // API失败时使用兜底数据
+    }
   };
 
   const fetchContactQr = async () => {
@@ -367,6 +277,19 @@ export function PaymentPage() {
 
   const currentMethod = methods.find(m => m.method === selectedMethod);
 
+  // ── 获取当前tab对应的方案列表 ──
+  const getPlansForTab = (tab: PricingTab): PlanItem[] => {
+    if (groupedPlans) {
+      return groupedPlans[tab] || [];
+    }
+    // 兜底数据
+    switch (tab) {
+      case 'student': return FALLBACK_STUDENT_PLANS;
+      case 'teacher': return FALLBACK_TEACHER_PLANS;
+      case 'deploy': return FALLBACK_DEPLOY_PLANS;
+    }
+  };
+
   // ── 加载态 ──
   if (loading) {
     return (
@@ -375,6 +298,8 @@ export function PaymentPage() {
       </div>
     );
   }
+
+  const currentPlans = getPlansForTab(activeTab);
 
   return (
     <div className="max-w-6xl mx-auto px-4">
@@ -395,7 +320,16 @@ export function PaymentPage() {
         </p>
       </div>
 
-      {/* ═══ Tab 切换 ═══ */}
+      {/* ═══ 定价方案区域：统一使用Tab分组展示 ═══ */}
+      {groupedPlans && (
+        <div className="mb-2 text-center">
+          <span className="inline-flex items-center gap-1.5 text-sm text-slate-400">
+            <Shield className="h-4 w-4 text-cyan-400" />
+            以下为平台配置的定价方案
+          </span>
+        </div>
+      )}
+
       <div className="flex justify-center mb-10">
         <div className="inline-flex bg-slate-800 rounded-xl p-1.5 gap-1">
           <TabButton
@@ -419,91 +353,25 @@ export function PaymentPage() {
         </div>
       </div>
 
-      {/* ═══ 定价卡片区域 ═══ */}
-      {activeTab === 'student' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          {STUDENT_PLANS.map(plan => (
-            <PricingCard
-              key={plan.id}
-              name={plan.name}
-              price={plan.price}
-              period={plan.period}
-              altPrice={'altPrice' in plan ? plan.altPrice : undefined}
-              highlight={plan.highlight}
-              features={plan.features}
-              color="cyan"
-            />
-          ))}
-        </div>
-      )}
-
-      {activeTab === 'teacher' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-          {TEACHER_PLANS.map(plan => (
-            <PricingCard
-              key={plan.id}
-              name={plan.name}
-              price={plan.price}
-              period={plan.period}
-              highlight={plan.highlight}
-              features={plan.features}
-              color={plan.color as 'cyan' | 'purple'}
-            />
-          ))}
-        </div>
-      )}
-
-      {activeTab === 'deploy' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          {DEPLOY_PLANS.map(plan => (
-            <PricingCard
-              key={plan.id}
-              name={plan.name}
-              price={plan.price}
-              period={plan.extra}
-              highlight={plan.highlight}
-              features={plan.features}
-              color="cyan"
-            />
-          ))}
-        </div>
-      )}
-
-      {/* ═══ 数据库动态定价计划（如有） ═══ */}
-      {pricingPlans.length > 0 && (
-        <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-10">
-          <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-            <Shield className="h-5 w-5 text-cyan-400" />
-            当前活动方案
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {pricingPlans.map((plan: any) => (
-              <div
-                key={plan.id}
-                className={`rounded-xl border p-5 transition ${
-                  plan.recommended
-                    ? 'border-cyan-500/60 bg-cyan-500/5 ring-1 ring-cyan-500/20'
-                    : 'border-slate-600 bg-slate-700/30'
-                }`}
-              >
-                {plan.recommended && (
-                  <span className="inline-block mb-2 rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-300">
-                    推荐
-                  </span>
-                )}
-                <h3 className="text-lg font-semibold text-white">{plan.name}</h3>
-                {plan.description && <p className="text-sm text-slate-400 mt-1">{plan.description}</p>}
-                <div className="mt-3">
-                  <span className="text-2xl font-bold text-cyan-400">¥{plan.price}</span>
-                  {plan.duration && (
-                    <span className="text-sm text-slate-400 ml-1">/ {plan.duration}天</span>
-                  )}
-                </div>
-              </div>
-            ))}
+      <div className={`grid grid-cols-1 ${activeTab === 'teacher' ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-3'} gap-6 mb-12`}>
+        {currentPlans.map(plan => (
+          <PricingCard
+            key={plan.id}
+            name={plan.name}
+            price={plan.priceDisplay}
+            period={plan.period}
+            altPrice={plan.altPrice || undefined}
+            highlight={plan.highlight}
+            features={plan.features}
+            color={plan.color as 'cyan' | 'purple'}
+          />
+        ))}
+        {currentPlans.length === 0 && (
+          <div className="col-span-full text-center text-slate-400 py-12">
+            暂无方案数据
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ═══ FAQ 区域 ═══ */}
       <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-10">
@@ -512,7 +380,7 @@ export function PaymentPage() {
           常见问题
         </h2>
         <div className="space-y-2">
-          {FAQ_LIST.map((faq, idx) => (
+          {faqList.map((faq, idx) => (
             <div key={idx} className="border border-slate-700 rounded-lg overflow-hidden">
               <button
                 onClick={() => setExpandedFAQ(expandedFAQ === idx ? null : idx)}

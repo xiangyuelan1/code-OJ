@@ -326,20 +326,17 @@ export function Navbar() {
           </div>
 
           <div className="hidden items-center gap-3 lg:flex">
-            {/* 全量版：升级服务独立按钮（未登录或试用/免费用户可见） */}
+            {/* 全量版：升级服务按钮 — 所有页面始终可见，已付费用户显示"服务方案" */}
             {FEATURE_PAYMENT && (() => {
-              if (!isAuthenticated) return (
-                <Link to="/payment" className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-1.5 text-sm font-medium text-white shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition">
-                  <Crown className="h-3.5 w-3.5" />
-                  <span>升级服务</span>
-                </Link>
+              const isPaid = isAuthenticated && (
+                user?.role === 'ADMIN' ||
+                accessStatus?.accessType?.toUpperCase?.() === 'PAID' ||
+                accessStatus?.accessType?.toUpperCase?.() === 'CLASS'
               );
-              const type = accessStatus?.accessType?.toUpperCase?.();
-              if (user?.role === 'ADMIN' || type === 'PAID' || type === 'CLASS') return null;
               return (
-                <Link to="/payment" className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-1.5 text-sm font-medium text-white shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition">
+                <Link to="/payment" className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition ${isPaid ? 'border border-amber-500/40 text-amber-300 hover:bg-amber-500/10' : 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40'}`}>
                   <Crown className="h-3.5 w-3.5" />
-                  <span>升级服务</span>
+                  <span>{isPaid ? '服务方案' : '升级服务'}</span>
                 </Link>
               );
             })()}

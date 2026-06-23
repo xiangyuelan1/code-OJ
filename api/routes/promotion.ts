@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { promotionService } from '../services/promotion.service';
+import { seedDefaultPlansIfEmpty, resetToDefaults } from '../services/pricing-seed.service';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { roleMiddleware } from '../middleware/role.middleware';
 
@@ -91,6 +92,60 @@ router.get('/plans/active', async (_req, res) => {
   try {
     const plans = await promotionService.getActivePlans();
     res.json({ success: true, data: plans });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// 公开路由：获取按 category 分组的活跃定价计划
+router.get('/plans/grouped', async (_req, res) => {
+  try {
+    const grouped = await promotionService.getActivePlansGrouped();
+    res.json({ success: true, data: grouped });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// 公开路由：获取FAQ列表
+router.get('/faq', async (_req, res) => {
+  try {
+    const faq = await promotionService.getFaq();
+    res.json({ success: true, data: faq });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// 管理员路由：更新FAQ列表
+router.put('/admin/faq', authMiddleware, roleMiddleware('ADMIN'), async (req, res) => {
+  try {
+    const { faqList } = req.body;
+    if (!Array.isArray(faqList)) {
+      return res.status(400).json({ success: false, error: { message: 'faqList 必须是数组' } });
+    }
+    await promotionService.updateFaq(faqList);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// 管理员路由：用默认数据种子填充数据库
+router.post('/admin/seed-defaults', authMiddleware, roleMiddleware('ADMIN'), async (_req, res) => {
+  try {
+    await seedDefaultPlansIfEmpty();
+    res.json({ success: true, message: '种子数据已填充（仅在数据为空时生效）' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// 管理员路由：重置为默认定价方案和FAQ
+router.post('/admin/reset-defaults', authMiddleware, roleMiddleware('ADMIN'), async (_req, res) => {
+  try {
+    const result = await resetToDefaults();
+    res.json({ success: true, data: result, message: `已重置 ${result.plans} 个默认方案` });
   } catch (error: any) {
     res.status(500).json({ success: false, error: { message: error.message } });
   }

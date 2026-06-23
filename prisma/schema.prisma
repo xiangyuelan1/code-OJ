@@ -565,21 +565,27 @@ model PromotionUsage {
 }
 
 model PricingPlan {
-  id          String    @id @default(uuid())
-  name        String
-  price       Float
-  duration    Int       @default(30)
-  unit        String    @default("DAY")
-  features    String    @default("[]")
-  studentQuota Int      @default(50)   // 该计划包含的学生名额
-  classQuota    Int       @default(10)   // 该计划包含的班级名额
-  aiTokenQuota  Int       @default(0)    // 该计划的AI Token月度配额, 0表示不限制
-  isPopular   Boolean   @default(false)
-  isActive    Boolean   @default(true)
-  sortOrder   Int       @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  orders      Order[]
+  id            String    @id @default(uuid())
+  name          String
+  price         Float
+  priceDisplay  String    @default("")     // 前端展示的价格文本，如 "¥19.9"、"免费"、"面议"
+  duration      Int       @default(30)
+  unit          String    @default("DAY")
+  period        String    @default("")     // 前端展示的周期文本，如 "/月"、"/年"、"（跟随教师）"
+  altPrice      String?                    // 备选价格文本，如 "¥169/年"
+  features      String    @default("[]")
+  category      String    @default("student") // 方案分类: student / teacher / deploy
+  highlight     Boolean   @default(false)     // 是否为推荐方案（高亮显示）
+  color         String    @default("cyan")    // 卡片主题色: cyan / purple
+  studentQuota  Int       @default(50)        // 该计划包含的学生名额
+  classQuota    Int       @default(10)        // 该计划包含的班级名额
+  aiTokenQuota  Int       @default(0)         // 该计划的AI Token月度配额, 0表示不限制
+  isPopular     Boolean   @default(false)
+  isActive      Boolean   @default(true)
+  sortOrder     Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  orders        Order[]
 }
 
 model LearnerProfile {

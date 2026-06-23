@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import app from './app.js';
 import prisma from './lib/prisma.js';
 import { setupSocketIO } from './services/socket.service.js';
+import { seedDefaultPlansIfEmpty } from './services/pricing-seed.service.js';
 
 dotenv.config();
 
@@ -41,6 +42,13 @@ async function ensureSchemaColumns() {
     ['ExamAttempt', 'timeTaken', 'INTEGER', 'NULL'],
     ['KnowledgeTree', 'isTemporary', 'BOOLEAN', '0'],
     ['KnowledgeTree', 'source', 'TEXT', "'MANUAL'"],
+    // PricingPlan 新增字段
+    ['PricingPlan', 'priceDisplay', 'TEXT', "''"],
+    ['PricingPlan', 'period', 'TEXT', "''"],
+    ['PricingPlan', 'altPrice', 'TEXT', 'NULL'],
+    ['PricingPlan', 'category', 'TEXT', "'student'"],
+    ['PricingPlan', 'highlight', 'BOOLEAN', '0'],
+    ['PricingPlan', 'color', 'TEXT', "'cyan'"],
   ];
 
   let addedCount = 0;
@@ -182,6 +190,13 @@ async function initDatabase() {
     }
   } else {
     console.log(`[DB] ✅ Database has ${userCount} users, skipping seed`);
+  }
+
+  // 自动填充默认定价方案和FAQ（如果数据库中无数据）
+  try {
+    await seedDefaultPlansIfEmpty();
+  } catch (e: any) {
+    console.error('[DB] ⚠️ Seed pricing plans failed (non-fatal):', e.message);
   }
 }
 
