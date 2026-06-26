@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAuthStore } from '../stores/auth.store';
 import { coderAPI, enhancedAiAPI } from '../services/api';
+import { CoderAvatar } from './ui/CoderAvatar';
 
 // ============================================================
 // 类型定义
@@ -495,8 +496,8 @@ export function AIFloatingAssistant() {
       >
         {/* 呼吸动画 */}
         <span className="absolute inset-0 rounded-full bg-purple-400/20 animate-pulse" />
-        {/* 图标 */}
-        <Bot className="w-5 h-5 md:w-6 md:h-6 text-white relative z-10" />
+        {/* 柯德头像 */}
+        <CoderAvatar size={40} animated={false} className="relative z-10" />
         {/* 通知红点 */}
         {hasNotification && (
           <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-red-500 border-2 border-slate-900 animate-pulse" />
@@ -516,9 +517,7 @@ export function AIFloatingAssistant() {
 
   const renderWelcome = () => (
     <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
-      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center mb-4 shadow-lg shadow-purple-500/30">
-        <Bot className="w-8 h-8 text-white" />
-      </div>
+      <CoderAvatar size={120} animated mood="excited" className="mb-4" />
       <h2 className="text-lg font-bold text-white mb-1">你好！我是柯德</h2>
       <p className="text-sm text-slate-400 mb-6 text-center">你的编程学习伙伴，选择一种我的性格吧：</p>
 
@@ -649,9 +648,7 @@ export function AIFloatingAssistant() {
         >
           {/* 柯德头像 */}
           {msg.role === 'assistant' && (
-            <div className="shrink-0 w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center mr-2 mt-0.5">
-              <Bot className="w-3 h-3 text-white" />
-            </div>
+            <CoderAvatar size={24} animated={false} className="mr-2 mt-0.5" />
           )}
 
           <div className="relative max-w-[80%]">
@@ -686,9 +683,7 @@ export function AIFloatingAssistant() {
       {/* 打字指示器 */}
       {isTyping && (
         <div className="flex justify-start">
-          <div className="shrink-0 w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center mr-2">
-            <Bot className="w-3 h-3 text-white" />
-          </div>
+          <CoderAvatar size={24} animated={false} mood="thinking" className="mr-2" />
           <div className="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700/50 rounded-bl-sm">
             <div className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -766,9 +761,7 @@ export function AIFloatingAssistant() {
       {/* 头部 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/60 shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-md shadow-purple-500/20">
-            <Bot className="w-4 h-4 text-white" />
-          </div>
+          <CoderAvatar size={32} animated={false} mood={isTyping ? 'thinking' : 'happy'} />
           <div>
             <div className="flex items-center gap-1.5">
               <h3 className="text-sm font-bold text-white">柯德</h3>

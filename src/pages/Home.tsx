@@ -10,8 +10,9 @@ import {
   Terminal, Shield, Brain, Sparkles, CalendarCheck,
   TrendingUp, MessageSquare, AlertTriangle, CheckCircle2,
   ThumbsUp, BarChart3, Clock, Play, Gift, Star, Check,
-  Crown, Rocket, GraduationCap,
+  Crown, Rocket, GraduationCap, Bot,
 } from 'lucide-react';
+import { CoderAvatar } from '../components/ui/CoderAvatar';
 
 interface PublicStats {
   problemCount: number;
@@ -317,6 +318,123 @@ function UpgradeServiceSection() {
   );
 }
 
+/**
+ * "认识柯德" 推广区块 —— 面向未登录用户
+ * 展示柯德形象、功能亮点和 CTA
+ */
+function MeetCoderSection() {
+  const features = [
+    { emoji: '🎯', text: '智能错题分析，精准定位薄弱点' },
+    { emoji: '💡', text: '苏格拉底式引导，启发而非灌输' },
+    { emoji: '📊', text: '持续学习画像，越用越懂你' },
+    { emoji: '🤖', text: '三种性格随心切换' },
+    { emoji: '⏰', text: '主动关心，适时提供帮助' },
+  ];
+
+  return (
+    <section className="relative overflow-hidden rounded-2xl border border-purple-500/20 mb-12">
+      <div className="absolute inset-0 bg-gradient-to-br from-purple-600/15 via-slate-900 to-indigo-600/15" />
+      <div className="absolute inset-0 opacity-[0.02]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%237c3aed' fill-opacity='1'%3E%3Ccircle cx='20' cy='20' r='2'/%3E%3C/g%3E%3C/svg%3E")`,
+        }}
+      />
+      <div className="relative px-8 py-12 md:px-14 md:py-16">
+        <div className="flex flex-col md:flex-row items-center gap-10">
+          {/* 左侧：柯德形象 */}
+          <div className="shrink-0">
+            <CoderAvatar size={200} animated mood="happy" />
+          </div>
+
+          {/* 右侧：介绍内容 */}
+          <div className="flex-1 text-center md:text-left">
+            <h2 className="text-2xl md:text-3xl font-bold text-white mb-3">
+              认识柯德 —— 你的 AI 编程伙伴
+            </h2>
+            <p className="text-slate-400 mb-6 leading-relaxed">
+              Code + 导 = 柯德。一位懂编程、有耐心、会鼓励的 AI 学习伙伴。
+            </p>
+
+            <ul className="space-y-3 mb-8">
+              {features.map(({ emoji, text }) => (
+                <li key={text} className="flex items-center gap-3 text-slate-300">
+                  <span className="text-lg">{emoji}</span>
+                  <span className="text-sm md:text-base">{text}</span>
+                </li>
+              ))}
+            </ul>
+
+            <Link
+              to="/register"
+              className="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-white font-semibold shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 transition-all hover:scale-[1.02]"
+            >
+              <Bot className="h-5 w-5" />
+              立即体验柯德
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * "柯德动态" 卡片 —— 面向已登录用户
+ * 根据时段和学习状态生成个性化问候，按钮打开浮动助手
+ */
+function CoderStatusCard({
+  username,
+  streakDays,
+  dailyChallenge,
+}: {
+  username?: string;
+  streakDays: number;
+  dailyChallenge: DailyChallengeData | null;
+}) {
+  /** 根据时间段和用户状态生成问候语 */
+  const getGreeting = (): string => {
+    const hour = new Date().getHours();
+    const timeGreeting = hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好';
+    const name = username || '同学';
+
+    if (dailyChallenge && !dailyChallenge.completed) {
+      return `${timeGreeting}，${name}！今日挑战还没完成哦，要不要来一道？`;
+    }
+    if (streakDays >= 3) {
+      return `${timeGreeting}！连续 ${streakDays} 天签到了，继续保持 💪`;
+    }
+    return `${timeGreeting}，${name}！今天也要加油呀~`;
+  };
+
+  /** 点击按钮触发浮动助手打开（通过 DOM 事件触发浮动球 click） */
+  const openAssistant = () => {
+    const btn = document.querySelector('[title="柯德 · AI助手"]') as HTMLElement | null;
+    btn?.click();
+  };
+
+  return (
+    <section className="relative overflow-hidden rounded-xl border border-purple-500/20">
+      <div className="absolute inset-0 bg-gradient-to-r from-purple-600/10 via-slate-800/60 to-indigo-600/10" />
+      <div className="relative px-6 py-5 md:px-8">
+        <div className="flex items-center gap-4">
+          <CoderAvatar size={64} animated mood="happy" />
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-sm md:text-base font-medium mb-2">{getGreeting()}</p>
+            <button
+              onClick={openAssistant}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-white hover:bg-purple-500/30 transition-all font-medium text-sm"
+            >
+              <Bot className="h-4 w-4" />
+              和柯德聊聊
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function HomePage() {
   const { isAuthenticated, user, accessStatus } = useAuthStore();
   const { points, levelName, fetchMyPoints } = usePointsStore();
@@ -539,6 +657,9 @@ export function HomePage() {
           </section>
         )}
 
+        {/* ═══ 认识柯德 ═══ AI 编程伙伴推广区 */}
+        <MeetCoderSection />
+
         {/* 升级服务：未登录访客可见（仅全量版） */}
         {FEATURE_PAYMENT && <UpgradeServiceSection />}
 
@@ -695,16 +816,14 @@ export function HomePage() {
 
         <section className="relative overflow-hidden rounded-xl border border-indigo-500/20 bg-gradient-to-r from-indigo-500/10 via-slate-800/60 to-purple-500/10 p-8 mb-12">
           <div className="flex flex-col md:flex-row items-center gap-6">
-            <div className="shrink-0 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-              <Brain className="h-10 w-10 text-indigo-400" />
-            </div>
+            <CoderAvatar size={64} animated mood="happy" />
             <div className="flex-1 text-center md:text-left">
-              <h3 className="text-xl font-semibold text-white mb-2">AI 智能辅助</h3>
-              <p className="text-slate-400">代码解释、思路提示、错误诊断、自动生成测试用例，AI 助手让学习更高效</p>
+              <h3 className="text-xl font-semibold text-white mb-2">柯德 · AI 智能辅助</h3>
+              <p className="text-slate-400">代码解释、思路提示、错误诊断、自动生成测试用例 —— 柯德让你的编程学习更高效</p>
             </div>
             <Link to="/register"
               className="shrink-0 inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white hover:bg-indigo-500/30 transition-all font-medium">
-              立即体验 <ArrowRight className="h-4 w-4" />
+              立即体验柯德 <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
         </section>
@@ -1086,6 +1205,13 @@ export function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* ═══ 柯德动态（登录用户）═══ */}
+      <CoderStatusCard
+        username={user?.username}
+        streakDays={checkinStatus?.streakDays ?? streakDays}
+        dailyChallenge={dailyChallenge}
+      />
 
       {/* 对战动态 */}
       <section className="bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
