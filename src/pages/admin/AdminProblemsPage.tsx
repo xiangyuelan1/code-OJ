@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { problemsAPI, enhancedAiAPI, aiAPI, knowledgeTreeAPI } from '../../services/api';
-import { Plus, Edit, Trash2, Code, CheckCircle, PenTool, Search, Upload, Loader2, X, Tags, ChevronDown, Calendar, AlertTriangle, Clock, Filter, Sparkles } from 'lucide-react';
+import { Plus, Edit, Trash2, Code, CheckCircle, PenTool, Search, Upload, Loader2, X, Tags, ChevronDown, Calendar, AlertTriangle, Clock, Filter, Sparkles, Save } from 'lucide-react';
 
 type BatchDeleteMode = 'selected' | 'byTimeGroup' | 'all' | null;
 type TimeGroupKey = 'today' | 'last7days' | 'last30days' | 'last90days' | 'older' | 'custom';
@@ -701,7 +701,7 @@ export function AdminProblemsPage() {
             className="flex items-center bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
           >
             <Sparkles className="h-5 w-5 mr-2" />
-            AI 生成题目
+            AI 出题
           </button>
           <Link
             to="/admin/problems/create"
@@ -1061,7 +1061,7 @@ export function AdminProblemsPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold text-white flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-fuchsia-400" />
-                AI 生成题目
+                AI 出题
               </h2>
               <button onClick={() => setShowAiGenerate(false)} className="text-slate-400 hover:text-white">
                 <X className="h-5 w-5" />
@@ -1071,13 +1071,13 @@ export function AdminProblemsPage() {
             {aiGeneratedProblems.length === 0 ? (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">关键词 / 提示词 *</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">题目主题 / 关键词 *</label>
                   <textarea
                     value={aiKeywords}
                     onChange={(e) => setAiKeywords(e.target.value)}
                     className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
                     rows={3}
-                    placeholder="例如：二叉树遍历、动态规划背包问题、图的最短路径、字符串匹配..."
+                    placeholder="例如：递归、二分查找、动态规划背包问题、图的最短路径..."
                   />
                 </div>
                 <div className="grid grid-cols-3 gap-4">
@@ -1146,39 +1146,65 @@ export function AdminProblemsPage() {
                   {aiGenerating ? (
                     <><Loader2 className="h-5 w-5 mr-2 animate-spin" />AI 正在生成中...</>
                   ) : (
-                    <><Sparkles className="h-5 w-5 mr-2" />开始生成</>
+                    <><Sparkles className="h-5 w-5 mr-2" />生成题目</>
                   )}
                 </button>
               </div>
             ) : (
               <div className="space-y-4">
                 <div className="text-sm text-slate-400 mb-2">
-                  已生成 {aiGeneratedProblems.length} 道题目，预览如下：
+                  已生成 {aiGeneratedProblems.length} 道题目，可逐题保存或全部导入：
                 </div>
                 {aiGeneratedProblems.map((p, idx) => (
                   <div key={idx} className="bg-slate-700 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-fuchsia-400 font-semibold">#{idx + 1}</span>
-                      <span className="text-white font-semibold">{p.title}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded ${
-                        p.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400' :
-                        p.difficulty === 'HARD' ? 'bg-red-500/20 text-red-400' :
-                        'bg-yellow-500/20 text-yellow-400'
-                      }`}>
-                        {p.difficulty === 'EASY' ? '简单' : p.difficulty === 'HARD' ? '困难' : '中等'}
-                      </span>
-                      <span className="text-xs px-2 py-0.5 rounded bg-slate-600 text-slate-300">
-                        {p.type === 'PROGRAMMING' ? '编程题' : p.type === 'CHOICE' ? '选择题' : '填空题'}
-                      </span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-fuchsia-400 font-semibold">#{idx + 1}</span>
+                        <span className="text-white font-semibold">{p.title}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          p.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400' :
+                          p.difficulty === 'HARD' ? 'bg-red-500/20 text-red-400' :
+                          'bg-yellow-500/20 text-yellow-400'
+                        }`}>
+                          {p.difficulty === 'EASY' ? '简单' : p.difficulty === 'HARD' ? '困难' : '中等'}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-slate-600 text-slate-300">
+                          {p.type === 'PROGRAMMING' ? '编程题' : p.type === 'CHOICE' ? '选择题' : '填空题'}
+                        </span>
+                        {p._saved && <span className="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400">已保存</span>}
+                      </div>
+                      {!p._saved && (
+                        <button
+                          onClick={async () => {
+                            setAiImporting(true);
+                            try {
+                              const res = await enhancedAiAPI.saveProblem(p);
+                              if (res.success) {
+                                setAiGeneratedProblems(prev => prev.map((pp, i) => i === idx ? { ...pp, _saved: true } : pp));
+                              }
+                            } catch (e: any) {
+                              alert(e?.error?.message || '保存失败');
+                            } finally {
+                              setAiImporting(false);
+                            }
+                          }}
+                          disabled={aiImporting}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-green-500/20 text-green-400 rounded-lg text-sm hover:bg-green-500/30 disabled:opacity-50"
+                        >
+                          <Save className="h-3.5 w-3.5" />
+                          保存
+                        </button>
+                      )}
                     </div>
                     <p className="text-slate-400 text-sm line-clamp-3">{p.description?.slice(0, 200)}...</p>
                     {p.tags && (
                       <div className="flex gap-1 mt-2 flex-wrap">
-                        {p.tags.map((t: string, i: number) => (
+                        {(Array.isArray(p.tags) ? p.tags : []).map((t: string, i: number) => (
                           <span key={i} className="text-xs px-2 py-0.5 bg-cyan-500/10 text-cyan-400 rounded">{t}</span>
                         ))}
                       </div>
                     )}
+                    {p.testCases && <p className="text-xs text-slate-500 mt-1">{Array.isArray(p.testCases) ? p.testCases.length : 0} 个测试用例</p>}
                   </div>
                 ))}
                 <div className="flex justify-end gap-3">
@@ -1194,25 +1220,15 @@ export function AdminProblemsPage() {
                       try {
                         let created = 0;
                         for (const p of aiGeneratedProblems) {
+                          if (p._saved) { created++; continue; }
                           try {
-                            await problemsAPI.create({
-                              title: p.title,
-                              description: p.description,
-                              type: p.type || 'PROGRAMMING',
-                              difficulty: p.difficulty || 'MEDIUM',
-                              tags: JSON.stringify(p.tags || []),
-                              testCases: JSON.stringify(p.testCases || []),
-                              timeLimit: p.timeLimit || 2000,
-                              memoryLimit: p.memoryLimit || 256,
-                              choices: p.choices ? JSON.stringify(p.choices) : null,
-                              correctAnswer: p.correctAnswer || null,
-                            });
-                            created++;
+                            const res = await enhancedAiAPI.saveProblem(p);
+                            if (res.success) created++;
                           } catch (e) {
-                            console.error('创建题目失败:', p.title, e);
+                            console.error('保存题目失败:', p.title, e);
                           }
                         }
-                        alert(`成功导入 ${created}/${aiGeneratedProblems.length} 道题目`);
+                        alert(`成功保存 ${created}/${aiGeneratedProblems.length} 道题目到题库`);
                         setShowAiGenerate(false);
                         setAiKeywords('');
                         setAiGeneratedProblems([]);
@@ -1223,11 +1239,11 @@ export function AdminProblemsPage() {
                         setAiImporting(false);
                       }
                     }}
-                    disabled={aiImporting}
+                    disabled={aiImporting || aiGeneratedProblems.every(p => p._saved)}
                     className="flex items-center px-4 py-2 bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 rounded-lg text-white font-semibold transition-colors disabled:opacity-50"
                   >
                     {aiImporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
-                    {aiImporting ? '导入中...' : '全部导入'}
+                    {aiImporting ? '保存中...' : '全部保存到题库'}
                   </button>
                 </div>
               </div>

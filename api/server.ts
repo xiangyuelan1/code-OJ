@@ -7,6 +7,7 @@ import app from './app.js';
 import prisma from './lib/prisma.js';
 import { setupSocketIO } from './services/socket.service.js';
 import { seedDefaultPlansIfEmpty } from './services/pricing-seed.service.js';
+import { seedCoderConfigDefaults } from './services/coder-seed.service.js';
 
 dotenv.config();
 
@@ -197,6 +198,13 @@ async function initDatabase() {
     await seedDefaultPlansIfEmpty();
   } catch (e: any) {
     console.error('[DB] ⚠️ Seed pricing plans failed (non-fatal):', e.message);
+  }
+
+  // 自动填充柯德默认配置
+  try {
+    await seedCoderConfigDefaults();
+  } catch (e: any) {
+    console.error('[DB] ⚠️ Seed coder config failed (non-fatal):', e.message);
   }
 }
 

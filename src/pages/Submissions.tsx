@@ -2,13 +2,16 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { submissionsAPI } from '../services/api';
 import { useAuthStore } from '../stores/auth.store';
-import { Clock, CheckCircle, XCircle, AlertCircle, Code, Eye, PenTool } from 'lucide-react';
+import { AIBadge } from '../components/ui/AIBadge';
+import { Clock, CheckCircle, XCircle, AlertCircle, Code, Eye, PenTool, Sparkles } from 'lucide-react';
+import { AICodeExplainer } from '../components/AICodeExplainer';
 
 export function SubmissionsPage() {
   const { user } = useAuthStore();
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [aiExplainTarget, setAiExplainTarget] = useState<{ code: string; language: string; context?: string } | null>(null);
 
   useEffect(() => {
     loadSubmissions();
@@ -150,23 +153,28 @@ export function SubmissionsPage() {
                   <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">类型</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">得分</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">时间</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700">
                 {submissions.map((submission) => (
                   <tr key={submission.id} className="hover:bg-slate-750 transition-colors">
                     <td className="px-6 py-4">
-                      <div className={`flex items-center px-3 py-1 rounded-full border ${getStatusColor(submission.status)}`}>
-                        {getStatusIcon(submission.status)}
-                        <span className="ml-2 text-sm">
-                          {submission.status === 'ACCEPTED' ? '通过' :
-                           submission.status === 'WRONG_ANSWER' ? '错误' :
-                           submission.status === 'RUNTIME_ERROR' ? '运行错误' :
-                           submission.status === 'TIME_LIMIT_EXCEEDED' ? '超时' :
-                           submission.status === 'COMPILE_ERROR' ? '编译错误' :
-                           submission.status === 'JUDGING' ? '判题中' :
-                           submission.status === 'PENDING' ? '等待' : submission.status}
-                        </span>
+                      <div className="flex items-center gap-2">
+                        <div className={`flex items-center px-3 py-1 rounded-full border ${getStatusColor(submission.status)}`}>
+                          {getStatusIcon(submission.status)}
+                          <span className="ml-2 text-sm">
+                            {submission.status === 'ACCEPTED' ? '通过' :
+                             submission.status === 'WRONG_ANSWER' ? '错误' :
+                             submission.status === 'RUNTIME_ERROR' ? '运行错误' :
+                             submission.status === 'TIME_LIMIT_EXCEEDED' ? '超时' :
+                             submission.status === 'COMPILE_ERROR' ? '编译错误' :
+                             submission.status === 'JUDGING' ? '判题中' :
+                             submission.status === 'PENDING' ? '等待' : submission.status}
+                          </span>
+                        </div>
+                        {/* AI 分析标记：当 result 包含 prediction 字段时表示经过 AI 分析 */}
+                        {submission.result?.prediction && <AIBadge type="analyzed" />}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -196,6 +204,21 @@ export function SubmissionsPage() {
                     <td className="px-6 py-4 text-slate-400 text-sm">
                       {formatDate(submission.createdAt)}
                     </td>
+                    <td className="px-6 py-4">
+                      {submission.code && (
+                        <button
+                          onClick={() => setAiExplainTarget({
+                            code: submission.code,
+                            language: submission.language || 'javascript',
+                            context: submission.problem?.title,
+                          })}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-500/30 transition-colors"
+                        >
+                          <Sparkles className="h-3 w-3" />
+                          柯德·解释
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -203,6 +226,15 @@ export function SubmissionsPage() {
           </div>
         </div>
       )}
+
+      {/* AI 代码解释器 */}
+      <AICodeExplainer
+        code={aiExplainTarget?.code || ''}
+        language={aiExplainTarget?.language || 'javascript'}
+        visible={!!aiExplainTarget}
+        onClose={() => setAiExplainTarget(null)}
+        context={aiExplainTarget?.context}
+      />
     </div>
   );
 }

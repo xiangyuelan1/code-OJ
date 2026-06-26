@@ -47,6 +47,8 @@ import starpathCraftRoutes from './routes/starpath-craft';
 import courseRoutes from './routes/course';
 import minigameRoutes from './routes/minigame';
 import companionRoutes from './routes/companion';
+import aiQuotaRoutes from './routes/ai-quota';
+import coderRoutes from './routes/coder';
 
 dotenv.config();
 
@@ -112,6 +114,7 @@ app.use('/api/starpath/craft', starpathCraftRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/minigame', minigameRoutes);
 app.use('/api/companion', companionRoutes);
+app.use('/api/coder', coderRoutes);
 
 // 仅 full 版注册：支付/推广/订单相关路由
 if (editionConfig.features.payment) {

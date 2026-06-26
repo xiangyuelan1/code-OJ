@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { learningAPI } from '../services/api';
+import { AIBadge } from '../components/ui/AIBadge';
 import {
   Plus, Trash2, RefreshCw, CheckCircle2, Circle, Loader2,
   Map, Trophy, Flame, Target, ChevronRight, Sparkles, ArrowRight, ArrowLeft,
@@ -271,8 +272,9 @@ export function LearningPathPage() {
                   </div>
 
                   <div className="flex items-center justify-between mt-3">
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-slate-500 flex items-center gap-1.5">
                       由 {path.generatedBy} 生成 · {new Date(path.createdAt).toLocaleDateString()}
+                      {path.generatedBy === 'AI' && <AIBadge type="generated" />}
                     </span>
                     <ChevronRight className="h-4 w-4 text-slate-600" />
                   </div>

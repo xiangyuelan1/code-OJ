@@ -5,6 +5,7 @@ import { ArrowLeft, Send, Lightbulb, Loader2, Star, Settings, X, Sparkles, Wand2
 import Editor from '@monaco-editor/react';
 import { useAuthStore } from '../stores/auth.store';
 import { MarkdownRenderer } from '../components/MarkdownEditor';
+import { CoderPowered } from '../components/ui/CoderPowered';
 
 const EDITOR_SETTINGS_KEY = 'oj_editor_settings';
 
@@ -622,6 +623,9 @@ export function SolvePage() {
 
           {/* AI 提示 */}
           <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
+            <div className="flex items-center gap-2 mb-3">
+              <CoderPowered size="md" />
+            </div>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={getHint}
@@ -629,7 +633,7 @@ export function SolvePage() {
                 className="flex items-center px-4 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
               >
                 {aiLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Lightbulb className="h-4 w-4 mr-2" />}
-                AI提示
+                柯德·提示
               </button>
               {problem.type === 'PROGRAMMING' && (
                 <button
@@ -638,7 +642,7 @@ export function SolvePage() {
                   className="flex items-center px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors disabled:opacity-50"
                 >
                   {optimizeLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wand2 className="h-4 w-4 mr-2" />}
-                  AI优化建议
+                  柯德·优化建议
                 </button>
               )}
               <button

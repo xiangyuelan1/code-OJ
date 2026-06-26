@@ -1318,3 +1318,78 @@ model SpaceCompanion {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+/// AI Token 配额配置 - 按访问类型定义配额规则
+model AITokenQuotaConfig {
+  id              String   @id @default(cuid())
+  accessType      String   @unique              // TRIAL, PAID_BASIC, PAID_STANDARD, PAID_PREMIUM, TEACHER_BASIC, TEACHER_STANDARD, TEACHER_PRO, ADMIN
+  monthlyQuota    Int                           // 月配额 tokens
+  dailyLimit      Int      @default(0)          // 日上限（0=不限）
+  maxPerCall      Int      @default(4096)       // 单次调用上限
+  allowedFeatures String   @default("[]")       // JSON: 允许的AI功能列表
+  priority        Int      @default(0)          // 请求优先级
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// AI Token 加量包 - 用户可购买的额外配额
+model AITokenPack {
+  id          String   @id @default(cuid())
+  name        String
+  tokens      Int
+  price       Float
+  validDays   Int      @default(30)
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+/// AI 成本预警 - 当费用达到阈值时触发告警
+model AICostAlert {
+  id            String    @id @default(cuid())
+  threshold     Float                           // 成本阈值（元）
+  period        String    @default("monthly")   // daily, weekly, monthly
+  isEnabled     Boolean   @default(true)
+  lastTriggered DateTime?
+  createdAt     DateTime  @default(now())
+}
+
+/// 柯德对话历史 - 记录用户与AI助手柯德的完整对话
+model CoderConversation {
+  id        String   @id @default(cuid())
+  userId    String
+  role      String   @default("user")   // "user" | "assistant" | "system"
+  content   String
+  metadata  String   @default("{}")      // JSON: { feature?, context?, tokensUsed? }
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+/// 柯德用户画像 - 每用户一条，AI根据交互持续更新
+model CoderUserProfile {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  personality      String   @default("gentle")    // "mentor" | "lively" | "gentle"
+  mode             String   @default("companion") // "companion" | "assistant" | "management"
+  level            String   @default("beginner")  // "beginner" | "intermediate" | "advanced"
+  preferredLang    String   @default("python")
+  weakPoints       String   @default("[]")        // JSON array
+  strengths        String   @default("[]")        // JSON array
+  learningGoals    String   @default("[]")        // JSON array
+  interactionCount Int      @default(0)
+  lastActiveAt     DateTime @default(now())
+  customNotes      String   @default("")          // AI accumulated observations
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+/// 柯德配置 - 管理员可调控的全局参数
+model CoderConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

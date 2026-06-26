@@ -68,6 +68,7 @@ const AdminAccessConfigPage = lazy(() => import("./pages/admin/AdminAccessConfig
 const AdminAIUsagePage = lazy(() => import("./pages/admin/AdminAIUsagePage").then(m => ({ default: m.AdminAIUsagePage })));
 const AdminPromotionPage = FEATURE_PAYMENT ? lazy(() => import("./pages/admin/AdminPromotionPage").then(m => ({ default: m.AdminPromotionPage }))) : () => null;
 const AdminLearningPage = lazy(() => import("./pages/admin/AdminLearningPage").then(m => ({ default: m.AdminLearningPage })));
+const AdminCoderPage = lazy(() => import("./pages/admin/AdminCoderPage").then(m => ({ default: m.AdminCoderPage })));
 const AdminFeaturesPage = lazy(() => import("./pages/admin/AdminFeaturesPage").then(m => ({ default: m.AdminFeaturesPage })));
 
 interface ErrorBoundaryProps {
@@ -480,6 +481,7 @@ export default function App() {
               {FEATURE_PAYMENT && <Route path="promotions" element={<AdminPromotionPage />} />}
               <Route path="access-config" element={<AdminAccessConfigPage />} />
               <Route path="learning" element={<AdminLearningPage />} />
+              <Route path="coder" element={<AdminCoderPage />} />
               <Route path="features" element={<AdminFeaturesPage />} />
             </Route>
           </Routes>

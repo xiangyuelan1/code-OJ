@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { enhancedAiAPI, classAPI } from '../../services/api';
+import { enhancedAiAPI, classAPI, aiQuotaAPI } from '../../services/api';
 import {
   BarChart3, Cpu, DollarSign, Zap, Users, Search,
   ChevronLeft, ChevronRight, Code, Lightbulb, Bug,
   FileText, CheckCircle, TreePine, Tag, FileUp, Gavel,
-  GraduationCap, School,
+  GraduationCap, School, Settings, Package, AlertTriangle,
+  Plus, Trash2, Edit3, Save, X, RefreshCw,
 } from 'lucide-react';
 
 const FEATURE_META: Record<string, { label: string; icon: any; color: string }> = {
@@ -43,7 +44,19 @@ const COLOR_TEXT: Record<string, string> = {
   indigo: 'text-indigo-400',
 };
 
-type PageTab = 'overview' | 'class' | 'teacher';
+// 访问类型中文映射
+const ACCESS_TYPE_LABELS: Record<string, string> = {
+  TRIAL: '试用版',
+  PAID_BASIC: '基础付费',
+  PAID_STANDARD: '标准付费',
+  PAID_PREMIUM: '高级付费',
+  TEACHER_BASIC: '教师基础',
+  TEACHER_STANDARD: '教师标准',
+  TEACHER_PRO: '教师专业',
+  ADMIN: '管理员',
+};
+
+type PageTab = 'overview' | 'class' | 'teacher' | 'quota' | 'packs' | 'alerts';
 
 export function AdminAIUsagePage() {
   const [activeTab, setActiveTab] = useState<PageTab>('overview');
@@ -69,6 +82,22 @@ export function AdminAIUsagePage() {
   const [teacherUsageLoading, setTeacherUsageLoading] = useState(false);
   const [expandedTeacherClass, setExpandedTeacherClass] = useState<string | null>(null);
 
+  // 配额管理数据
+  const [quotaConfigs, setQuotaConfigs] = useState<any[]>([]);
+  const [quotaLoading, setQuotaLoading] = useState(false);
+  const [editingQuota, setEditingQuota] = useState<any>(null);
+
+  // 加量包数据
+  const [packs, setPacks] = useState<any[]>([]);
+  const [packsLoading, setPacksLoading] = useState(false);
+  const [editingPack, setEditingPack] = useState<any>(null);
+  const [showPackForm, setShowPackForm] = useState(false);
+
+  // 成本预警数据
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [newAlert, setNewAlert] = useState({ threshold: '', period: 'monthly' });
+
   useEffect(() => {
     loadStats();
     loadLogs();
@@ -88,6 +117,12 @@ export function AdminAIUsagePage() {
   useEffect(() => {
     if (activeTab === 'teacher') {
       loadTeacherUsage();
+    } else if (activeTab === 'quota') {
+      loadQuotaConfigs();
+    } else if (activeTab === 'packs') {
+      loadPacks();
+    } else if (activeTab === 'alerts') {
+      loadAlerts();
     }
   }, [activeTab]);
 
@@ -235,6 +270,125 @@ export function AdminAIUsagePage() {
       console.error('获取教师AI用量失败', error);
     } finally {
       setTeacherUsageLoading(false);
+    }
+  };
+
+  // ==================== 配额管理加载函数 ====================
+  const loadQuotaConfigs = async () => {
+    try {
+      setQuotaLoading(true);
+      const res = await aiQuotaAPI.getConfigs();
+      if (res.success) setQuotaConfigs(res.data || []);
+    } catch (error) {
+      console.error('获取配额配置失败', error);
+    } finally {
+      setQuotaLoading(false);
+    }
+  };
+
+  const handleSeedDefaults = async () => {
+    try {
+      await aiQuotaAPI.seedDefaults();
+      loadQuotaConfigs();
+    } catch (error) {
+      console.error('重置默认配置失败', error);
+    }
+  };
+
+  const handleSaveQuota = async (config: any) => {
+    try {
+      await aiQuotaAPI.updateConfig(config.accessType, {
+        monthlyQuota: config.monthlyQuota,
+        dailyLimit: config.dailyLimit,
+        maxPerCall: config.maxPerCall,
+        allowedFeatures: config.allowedFeatures,
+        priority: config.priority,
+      });
+      setEditingQuota(null);
+      loadQuotaConfigs();
+    } catch (error) {
+      console.error('保存配额失败', error);
+    }
+  };
+
+  // ==================== 加量包加载函数 ====================
+  const loadPacks = async () => {
+    try {
+      setPacksLoading(true);
+      const res = await aiQuotaAPI.getPacks();
+      if (res.success) setPacks(res.data || []);
+    } catch (error) {
+      console.error('获取加量包失败', error);
+    } finally {
+      setPacksLoading(false);
+    }
+  };
+
+  const handleSavePack = async (pack: any) => {
+    try {
+      if (pack.id) {
+        await aiQuotaAPI.updatePack(pack.id, pack);
+      } else {
+        await aiQuotaAPI.createPack(pack);
+      }
+      setEditingPack(null);
+      setShowPackForm(false);
+      loadPacks();
+    } catch (error) {
+      console.error('保存加量包失败', error);
+    }
+  };
+
+  const handleDeletePack = async (id: string) => {
+    if (!confirm('确认删除该加量包？')) return;
+    try {
+      await aiQuotaAPI.deletePack(id);
+      loadPacks();
+    } catch (error) {
+      console.error('删除加量包失败', error);
+    }
+  };
+
+  // ==================== 成本预警加载函数 ====================
+  const loadAlerts = async () => {
+    try {
+      setAlertsLoading(true);
+      const res = await aiQuotaAPI.getAlerts();
+      if (res.success) setAlerts(res.data || []);
+    } catch (error) {
+      console.error('获取预警配置失败', error);
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
+
+  const handleAddAlert = async () => {
+    const threshold = parseFloat(newAlert.threshold);
+    if (isNaN(threshold) || threshold <= 0) return;
+    try {
+      await aiQuotaAPI.saveAlert({ threshold, period: newAlert.period });
+      setNewAlert({ threshold: '', period: 'monthly' });
+      loadAlerts();
+    } catch (error) {
+      console.error('创建预警失败', error);
+    }
+  };
+
+  const handleDeleteAlert = async (id: string) => {
+    try {
+      await aiQuotaAPI.deleteAlert(id);
+      loadAlerts();
+    } catch (error) {
+      console.error('删除预警失败', error);
+    }
+  };
+
+  const handleToggleAlert = async (alert: any) => {
+    try {
+      await aiQuotaAPI.saveAlert({ id: alert.id, threshold: alert.threshold, period: alert.period, isEnabled: !alert.isEnabled });
+      loadAlerts();
+    } catch (error) {
+      console.error('切换预警状态失败', error);
     }
   };
 
@@ -784,21 +938,343 @@ export function AdminAIUsagePage() {
     </div>
   );
 
+  // ==================== 配额管理标签页 ====================
+  const renderQuotaTab = () => (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <Settings className="h-6 w-6 text-cyan-400" />
+          <h2 className="text-xl font-semibold text-white">配额管理</h2>
+        </div>
+        <button
+          onClick={handleSeedDefaults}
+          className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg transition-colors text-sm"
+        >
+          <RefreshCw className="h-4 w-4" />
+          重置默认
+        </button>
+      </div>
+
+      {quotaLoading ? (
+        <div className="flex justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-cyan-500 border-t-transparent"></div>
+        </div>
+      ) : quotaConfigs.length === 0 ? (
+        <div className="bg-slate-800 rounded-xl p-12 text-center">
+          <Settings className="h-12 w-12 text-slate-500 mx-auto mb-3" />
+          <p className="text-slate-400 mb-4">暂无配额配置，点击"重置默认"初始化</p>
+        </div>
+      ) : (
+        <div className="bg-slate-800 rounded-xl shadow-xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-700">
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">访问类型</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">月配额</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">日上限</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">单次上限</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">允许功能</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">优先级</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700">
+                {quotaConfigs.map((config: any) => {
+                  const isEditing = editingQuota?.accessType === config.accessType;
+                  const current = isEditing ? editingQuota : config;
+                  return (
+                    <tr key={config.accessType} className="hover:bg-slate-750 transition-colors">
+                      <td className="px-4 py-3 text-white text-sm font-medium">
+                        {ACCESS_TYPE_LABELS[config.accessType] || config.accessType}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input type="number" value={current.monthlyQuota} onChange={(e) => setEditingQuota({ ...current, monthlyQuota: parseInt(e.target.value) || 0 })}
+                            className="w-28 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm" />
+                        ) : (
+                          <span className="text-cyan-400 text-sm">{formatTokens(config.monthlyQuota)}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input type="number" value={current.dailyLimit} onChange={(e) => setEditingQuota({ ...current, dailyLimit: parseInt(e.target.value) || 0 })}
+                            className="w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm" />
+                        ) : (
+                          <span className="text-slate-300 text-sm">{config.dailyLimit === 0 ? '不限' : formatTokens(config.dailyLimit)}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input type="number" value={current.maxPerCall} onChange={(e) => setEditingQuota({ ...current, maxPerCall: parseInt(e.target.value) || 4096 })}
+                            className="w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm" />
+                        ) : (
+                          <span className="text-slate-300 text-sm">{formatTokens(config.maxPerCall)}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input type="text" value={typeof current.allowedFeatures === 'string' ? current.allowedFeatures : JSON.stringify(current.allowedFeatures)}
+                            onChange={(e) => setEditingQuota({ ...current, allowedFeatures: e.target.value })}
+                            className="w-40 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm" />
+                        ) : (
+                          <span className="text-slate-400 text-xs">
+                            {(() => {
+                              try {
+                                const features = typeof config.allowedFeatures === 'string' ? JSON.parse(config.allowedFeatures) : config.allowedFeatures;
+                                return features.includes('*') ? '全部' : features.join(', ');
+                              } catch { return config.allowedFeatures; }
+                            })()}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input type="number" value={current.priority} onChange={(e) => setEditingQuota({ ...current, priority: parseInt(e.target.value) || 0 })}
+                            className="w-16 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm" />
+                        ) : (
+                          <span className="text-slate-300 text-sm">{config.priority}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <div className="flex gap-2">
+                            <button onClick={() => handleSaveQuota(current)} className="p-1.5 bg-green-600 hover:bg-green-500 rounded text-white"><Save className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => setEditingQuota(null)} className="p-1.5 bg-slate-600 hover:bg-slate-500 rounded text-white"><X className="h-3.5 w-3.5" /></button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setEditingQuota({ ...config })} className="p-1.5 bg-slate-600 hover:bg-slate-500 rounded text-white"><Edit3 className="h-3.5 w-3.5" /></button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // ==================== 加量包管理标签页 ====================
+  const renderPacksTab = () => (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <Package className="h-6 w-6 text-cyan-400" />
+          <h2 className="text-xl font-semibold text-white">加量包管理</h2>
+        </div>
+        <button
+          onClick={() => { setEditingPack({ name: '', tokens: 10000, price: 9.9, validDays: 30, isActive: true, sortOrder: 0 }); setShowPackForm(true); }}
+          className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors text-sm"
+        >
+          <Plus className="h-4 w-4" />
+          新建加量包
+        </button>
+      </div>
+
+      {/* 加量包表单弹窗 */}
+      {showPackForm && editingPack && (
+        <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-6 border border-slate-600">
+          <h3 className="text-lg font-semibold text-white mb-4">{editingPack.id ? '编辑加量包' : '新建加量包'}</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div>
+              <label className="text-sm text-slate-400 block mb-1">名称</label>
+              <input type="text" value={editingPack.name} onChange={(e) => setEditingPack({ ...editingPack, name: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm" />
+            </div>
+            <div>
+              <label className="text-sm text-slate-400 block mb-1">Token 数量</label>
+              <input type="number" value={editingPack.tokens} onChange={(e) => setEditingPack({ ...editingPack, tokens: parseInt(e.target.value) || 0 })}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm" />
+            </div>
+            <div>
+              <label className="text-sm text-slate-400 block mb-1">价格 (¥)</label>
+              <input type="number" step="0.01" value={editingPack.price} onChange={(e) => setEditingPack({ ...editingPack, price: parseFloat(e.target.value) || 0 })}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm" />
+            </div>
+            <div>
+              <label className="text-sm text-slate-400 block mb-1">有效期 (天)</label>
+              <input type="number" value={editingPack.validDays} onChange={(e) => setEditingPack({ ...editingPack, validDays: parseInt(e.target.value) || 30 })}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm" />
+            </div>
+            <div>
+              <label className="text-sm text-slate-400 block mb-1">排序</label>
+              <input type="number" value={editingPack.sortOrder} onChange={(e) => setEditingPack({ ...editingPack, sortOrder: parseInt(e.target.value) || 0 })}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm" />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={editingPack.isActive} onChange={(e) => setEditingPack({ ...editingPack, isActive: e.target.checked })}
+                  className="w-4 h-4 rounded bg-slate-700 border-slate-600" />
+                <span className="text-sm text-slate-300">启用</span>
+              </label>
+            </div>
+          </div>
+          <div className="flex gap-3 mt-4">
+            <button onClick={() => handleSavePack(editingPack)} className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm">保存</button>
+            <button onClick={() => { setShowPackForm(false); setEditingPack(null); }} className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-sm">取消</button>
+          </div>
+        </div>
+      )}
+
+      {packsLoading ? (
+        <div className="flex justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-cyan-500 border-t-transparent"></div>
+        </div>
+      ) : packs.length === 0 ? (
+        <div className="bg-slate-800 rounded-xl p-12 text-center">
+          <Package className="h-12 w-12 text-slate-500 mx-auto mb-3" />
+          <p className="text-slate-400">暂无加量包，点击"新建"创建</p>
+        </div>
+      ) : (
+        <div className="bg-slate-800 rounded-xl shadow-xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-700">
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">名称</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">Token 数量</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">价格</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">有效期</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">状态</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700">
+                {packs.map((pack: any) => (
+                  <tr key={pack.id} className="hover:bg-slate-750 transition-colors">
+                    <td className="px-4 py-3 text-white text-sm">{pack.name}</td>
+                    <td className="px-4 py-3 text-cyan-400 text-sm">{formatTokens(pack.tokens)}</td>
+                    <td className="px-4 py-3 text-green-400 text-sm">¥{pack.price}</td>
+                    <td className="px-4 py-3 text-slate-300 text-sm">{pack.validDays}天</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-1 rounded ${pack.isActive ? 'bg-green-500/20 text-green-400' : 'bg-slate-600 text-slate-400'}`}>
+                        {pack.isActive ? '启用' : '停用'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <button onClick={() => { setEditingPack({ ...pack }); setShowPackForm(true); }} className="p-1.5 bg-slate-600 hover:bg-slate-500 rounded text-white"><Edit3 className="h-3.5 w-3.5" /></button>
+                        <button onClick={() => handleDeletePack(pack.id)} className="p-1.5 bg-red-600 hover:bg-red-500 rounded text-white"><Trash2 className="h-3.5 w-3.5" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // ==================== 成本预警标签页 ====================
+  const renderAlertsTab = () => (
+    <div>
+      <div className="flex items-center gap-3 mb-6">
+        <AlertTriangle className="h-6 w-6 text-yellow-400" />
+        <h2 className="text-xl font-semibold text-white">成本预警</h2>
+      </div>
+
+      {/* 添加预警 */}
+      <div className="bg-slate-800 rounded-xl p-6 shadow-xl mb-6">
+        <h3 className="text-lg font-semibold text-white mb-4">添加预警规则</h3>
+        <div className="flex items-end gap-4">
+          <div>
+            <label className="text-sm text-slate-400 block mb-1">费用阈值 (¥)</label>
+            <input type="number" step="0.01" value={newAlert.threshold}
+              onChange={(e) => setNewAlert({ ...newAlert, threshold: e.target.value })}
+              placeholder="例如: 100"
+              className="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm w-32" />
+          </div>
+          <div>
+            <label className="text-sm text-slate-400 block mb-1">周期</label>
+            <select value={newAlert.period} onChange={(e) => setNewAlert({ ...newAlert, period: e.target.value })}
+              className="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm">
+              <option value="daily">每日</option>
+              <option value="weekly">每周</option>
+              <option value="monthly">每月</option>
+            </select>
+          </div>
+          <button onClick={handleAddAlert} className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-sm">
+            <Plus className="h-4 w-4" />
+            添加
+          </button>
+        </div>
+      </div>
+
+      {/* 预警列表 */}
+      {alertsLoading ? (
+        <div className="flex justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-cyan-500 border-t-transparent"></div>
+        </div>
+      ) : alerts.length === 0 ? (
+        <div className="bg-slate-800 rounded-xl p-12 text-center">
+          <AlertTriangle className="h-12 w-12 text-slate-500 mx-auto mb-3" />
+          <p className="text-slate-400">暂无预警规则</p>
+        </div>
+      ) : (
+        <div className="bg-slate-800 rounded-xl shadow-xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-700">
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">阈值</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">周期</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">状态</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">上次触发</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700">
+                {alerts.map((alert: any) => (
+                  <tr key={alert.id} className="hover:bg-slate-750 transition-colors">
+                    <td className="px-4 py-3 text-yellow-400 text-sm font-medium">¥{alert.threshold}</td>
+                    <td className="px-4 py-3 text-slate-300 text-sm">
+                      {{ daily: '每日', weekly: '每周', monthly: '每月' }[alert.period as string] || alert.period}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => handleToggleAlert(alert)}
+                        className={`text-xs px-2 py-1 rounded cursor-pointer ${alert.isEnabled ? 'bg-green-500/20 text-green-400' : 'bg-slate-600 text-slate-400'}`}>
+                        {alert.isEnabled ? '启用' : '停用'}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-slate-400 text-sm">
+                      {alert.lastTriggered ? new Date(alert.lastTriggered).toLocaleString() : '从未触发'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => handleDeleteAlert(alert.id)} className="p-1.5 bg-red-600 hover:bg-red-500 rounded text-white"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="max-w-7xl mx-auto">
       <h1 className="text-3xl font-bold text-white mb-8">AI 用量统计</h1>
 
       {/* 标签页切换 */}
-      <div className="flex border-b border-slate-700 mb-8">
+      <div className="flex border-b border-slate-700 mb-8 overflow-x-auto">
         {([
-          { key: 'overview' as PageTab, label: '总览', icon: BarChart3 },
+          { key: 'overview' as PageTab, label: '用量统计', icon: BarChart3 },
+          { key: 'quota' as PageTab, label: '配额管理', icon: Settings },
+          { key: 'packs' as PageTab, label: '加量包管理', icon: Package },
+          { key: 'alerts' as PageTab, label: '成本预警', icon: AlertTriangle },
           { key: 'class' as PageTab, label: '班级AI用量', icon: GraduationCap },
           { key: 'teacher' as PageTab, label: '教师AI用量', icon: School },
         ]).map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+            className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === tab.key
                 ? 'border-cyan-500 text-cyan-400'
                 : 'border-transparent text-slate-400 hover:text-white'
@@ -811,6 +1287,9 @@ export function AdminAIUsagePage() {
       </div>
 
       {activeTab === 'overview' && renderOverviewTab()}
+      {activeTab === 'quota' && renderQuotaTab()}
+      {activeTab === 'packs' && renderPacksTab()}
+      {activeTab === 'alerts' && renderAlertsTab()}
       {activeTab === 'class' && renderClassTab()}
       {activeTab === 'teacher' && renderTeacherTab()}
     </div>

@@ -5,6 +5,7 @@ import {
   Brain, Code, Trophy, Zap, Target, Lightbulb,
   Shuffle, Clock, Star, ChevronRight, Play,
 } from 'lucide-react';
+import { AIBadge } from '../components/ui/AIBadge';
 import { starpathAPI, starpathAchievementAPI, submissionsAPI, minigameAPI, learningAdminAPI } from '../services/api';
 
 function TwinklingStars({ count = 60 }: { count?: number }) {
@@ -414,7 +415,7 @@ interface LearningModuleConfig {
 
 interface ModuleCardProps {
   icon: React.ReactNode;
-  title: string;
+  title: React.ReactNode;
   description: string;
   link: string;
   gradient: string;
@@ -512,7 +513,7 @@ export function LearningHub() {
     {
       key: 'interview',
       icon: <Briefcase className="h-6 w-6 text-blue-300" />,
-      title: 'AI面试模拟',
+      title: <span className="flex items-center gap-1.5">AI面试模拟 <AIBadge type="assisted" /></span>,
       description: 'AI模拟真实面试场景，提升技术面试能力',
       link: '/interview',
       gradient: 'linear-gradient(135deg, rgba(59,130,246,0.3) 0%, rgba(29,78,216,0.4) 50%, rgba(30,64,175,0.3) 100%)',
@@ -523,7 +524,7 @@ export function LearningHub() {
     {
       key: 'bughunter',
       icon: <Bug className="h-6 w-6 text-green-300" />,
-      title: 'AI猎虫挑战',
+      title: <span className="flex items-center gap-1.5">AI猎虫挑战 <AIBadge type="assisted" /></span>,
       description: '找出代码中的Bug，锻炼调试能力',
       link: '/bug-hunter',
       gradient: 'linear-gradient(135deg, rgba(34,197,94,0.3) 0%, rgba(22,163,74,0.4) 50%, rgba(21,128,61,0.3) 100%)',
@@ -555,7 +556,7 @@ export function LearningHub() {
         {/* 功能卡片网格 */}
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4 mb-12">
           {modules.map((mod) => (
-            <ModuleCard key={mod.title} {...mod} />
+            <ModuleCard key={mod.key} {...mod} />
           ))}
         </div>
 

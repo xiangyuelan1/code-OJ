@@ -1274,28 +1274,55 @@ DP 解题步骤：
   }
 
   /**
-   * 检查用户当月AI Token使用量是否超过配额
-   * 配额来源：用户的有效订单中的 PricingPlan 的 aiTokenQuota
-   * aiTokenQuota 为 0 表示不限制
+   * 检查用户AI Token配额（月配额 + 日上限 + 功能权限）
+   * 配额来源：AITokenQuotaConfig 表（按 accessType 配置），回退到 PricingPlan 的 aiTokenQuota
+   * 返回详细配额信息，或在超限时抛出异常
    */
-  // AI Token 配额缓存：{ userId -> { quota, used, expiresAt } }
-  private tokenQuotaCache = new Map<string, { quota: number; used: number; expiresAt: number }>();
+  // AI Token 配额缓存：{ userId -> { config, usedMonth, usedToday, expiresAt } }
+  private tokenQuotaCache = new Map<string, {
+    monthlyQuota: number;
+    dailyLimit: number;
+    allowedFeatures: string[];
+    usedMonth: number;
+    usedToday: number;
+    expiresAt: number;
+  }>();
   private static QUOTA_CACHE_TTL = 60 * 1000; // 60秒
 
-  private async checkAITokenQuota(userId: string) {
+  async checkAITokenQuota(userId: string, feature?: string): Promise<{
+    allowed: boolean;
+    remainingMonthly: number;
+    remainingDaily: number;
+    quotaConfig: { monthlyQuota: number; dailyLimit: number; maxPerCall: number; allowedFeatures: string[] };
+  }> {
     // 私有部署版不限制 AI Token 用量
-    if (getEditionConfig().features.tokenQuota === false) return;
+    if (getEditionConfig().features.tokenQuota === false) {
+      return { allowed: true, remainingMonthly: -1, remainingDaily: -1, quotaConfig: { monthlyQuota: 0, dailyLimit: 0, maxPerCall: 4096, allowedFeatures: ['*'] } };
+    }
 
     const now = Date.now();
     const cached = this.tokenQuotaCache.get(userId);
 
     // 有缓存且未过期，直接使用缓存判断
     if (cached && cached.expiresAt > now) {
-      if (cached.quota <= 0) return; // 不限制
-      if (cached.used >= cached.quota) {
-        throw new Error(`本月AI使用量已达上限(${cached.quota} tokens)，请升级套餐或等待下月重置`);
+      // 检查功能权限
+      if (feature && cached.allowedFeatures.length > 0 && !cached.allowedFeatures.includes('*') && !cached.allowedFeatures.includes(feature)) {
+        throw new Error(`当前套餐不支持"${feature}"功能，请升级套餐`);
       }
-      return;
+      // 检查月配额
+      if (cached.monthlyQuota > 0 && cached.usedMonth >= cached.monthlyQuota) {
+        throw new Error(`本月AI使用量已达上限(${cached.monthlyQuota} tokens)，请升级套餐或等待下月重置`);
+      }
+      // 检查日上限
+      if (cached.dailyLimit > 0 && cached.usedToday >= cached.dailyLimit) {
+        throw new Error(`今日AI使用量已达上限(${cached.dailyLimit} tokens)，请明日再试`);
+      }
+      return {
+        allowed: true,
+        remainingMonthly: cached.monthlyQuota > 0 ? cached.monthlyQuota - cached.usedMonth : -1,
+        remainingDaily: cached.dailyLimit > 0 ? cached.dailyLimit - cached.usedToday : -1,
+        quotaConfig: { monthlyQuota: cached.monthlyQuota, dailyLimit: cached.dailyLimit, maxPerCall: 4096, allowedFeatures: cached.allowedFeatures },
+      };
     }
 
     const user = await prisma.user.findUnique({
@@ -1303,44 +1330,103 @@ DP 解题步骤：
       select: { role: true, accessType: true },
     });
 
-    // ADMIN 和 TEACHER 不受限制
-    if (!user || user.role === 'ADMIN' || user.role === 'TEACHER') {
-      this.tokenQuotaCache.set(userId, { quota: 0, used: 0, expiresAt: now + AIService.QUOTA_CACHE_TTL });
-      return;
+    if (!user) {
+      throw new Error('用户不存在');
     }
 
-    // 查找用户对应的有效订单中的定价计划
-    const activeOrder = await prisma.order.findFirst({
-      where: { userId, status: 'PAID' },
-      orderBy: { createdAt: 'desc' },
-      include: { plan: true },
+    // 根据角色和 accessType 映射到配额配置类型
+    const quotaAccessType = this.resolveQuotaAccessType(user.role, user.accessType);
+
+    // 从 AITokenQuotaConfig 读取配额
+    const quotaConfig = await prisma.aITokenQuotaConfig.findUnique({
+      where: { accessType: quotaAccessType },
     });
 
-    const tokenQuota = (activeOrder?.plan as any)?.aiTokenQuota ?? 0;
+    let monthlyQuota = quotaConfig?.monthlyQuota ?? 0;
+    let dailyLimit = quotaConfig?.dailyLimit ?? 0;
+    const maxPerCall = quotaConfig?.maxPerCall ?? 4096;
+    let allowedFeatures: string[] = [];
+    try {
+      allowedFeatures = JSON.parse(quotaConfig?.allowedFeatures ?? '["*"]');
+    } catch { allowedFeatures = ['*']; }
+
+    // 若配额表无数据，回退到 PricingPlan 的 aiTokenQuota
+    if (!quotaConfig) {
+      const activeOrder = await prisma.order.findFirst({
+        where: { userId, status: 'PAID' },
+        orderBy: { createdAt: 'desc' },
+        include: { plan: true },
+      });
+      monthlyQuota = (activeOrder?.plan as any)?.aiTokenQuota ?? 0;
+      allowedFeatures = ['*'];
+    }
 
     // 统计当月已使用的token
     const currentDate = new Date();
     const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-    const monthlyUsage = await prisma.aIUsageLog.aggregate({
-      where: { userId, createdAt: { gte: monthStart } },
-      _sum: { totalTokens: true },
-    });
+    const todayStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
 
-    const used = monthlyUsage._sum.totalTokens || 0;
+    const [monthlyUsage, dailyUsage] = await Promise.all([
+      prisma.aIUsageLog.aggregate({
+        where: { userId, createdAt: { gte: monthStart } },
+        _sum: { totalTokens: true },
+      }),
+      prisma.aIUsageLog.aggregate({
+        where: { userId, createdAt: { gte: todayStart } },
+        _sum: { totalTokens: true },
+      }),
+    ]);
+
+    const usedMonth = monthlyUsage._sum.totalTokens || 0;
+    const usedToday = dailyUsage._sum.totalTokens || 0;
 
     // 缓存结果
-    this.tokenQuotaCache.set(userId, { quota: tokenQuota, used, expiresAt: now + AIService.QUOTA_CACHE_TTL });
+    this.tokenQuotaCache.set(userId, {
+      monthlyQuota, dailyLimit, allowedFeatures, usedMonth, usedToday,
+      expiresAt: now + AIService.QUOTA_CACHE_TTL,
+    });
 
-    if (tokenQuota <= 0) return; // 0表示不限制
-    if (used >= tokenQuota) {
-      throw new Error(`本月AI使用量已达上限(${tokenQuota} tokens)，请升级套餐或等待下月重置`);
+    // 检查功能权限
+    if (feature && allowedFeatures.length > 0 && !allowedFeatures.includes('*') && !allowedFeatures.includes(feature)) {
+      throw new Error(`当前套餐不支持"${feature}"功能，请升级套餐`);
     }
+
+    // 检查月配额
+    if (monthlyQuota > 0 && usedMonth >= monthlyQuota) {
+      throw new Error(`本月AI使用量已达上限(${monthlyQuota} tokens)，请升级套餐或等待下月重置`);
+    }
+
+    // 检查日上限
+    if (dailyLimit > 0 && usedToday >= dailyLimit) {
+      throw new Error(`今日AI使用量已达上限(${dailyLimit} tokens)，请明日再试`);
+    }
+
+    return {
+      allowed: true,
+      remainingMonthly: monthlyQuota > 0 ? monthlyQuota - usedMonth : -1,
+      remainingDaily: dailyLimit > 0 ? dailyLimit - usedToday : -1,
+      quotaConfig: { monthlyQuota, dailyLimit, maxPerCall, allowedFeatures },
+    };
+  }
+
+  /** 根据用户角色和 accessType 映射到配额配置类型 */
+  private resolveQuotaAccessType(role: string, accessType: string): string {
+    if (role === 'ADMIN') return 'ADMIN';
+    if (role === 'TEACHER') {
+      if (accessType.startsWith('TEACHER_')) return accessType;
+      return 'TEACHER_BASIC';
+    }
+    if (accessType === 'ADMIN') return 'ADMIN';
+    if (accessType.startsWith('PAID_')) return accessType;
+    if (accessType === 'PAID') return 'PAID_BASIC';
+    if (accessType === 'TRIAL' || accessType === 'CLASS') return 'TRIAL';
+    return 'TRIAL';
   }
 
   private async callAI(prompt: string, config: any, feature?: string, userId?: string): Promise<string> {
-    // 检查用户AI Token月度配额
+    // 检查用户AI Token配额（月/日/功能权限）
     if (userId) {
-      await this.checkAITokenQuota(userId);
+      await this.checkAITokenQuota(userId, feature);
     }
 
     const apiKey = config.apiKey;
@@ -4420,6 +4506,9 @@ ${code}
     type?: string;
     difficulty?: string;
     count?: number;
+    language?: string;
+    tags?: string[];
+    requirements?: string;
   }, userId?: string): Promise<any[]> {
     const config = await this.getConfig();
     if (!config?.apiKey) {
@@ -4442,14 +4531,21 @@ ${code}
     const difficulty = diffLabel[params.difficulty || 'MEDIUM'] || '中等';
     const count = Math.min(params.count || 1, 5);
 
-    const prompt = `你是一位专业的算法竞赛出题专家。请根据以下关键词生成${count}道${problemType}，难度为${difficulty}。
+    // 构造增强 prompt，支持语言、标签、额外要求
+    const languageHint = params.language ? `\n目标编程语言：${params.language}` : '';
+    const tagsHint = params.tags?.length ? `\n知识点标签参考：${params.tags.join('、')}` : '';
+    const requirementsHint = params.requirements ? `\n额外要求：${params.requirements}` : '';
 
-关键词/提示词：${params.keywords}
+    const prompt = `你是一位专业的算法竞赛出题专家。请根据以下主题生成${count}道${problemType}，难度为${difficulty}。
+
+主题/关键词：${params.keywords}${languageHint}${tagsHint}${requirementsHint}
 
 要求：
 1. 题目描述必须清晰完整，包含背景故事、输入格式、输出格式、数据范围
-2. 每道题必须包含至少3个测试用例（含1个示例）
-3. 题目之间不要重复，尽量覆盖关键词的不同方面
+2. 每道题必须包含3-5个测试用例（含1-2个示例）
+3. 题目之间不要重复，尽量覆盖主题的不同方面
+4. 每道题必须包含一个参考解法代码（solution字段）
+5. 给出合理的时间和内存限制建议
 
 请严格以JSON数组格式返回，每个元素包含：
 {
@@ -4463,6 +4559,7 @@ ${code}
     {"input": "输入数据2", "output": "输出数据2", "isSample": false},
     {"input": "边界输入", "output": "边界输出", "isSample": false}
   ],
+  "solution": "参考解法代码",
   "timeLimit": 2000,
   "memoryLimit": 256,
   "correctAnswer": "选择题/填空题的正确答案（编程题为null）",
@@ -4490,7 +4587,162 @@ ${code}
   }
 
   /**
-   * 检查指定功能是否启用
+   * AI 班级报告：汇总班级学生提交数据，调用 AI 生成教学建议报告
+   */
+  async generateClassReport(classId: string, timeRange: 'week' | 'month', userId?: string): Promise<any> {
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      throw new Error('AI API未配置，请在AI设置中配置API Key');
+    }
+
+    // 计算时间范围
+    const now = new Date();
+    const startDate = new Date(now);
+    if (timeRange === 'week') {
+      startDate.setDate(startDate.getDate() - 7);
+    } else {
+      startDate.setMonth(startDate.getMonth() - 1);
+    }
+
+    // 获取班级信息
+    const classInfo = await prisma.class.findUnique({
+      where: { id: classId },
+      select: { name: true, grade: true },
+    });
+    if (!classInfo) throw new Error('班级不存在');
+
+    // 获取班级学生列表
+    const members = await prisma.classMember.findMany({
+      where: { classId, role: 'STUDENT' },
+      include: { user: { select: { id: true, username: true } } },
+    });
+    const studentIds = members.map(m => m.userId);
+
+    if (studentIds.length === 0) {
+      return {
+        summary: '该班级暂无学生，无法生成报告。',
+        performers: [],
+        struggles: [],
+        gaps: [],
+        suggestions: [],
+        focusAreas: [],
+      };
+    }
+
+    // 获取时间范围内的提交记录
+    const submissions = await prisma.submission.findMany({
+      where: {
+        userId: { in: studentIds },
+        createdAt: { gte: startDate },
+      },
+      select: {
+        userId: true,
+        status: true,
+        problemId: true,
+        problem: { select: { title: true, difficulty: true, tags: true } },
+      },
+    });
+
+    // 汇总统计数据
+    const studentStats: Record<string, { username: string; total: number; accepted: number; problems: Set<string> }> = {};
+    for (const m of members) {
+      studentStats[m.userId] = { username: m.user.username, total: 0, accepted: 0, problems: new Set() };
+    }
+    const tagErrors: Record<string, number> = {};
+
+    for (const sub of submissions) {
+      const stat = studentStats[sub.userId];
+      if (!stat) continue;
+      stat.total++;
+      stat.problems.add(sub.problemId);
+      if (sub.status === 'ACCEPTED') {
+        stat.accepted++;
+      } else {
+        // 统计错误较多的知识点
+        const tags: string[] = (() => {
+          try { return JSON.parse(sub.problem.tags || '[]'); } catch { return []; }
+        })();
+        for (const tag of tags) {
+          tagErrors[tag] = (tagErrors[tag] || 0) + 1;
+        }
+      }
+    }
+
+    const totalStudents = studentIds.length;
+    const activeStudents = Object.values(studentStats).filter(s => s.total > 0).length;
+    const avgPassRate = Object.values(studentStats).reduce((sum, s) => sum + (s.total > 0 ? s.accepted / s.total : 0), 0) / totalStudents;
+    const completionRate = activeStudents / totalStudents;
+
+    // 排序找出优秀和困难学生
+    const sortedStudents = Object.entries(studentStats)
+      .map(([id, s]) => ({ id, username: s.username, total: s.total, accepted: s.accepted, rate: s.total > 0 ? s.accepted / s.total : 0 }))
+      .sort((a, b) => b.accepted - a.accepted);
+
+    const topPerformers = sortedStudents.filter(s => s.total > 0).slice(0, 5);
+    const strugglingStudents = sortedStudents.filter(s => s.total > 0 && s.rate < 0.3).slice(0, 5);
+    const inactiveStudents = sortedStudents.filter(s => s.total === 0);
+
+    // 常见错误知识点（取 top 5）
+    const commonGaps = Object.entries(tagErrors)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([tag]) => tag);
+
+    // 构建 AI prompt
+    const prompt = `你是一位教学分析专家。根据以下班级编程学习数据，生成一份详细的班级教学报告。
+
+班级：${classInfo.name}${classInfo.grade ? `（${classInfo.grade}）` : ''}
+统计时间范围：最近${timeRange === 'week' ? '一周' : '一个月'}
+总学生数：${totalStudents}
+活跃学生数：${activeStudents}（活跃率 ${Math.round(completionRate * 100)}%）
+平均通过率：${Math.round(avgPassRate * 100)}%
+总提交次数：${submissions.length}
+
+优秀学生（提交多且通过率高）：
+${topPerformers.map(s => `- ${s.username}：提交 ${s.total} 次，通过 ${s.accepted} 次（${Math.round(s.rate * 100)}%）`).join('\n')}
+
+需关注学生（通过率低或不活跃）：
+${strugglingStudents.map(s => `- ${s.username}：提交 ${s.total} 次，通过 ${s.accepted} 次（${Math.round(s.rate * 100)}%）`).join('\n')}
+${inactiveStudents.length > 0 ? `\n不活跃学生（0提交）：${inactiveStudents.slice(0, 5).map(s => s.username).join('、')}${inactiveStudents.length > 5 ? `等共${inactiveStudents.length}人` : ''}` : ''}
+
+常见薄弱知识点：${commonGaps.length > 0 ? commonGaps.join('、') : '暂无数据'}
+
+请以JSON格式返回以下内容：
+{
+  "summary": "200字左右的班级总评（包含整体表现、趋势判断）",
+  "performers": ["优秀学生1", "优秀学生2"],
+  "struggles": ["需关注学生1", "需关注学生2"],
+  "gaps": ["薄弱知识点1", "薄弱知识点2"],
+  "suggestions": ["教学建议1", "教学建议2", "教学建议3"],
+  "focusAreas": ["下周重点1", "下周重点2"]
+}
+
+只返回JSON，不要包含其他文字。`;
+
+    const response = await this.callAI(prompt, config, 'class-report', userId);
+
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.error('解析AI班级报告失败:', e);
+    }
+
+    // 如果 AI 解析失败，返回基础数据
+    return {
+      summary: `班级共${totalStudents}名学生，${activeStudents}人活跃，平均通过率${Math.round(avgPassRate * 100)}%。`,
+      performers: topPerformers.map(s => s.username),
+      struggles: strugglingStudents.map(s => s.username),
+      gaps: commonGaps,
+      suggestions: ['建议针对薄弱知识点布置专项练习', '关注不活跃学生，了解学习困难'],
+      focusAreas: commonGaps.slice(0, 3),
+    };
+  }
+
+  /**
+   * 判断指定 AI 功能是否启用。
    * 如果配置记录不存在，默认视为启用（向后兼容）
    */
   async isFeatureEnabled(featureKey: string): Promise<boolean> {
@@ -4504,6 +4756,77 @@ ${code}
 
     if (!config) return true;
     return config.enabled;
+  }
+
+  /**
+   * AI 错题分析：接收预构建的 prompt，调用 AI 返回分析结果
+   */
+  async analyzeMistakes(prompt: string, userId?: string): Promise<string> {
+    const config = await this.getConfig();
+    if (!config?.apiKey) {
+      throw new Error('AI API未配置');
+    }
+    return await this.callAI(prompt, config, 'analyze-mistakes', userId);
+  }
+
+  /**
+   * AI 代码解释（增强版）：返回结构化的代码解释
+   * 包含逐行解释、关键知识点、复杂度分析
+   */
+  async explainCodeDetailed(
+    code: string,
+    language: string,
+    context?: string,
+    userId?: string,
+  ): Promise<{ explanation: string; keyPoints: string[]; complexity?: string }> {
+    const config = await this.getConfig();
+
+    const prompt = `你是一位面向初学者的编程导师。请详细解释以下 ${language} 代码。
+${context ? `\n代码上下文/题目：${context}\n` : ''}
+代码：
+\`\`\`${language}
+${code}
+\`\`\`
+
+请严格按以下 JSON 格式返回（不要添加任何其他文字或 markdown 标记）：
+{
+  "explanation": "对代码的逐行详细解释，使用换行分隔每一部分的说明",
+  "keyPoints": ["关键知识点1", "关键知识点2", ...],
+  "complexity": "时间复杂度 O(...), 空间复杂度 O(...)"
+}
+
+要求：
+1. explanation：逐行或逐块解释代码的功能、逻辑和意图，适合初学者理解
+2. keyPoints：提取 3-6 个代码中涉及的关键编程知识点或技巧
+3. complexity：分析代码的时间和空间复杂度（如果无法确定可以省略）`;
+
+    if (!config?.apiKey) {
+      // 无 AI 配置时返回基础解释
+      return {
+        explanation: `这是一段 ${language} 代码，共 ${code.split('\n').length} 行。由于 AI 服务未配置，暂时无法提供详细解释。`,
+        keyPoints: [`${language} 编程语言`],
+        complexity: undefined,
+      };
+    }
+
+    const aiResponse = await this.callAI(prompt, config, 'explain-code-detailed', userId);
+
+    try {
+      const cleaned = aiResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      return {
+        explanation: parsed.explanation || aiResponse,
+        keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],
+        complexity: parsed.complexity || undefined,
+      };
+    } catch {
+      // AI 返回非标准 JSON，将原始内容作为 explanation
+      return {
+        explanation: aiResponse,
+        keyPoints: [],
+        complexity: undefined,
+      };
+    }
   }
 }
 

@@ -195,6 +195,27 @@ export const knowledgeTreeAPI = {
 
 export const enhancedAiAPI = {
   ...aiAPI,
+  // AI 出题增强版（支持 topic/language/tags/requirements）
+  generateProblemEnhanced: (data: {
+    topic: string;
+    difficulty: string;
+    language?: string;
+    tags?: string[];
+    requirements?: string;
+    count?: number;
+    type?: string;
+  }) => api.post('/api/ai/generate-problem', data),
+  // AI 出题 - 保存到题库
+  saveProblem: (problem: any) => api.post('/api/ai/generate-problem/save', { problem }),
+  // AI 班级报告
+  generateClassReport: (data: { classId: string; timeRange?: 'week' | 'month' }) =>
+    api.post('/api/ai/class-report', data),
+  /** AI 错题分析 */
+  analyzeMistakes: (data: { timeRange?: 'week' | 'month' | 'all' }) =>
+    api.post('/api/ai/analyze-mistakes', data),
+  /** AI 代码解释（增强版 - 结构化返回） */
+  explainCodeDetailed: (data: { code: string; language: string; context?: string }) =>
+    api.post('/api/ai/explain-code-detailed', data),
   generateTestCases: (data: any) => api.post('/api/ai/generate-testcases', data),
   classifyProblem: (data: any) => api.post('/api/ai/classify-problem', data),
   parseProblemFile: (content: string, fileType: string) =>
@@ -886,6 +907,27 @@ export const featureAPI = {
   checkFeatureAccess: (featureKey: string) => api.get(`/api/features/check-access/${featureKey}`),
 };
 
+// ── AI Token 配额管理 API ──
+export const aiQuotaAPI = {
+  // 配额配置（管理员）
+  getConfigs: () => api.get('/api/ai/quota/config'),
+  updateConfig: (accessType: string, data: any) => api.put(`/api/ai/quota/config/${accessType}`, data),
+  seedDefaults: () => api.post('/api/ai/quota/config/seed'),
+  // Token 加量包
+  getPacks: () => api.get('/api/ai/quota/packs'),
+  createPack: (data: any) => api.post('/api/ai/quota/packs', data),
+  updatePack: (id: string, data: any) => api.put(`/api/ai/quota/packs/${id}`, data),
+  deletePack: (id: string) => api.delete(`/api/ai/quota/packs/${id}`),
+  // 成本预警
+  getAlerts: () => api.get('/api/ai/quota/alerts'),
+  saveAlert: (data: any) => api.post('/api/ai/quota/alerts', data),
+  deleteAlert: (id: string) => api.delete(`/api/ai/quota/alerts/${id}`),
+  // 统计
+  getStats: () => api.get('/api/ai/quota/stats'),
+  // 当前用户配额
+  getMyUsage: () => api.get('/api/ai/quota/my-usage'),
+};
+
 export const learningAPI = {
   getPaths: () => api.get('/api/learning/paths'),
   generatePath: (data: { title?: string; description?: string; difficulty?: string; focusAreas?: string[] }) =>
@@ -1024,5 +1066,32 @@ export function consumeStream(
     reader.cancel();
   };
 }
+
+// ── 柯德 AI 助手 API ──
+export const coderAPI = {
+  // 发送消息
+  chat: (data: { message: string; context?: { feature?: string; pageContext?: string } }) =>
+    api.post('/api/coder/chat', data),
+  // 获取对话历史
+  getHistory: (params?: { limit?: number; before?: string }) =>
+    api.get('/api/coder/history', { params }),
+  // 清除对话历史
+  clearHistory: () => api.delete('/api/coder/history'),
+  // 获取用户画像
+  getProfile: () => api.get('/api/coder/profile'),
+  // 更新用户画像
+  updateProfile: (data: { personality?: string; mode?: string; level?: string; preferredLang?: string }) =>
+    api.put('/api/coder/profile', data),
+  // 检查主动提示
+  checkProactive: (event: { type: string; data: any }) =>
+    api.post('/api/coder/proactive', { event }),
+  // 管理员：获取柯德配置
+  getAdminConfig: () => api.get('/api/coder/admin/config'),
+  // 管理员：更新柯德配置
+  updateAdminConfig: (key: string, value: string) =>
+    api.put('/api/coder/admin/config', { key, value }),
+  // 管理员：使用统计
+  getAdminStats: () => api.get('/api/coder/admin/stats'),
+};
 
 export default api;

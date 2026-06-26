@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { problemsAPI, pointsAPI, profileAPI, dailyAPI, discussionAPI, matchAPI, starpathAPI, checkinAPI } from '../services/api';
+import { problemsAPI, pointsAPI, profileAPI, dailyAPI, discussionAPI, matchAPI, starpathAPI, checkinAPI, aiQuotaAPI } from '../services/api';
 import { useAuthStore } from '../stores/auth.store';
 import { usePointsStore } from '../stores/points.store';
 import { FEATURE_PAYMENT } from '../config/edition';
@@ -342,6 +342,9 @@ export function HomePage() {
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [checkinPointsEarned, setCheckinPointsEarned] = useState<number | null>(null);
 
+  /** AI 使用统计 */
+  const [aiStats, setAiStats] = useState<{ analyzeCount: number; hintCount: number } | null>(null);
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -388,8 +391,36 @@ export function HomePage() {
 
       /* 计算本周解题数和每日目标进度 */
       computeWeeklyProgress(profileRes);
+
+      /* 加载 AI 使用统计（不阻塞主流程） */
+      loadAIStats();
     } catch {
       loadPublicData();
+    }
+  };
+
+  /** 加载当前用户本月 AI 使用数据 */
+  const loadAIStats = async () => {
+    try {
+      const res = await aiQuotaAPI.getMyUsage();
+      if (res.success && res.data?.featureBreakdown) {
+        const breakdown: Array<{ feature: string; calls: number }> = res.data.featureBreakdown;
+        // 代码分析类：ai-judge, explain-code, diagnose, code-commentary, optimize-code
+        const analyzeFeatues = ['ai-judge', 'explain-code', 'diagnose', 'code-commentary', 'optimize-code'];
+        // 提示类：ai-hint, smart-hint, companion
+        const hintFeatures = ['ai-hint', 'smart-hint', 'ai-companion', 'companion'];
+
+        const analyzeCount = breakdown
+          .filter((f) => analyzeFeatues.some((k) => f.feature.includes(k)))
+          .reduce((sum, f) => sum + f.calls, 0);
+        const hintCount = breakdown
+          .filter((f) => hintFeatures.some((k) => f.feature.includes(k)))
+          .reduce((sum, f) => sum + f.calls, 0);
+
+        setAiStats({ analyzeCount, hintCount });
+      }
+    } catch {
+      /* AI 统计加载失败不影响页面 */
     }
   };
 
@@ -1098,6 +1129,38 @@ export function HomePage() {
           </div>
         )}
       </section>
+
+      {/* AI 助力统计卡片 */}
+      {aiStats && (aiStats.analyzeCount > 0 || aiStats.hintCount > 0) && (
+        <section className="relative overflow-hidden rounded-xl border border-violet-500/20">
+          <div className="absolute inset-0 bg-gradient-to-r from-violet-600/10 via-slate-800/60 to-indigo-600/10" />
+          <div className="relative px-6 py-5 md:px-8">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 rounded-xl bg-violet-500/15 border border-violet-500/25">
+                <Sparkles className="h-5 w-5 text-violet-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-white">柯德助力</h3>
+              <span className="text-xs text-slate-400 ml-2">你的 AI 学习伙伴</span>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/60 border border-slate-700/50">
+                <Brain className="h-5 w-5 text-cyan-400 shrink-0" />
+                <div>
+                  <div className="text-xl font-bold text-white">{aiStats.analyzeCount}</div>
+                  <div className="text-xs text-slate-400">本月 AI 代码分析</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/60 border border-slate-700/50">
+                <Sparkles className="h-5 w-5 text-amber-400 shrink-0" />
+                <div>
+                  <div className="text-xl font-bold text-white">{aiStats.hintCount}</div>
+                  <div className="text-xs text-slate-400">本月思路提示</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* 能力雷达 + 薄弱知识点 + 排行 */}
       <section className="grid lg:grid-cols-3 gap-6">

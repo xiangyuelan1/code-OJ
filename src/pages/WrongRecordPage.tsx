@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   BookOpen, CheckCircle, XCircle, Trash2, RotateCcw,
   Filter, BarChart3, Lightbulb, ChevronLeft, ChevronRight,
+  Sparkles, Brain, Target, TrendingUp,
 } from 'lucide-react';
-import { wrongRecordAPI, knowledgeTreeAPI } from '../services/api';
+import { wrongRecordAPI, knowledgeTreeAPI, enhancedAiAPI } from '../services/api';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorDisplay } from '../components/ui/ErrorDisplay';
@@ -60,6 +61,14 @@ interface RecommendedProblem {
   title: string;
   difficulty: string;
   knowledgeTreeName: string;
+}
+
+/** AI 错题分析结果 */
+interface MistakeAnalysis {
+  weakPoints: string[];
+  patterns: string[];
+  suggestions: string[];
+  practiceRecommendations: Array<{ problemId?: string; title?: string; reason: string }>;
 }
 
 /** 知识树节点（用于下拉筛选） */
@@ -123,6 +132,12 @@ export function WrongRecordPage() {
   const [stats, setStats] = useState<WrongStats | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendedProblem[]>([]);
   const [knowledgeTreeOptions, setKnowledgeTreeOptions] = useState<Array<{ id: string; name: string }>>([]);
+
+  /* ── AI 错题分析相关 ── */
+  const [aiAnalysis, setAiAnalysis] = useState<MistakeAnalysis | null>(null);
+  const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
+  const [aiAnalysisError, setAiAnalysisError] = useState<string | null>(null);
+  const [aiAnalysisVisible, setAiAnalysisVisible] = useState(false);
 
   /* ── UI 状态（均从核心数据推导，不另存冗余状态） ── */
   const [loading, setLoading] = useState(true);
@@ -214,6 +229,30 @@ export function WrongRecordPage() {
     finally { setActionLoading(null); }
   };
 
+  /** AI 分析错题 - 带缓存，避免重复调用 */
+  const handleAiAnalyze = async () => {
+    // 如果已有缓存结果，直接显示
+    if (aiAnalysis) {
+      setAiAnalysisVisible(true);
+      return;
+    }
+    setAiAnalysisLoading(true);
+    setAiAnalysisError(null);
+    setAiAnalysisVisible(true);
+    try {
+      const res = await enhancedAiAPI.analyzeMistakes({ timeRange: 'month' });
+      if (res.success && res.data) {
+        setAiAnalysis(res.data as MistakeAnalysis);
+      } else {
+        setAiAnalysisError(res.error?.message || 'AI 分析失败');
+      }
+    } catch (err: any) {
+      setAiAnalysisError(err?.error?.message || err?.message || '请求失败，请稍后重试');
+    } finally {
+      setAiAnalysisLoading(false);
+    }
+  };
+
   /* ── 分页计算 ── */
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -239,11 +278,19 @@ export function WrongRecordPage() {
     <div className="min-h-screen bg-slate-900 text-white p-4 md:p-6">
       <div className="max-w-7xl mx-auto space-y-6">
 
-        {/* ── 页头：标题 + 统计概览 ── */}
+        {/* ── 页头：标题 + AI 分析按钮 + 统计概览 ── */}
         <div>
           <div className="flex items-center gap-3 mb-6">
             <BookOpen className="h-8 w-8 text-cyan-400" />
             <h1 className="text-3xl font-bold text-cyan-400">错题本</h1>
+            <button
+              onClick={handleAiAnalyze}
+              disabled={aiAnalysisLoading}
+              className="ml-auto flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-medium text-sm hover:from-purple-500 hover:to-cyan-500 transition-all disabled:opacity-60 shadow-lg shadow-purple-500/20"
+            >
+              <Sparkles className="h-4 w-4" />
+              {aiAnalysisLoading ? '柯德分析中...' : '柯德·分析错题'}
+            </button>
           </div>
 
           {stats && (
@@ -307,6 +354,129 @@ export function WrongRecordPage() {
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── AI 错题分析结果卡片 ── */}
+        {aiAnalysisVisible && (
+          <div className="bg-slate-800 rounded-xl border border-purple-500/30 shadow-lg shadow-purple-500/5">
+            {/* 卡片头部 */}
+            <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Brain className="h-5 w-5 text-purple-400" />
+                <h2 className="text-lg font-semibold text-white">柯德·错题分析报告</h2>
+              </div>
+              <button
+                onClick={() => setAiAnalysisVisible(false)}
+                className="text-sm text-slate-400 hover:text-white transition-colors px-2 py-1 rounded hover:bg-slate-700"
+              >
+                收起
+              </button>
+            </div>
+
+            <div className="p-5">
+              {/* 加载态 */}
+              {aiAnalysisLoading && (
+                <div className="flex items-center justify-center py-8 gap-3">
+                  <div className="animate-spin rounded-full h-8 w-8 border-3 border-purple-500 border-t-transparent" />
+                  <span className="text-slate-400">AI 正在分析你的错题数据...</span>
+                </div>
+              )}
+
+              {/* 错误态 */}
+              {aiAnalysisError && !aiAnalysisLoading && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-red-400 text-sm">
+                  {aiAnalysisError}
+                </div>
+              )}
+
+              {/* 分析结果 */}
+              {aiAnalysis && !aiAnalysisLoading && (
+                <div className="space-y-5">
+                  {/* 薄弱知识点 */}
+                  {aiAnalysis.weakPoints.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+                        <Target className="h-4 w-4 text-red-400" />
+                        薄弱知识点
+                      </h3>
+                      <div className="flex flex-wrap gap-2">
+                        {aiAnalysis.weakPoints.map((point, i) => (
+                          <span
+                            key={i}
+                            className="px-3 py-1.5 rounded-full text-xs font-medium bg-red-500/15 text-red-300 border border-red-500/30"
+                          >
+                            {point}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 错误模式分析 */}
+                  {aiAnalysis.patterns.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4 text-orange-400" />
+                        错误模式分析
+                      </h3>
+                      <ul className="space-y-1.5">
+                        {aiAnalysis.patterns.map((pattern, i) => (
+                          <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+                            <span className="text-orange-400 shrink-0 mt-0.5">•</span>
+                            {pattern}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* AI 建议 */}
+                  {aiAnalysis.suggestions.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-green-400" />
+                        AI 建议
+                      </h3>
+                      <ol className="space-y-2">
+                        {aiAnalysis.suggestions.map((suggestion, i) => (
+                          <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+                            <span className="bg-green-500/20 text-green-400 text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5">
+                              {i + 1}
+                            </span>
+                            {suggestion}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+
+                  {/* 推荐练习 */}
+                  {aiAnalysis.practiceRecommendations.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+                        <Lightbulb className="h-4 w-4 text-yellow-400" />
+                        推荐练习方向
+                      </h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {aiAnalysis.practiceRecommendations.map((rec, i) => (
+                          <div
+                            key={i}
+                            className="bg-slate-700/50 rounded-lg p-3 border border-slate-600/50 cursor-pointer hover:bg-slate-700 transition-colors"
+                            onClick={() => rec.problemId && navigate(`/problem/${rec.problemId}`)}
+                          >
+                            {rec.title && (
+                              <div className="text-white text-sm font-medium mb-1">{rec.title}</div>
+                            )}
+                            <div className="text-slate-400 text-xs">{rec.reason}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

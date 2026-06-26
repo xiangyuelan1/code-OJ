@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { solutionsAPI, submissionsAPI } from '../services/api';
 import { useAuthStore } from '../stores/auth.store';
-import { ArrowLeft, Code, Clock, TrendingUp, Lock } from 'lucide-react';
+import { ArrowLeft, Code, Clock, TrendingUp, Lock, Sparkles } from 'lucide-react';
 import Editor from '@monaco-editor/react';
+import { AICodeExplainer } from '../components/AICodeExplainer';
 
 export function SolutionDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -12,6 +13,7 @@ export function SolutionDetailPage() {
   const [solution, setSolution] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [hasAC, setHasAC] = useState(false);
+  const [showAIExplainer, setShowAIExplainer] = useState(false);
 
   useEffect(() => {
     loadSolution();
@@ -119,6 +121,13 @@ export function SolutionDetailPage() {
             <h2 className="text-xl font-semibold text-white mb-4 flex items-center">
               <Code className="h-5 w-5 mr-2 text-cyan-400" />
               参考代码
+              <button
+                onClick={() => setShowAIExplainer(true)}
+                className="ml-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-500/30 transition-colors"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                柯德·代码解释
+              </button>
             </h2>
             <div className="rounded-lg overflow-hidden">
               <Editor
@@ -136,6 +145,17 @@ export function SolutionDetailPage() {
               />
             </div>
           </div>
+        )}
+
+        {/* AI 代码解释器 */}
+        {solution.code && (
+          <AICodeExplainer
+            code={solution.code}
+            language={solution.language || 'javascript'}
+            visible={showAIExplainer}
+            onClose={() => setShowAIExplainer(false)}
+            context={solution.problem?.title}
+          />
         )}
         </>
         )}

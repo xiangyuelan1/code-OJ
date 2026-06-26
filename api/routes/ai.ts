@@ -691,15 +691,257 @@ router.post('/features/initialize', authMiddleware, roleMiddleware('ADMIN'), asy
 router.post('/generate-problem', authMiddleware, roleMiddleware('ADMIN', 'TEACHER'), async (req: Request, res: any): Promise<void> => {
   try {
     const userId = (req as any).user.userId;
-    const { keywords, type, difficulty, count } = req.body;
+    const { keywords, type, difficulty, count, topic, language, tags, requirements } = req.body;
 
-    if (!keywords || !keywords.trim()) {
-      res.status(400).json({ success: false, error: { message: '请输入关键词或提示词' } });
+    // 兼容新旧两种调用方式：topic 字段为新版 AI 出题入口
+    const effectiveKeywords = topic || keywords;
+    if (!effectiveKeywords || !effectiveKeywords.trim()) {
+      res.status(400).json({ success: false, error: { message: '请输入主题或关键词' } });
       return;
     }
 
-    const problems = await aiService.generateProblem({ keywords, type, difficulty, count }, userId);
+    const problems = await aiService.generateProblem({
+      keywords: effectiveKeywords,
+      type,
+      difficulty,
+      count,
+      language,
+      tags,
+      requirements,
+    }, userId);
     res.json({ success: true, data: problems });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// AI 出题 - 保存到题库
+router.post('/generate-problem/save', authMiddleware, roleMiddleware('ADMIN', 'TEACHER'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const { problem } = req.body;
+    if (!problem || !problem.title || !problem.description) {
+      res.status(400).json({ success: false, error: { message: '缺少题目必要字段（title, description）' } });
+      return;
+    }
+
+    const created = await prisma.problem.create({
+      data: {
+        title: problem.title,
+        description: problem.description,
+        type: problem.type || 'PROGRAMMING',
+        difficulty: problem.difficulty || 'MEDIUM',
+        tags: typeof problem.tags === 'string' ? problem.tags : JSON.stringify(problem.tags || []),
+        testCases: typeof problem.testCases === 'string' ? problem.testCases : JSON.stringify(problem.testCases || []),
+        timeLimit: problem.timeLimit || 2000,
+        memoryLimit: problem.memoryLimit || 256,
+        choices: problem.choices ? (typeof problem.choices === 'string' ? problem.choices : JSON.stringify(problem.choices)) : null,
+        correctAnswer: problem.correctAnswer || null,
+        solution: problem.solution || null,
+        aiGeneratedTestCases: true,
+        aiGeneratedSolution: !!problem.solution,
+      },
+    });
+
+    res.json({ success: true, data: created });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// AI 班级报告
+router.post('/class-report', authMiddleware, roleMiddleware('ADMIN', 'TEACHER'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const userRole = (req as any).user.role;
+    const { classId, timeRange } = req.body;
+
+    if (!classId) {
+      res.status(400).json({ success: false, error: { message: '缺少 classId 参数' } });
+      return;
+    }
+
+    // 权限检查：教师只能查看自己创建的班级
+    if (userRole !== 'ADMIN') {
+      const cls = await prisma.class.findUnique({ where: { id: classId }, select: { createdBy: true } });
+      if (!cls || cls.createdBy !== userId) {
+        res.status(403).json({ success: false, error: { message: '无权查看该班级报告' } });
+        return;
+      }
+    }
+
+    const report = await aiService.generateClassReport(classId, timeRange || 'week', userId);
+    res.json({ success: true, data: report });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
+// AI 错题分析
+// ========================
+
+router.post('/analyze-mistakes', authMiddleware, featureMiddleware('ai-hint'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { timeRange = 'week' } = req.body;
+
+    // 根据时间范围计算起始日期
+    const now = new Date();
+    let startDate: Date | undefined;
+    if (timeRange === 'week') {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (timeRange === 'month') {
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
+    // timeRange === 'all' 时不设置 startDate
+
+    // 获取用户错误提交记录
+    const whereClause: any = {
+      userId,
+      status: { not: 'ACCEPTED' },
+    };
+    if (startDate) {
+      whereClause.createdAt = { gte: startDate };
+    }
+
+    const wrongSubmissions = await prisma.submission.findMany({
+      where: whereClause,
+      include: {
+        problem: {
+          include: { knowledgeTree: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+
+    if (wrongSubmissions.length === 0) {
+      res.json({
+        success: true,
+        data: {
+          weakPoints: [],
+          patterns: [],
+          suggestions: ['目前没有错误记录，继续保持！'],
+          practiceRecommendations: [],
+        },
+      });
+      return;
+    }
+
+    // 按知识点分组统计
+    const knowledgeMap: Record<string, { name: string; count: number }> = {};
+    const statusMap: Record<string, number> = {};
+
+    for (const sub of wrongSubmissions) {
+      const ktName = (sub.problem as any)?.knowledgeTree?.name || '未分类';
+      const ktId = (sub.problem as any)?.knowledgeTreeId || 'unknown';
+      if (!knowledgeMap[ktId]) {
+        knowledgeMap[ktId] = { name: ktName, count: 0 };
+      }
+      knowledgeMap[ktId].count++;
+
+      const status = sub.status || 'UNKNOWN';
+      statusMap[status] = (statusMap[status] || 0) + 1;
+    }
+
+    // 构建 AI 分析提示词
+    const knowledgeSummary = Object.entries(knowledgeMap)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 10)
+      .map(([_, v]) => `${v.name}: ${v.count}次错误`)
+      .join('\n');
+
+    const statusSummary = Object.entries(statusMap)
+      .map(([status, count]) => `${status}: ${count}次`)
+      .join('\n');
+
+    const prompt = `你是一位专业的编程学习分析师。请分析以下学生的错题数据，给出详细的学习建议。
+
+## 错误统计（共 ${wrongSubmissions.length} 次错误提交）
+
+### 按知识点分布：
+${knowledgeSummary}
+
+### 按错误类型分布：
+${statusSummary}
+
+请严格按以下 JSON 格式返回分析结果（不要添加任何其他文字或 markdown 标记）：
+{
+  "weakPoints": ["薄弱知识点1", "薄弱知识点2", ...],
+  "patterns": ["错误模式描述1", "错误模式描述2", ...],
+  "suggestions": ["具体建议1", "具体建议2", ...],
+  "practiceRecommendations": [
+    { "reason": "推荐理由" },
+    { "reason": "推荐理由" }
+  ]
+}
+
+要求：
+1. weakPoints：列出 3-5 个最薄弱的知识点
+2. patterns：分析 2-4 种常见错误模式（如超时说明算法效率不足，运行错误说明边界处理不当等）
+3. suggestions：给出 3-5 条具体可操作的学习建议
+4. practiceRecommendations：给出 2-4 条练习方向推荐`;
+
+    const config = await aiService.getConfig();
+    let result: any;
+
+    if (config?.apiKey) {
+      const aiResponse = await aiService.analyzeMistakes(prompt, userId);
+      try {
+        // 尝试解析 JSON 响应
+        const cleaned = aiResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        result = JSON.parse(cleaned);
+      } catch {
+        // AI 返回非标准 JSON，使用 fallback
+        result = {
+          weakPoints: Object.entries(knowledgeMap)
+            .sort((a, b) => b[1].count - a[1].count)
+            .slice(0, 5)
+            .map(([_, v]) => v.name),
+          patterns: Object.entries(statusMap).map(([status, count]) => 
+            `${status === 'WRONG_ANSWER' ? '答案错误' : status === 'TIME_LIMIT_EXCEEDED' ? '超时' : status === 'RUNTIME_ERROR' ? '运行错误' : status}: ${count}次`
+          ),
+          suggestions: [aiResponse],
+          practiceRecommendations: [],
+        };
+      }
+    } else {
+      // 无 AI 配置，直接返回统计数据
+      result = {
+        weakPoints: Object.entries(knowledgeMap)
+          .sort((a, b) => b[1].count - a[1].count)
+          .slice(0, 5)
+          .map(([_, v]) => v.name),
+        patterns: Object.entries(statusMap).map(([status, count]) =>
+          `${status === 'WRONG_ANSWER' ? '答案错误' : status === 'TIME_LIMIT_EXCEEDED' ? '超时' : status === 'RUNTIME_ERROR' ? '运行错误' : status}: ${count}次`
+        ),
+        suggestions: ['建议针对薄弱知识点进行集中练习', '注意代码边界条件处理', '学习优化算法以避免超时'],
+        practiceRecommendations: [],
+      };
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: { message: error.message } });
+  }
+});
+
+// ========================
+// AI 代码解释（增强版 - 结构化返回）
+// ========================
+
+router.post('/explain-code-detailed', authMiddleware, featureMiddleware('ai-hint'), async (req: Request, res: any): Promise<void> => {
+  try {
+    const userId = (req as any).user.userId;
+    const { code, language, context } = req.body;
+
+    if (!code || !language) {
+      res.status(400).json({ success: false, error: { message: '缺少代码或语言参数' } });
+      return;
+    }
+
+    const result = await aiService.explainCodeDetailed(code, language, context, userId);
+    res.json({ success: true, data: result });
   } catch (error: any) {
     res.status(400).json({ success: false, error: { message: error.message } });
   }

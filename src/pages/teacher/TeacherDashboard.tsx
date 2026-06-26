@@ -9,6 +9,7 @@ import {
   Plus, X, Copy, RefreshCw,
   CheckCircle2, XCircle, Zap, Cpu, DollarSign, Save,
   BookOpen, FolderOpen, BookMarked, ExternalLink,
+  FileText, Download, Edit3,
 } from 'lucide-react';
 
 // ==================== 类型定义 ====================
@@ -379,6 +380,126 @@ export function TeacherDashboard() {
     } catch (err: any) {
       alert(err?.error?.message || '生成班级码失败');
     }
+  };
+
+  // ==================== AI 出题状态 ====================
+
+  const [showAiProblemGen, setShowAiProblemGen] = useState(false);
+  const [aiProblemForm, setAiProblemForm] = useState({
+    topic: '', difficulty: 'MEDIUM', language: '', tags: [] as string[], requirements: '',
+  });
+  const [aiProblemTagInput, setAiProblemTagInput] = useState('');
+  const [aiProblemGenerating, setAiProblemGenerating] = useState(false);
+  const [aiGeneratedProblems, setAiGeneratedProblems] = useState<any[]>([]);
+  const [aiProblemSaving, setAiProblemSaving] = useState<number | null>(null);
+  const [aiProblemEditIdx, setAiProblemEditIdx] = useState<number | null>(null);
+
+  // ==================== AI 班级报告状态 ====================
+
+  const [classReportLoading, setClassReportLoading] = useState<string | null>(null);
+  const [classReport, setClassReport] = useState<any>(null);
+  const [classReportClassId, setClassReportClassId] = useState<string | null>(null);
+  const [classReportTimeRange, setClassReportTimeRange] = useState<'week' | 'month'>('week');
+
+  // ==================== AI 出题操作 ====================
+
+  const handleGenerateProblem = async () => {
+    if (!aiProblemForm.topic.trim()) { alert('请输入题目主题'); return; }
+    setAiProblemGenerating(true);
+    setAiGeneratedProblems([]);
+    try {
+      const res = await enhancedAiAPI.generateProblemEnhanced({
+        topic: aiProblemForm.topic,
+        difficulty: aiProblemForm.difficulty,
+        language: aiProblemForm.language || undefined,
+        tags: aiProblemForm.tags.length > 0 ? aiProblemForm.tags : undefined,
+        requirements: aiProblemForm.requirements || undefined,
+        type: 'PROGRAMMING',
+      });
+      if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+        setAiGeneratedProblems(res.data);
+      } else {
+        alert('AI 未能生成有效题目，请调整参数后重试');
+      }
+    } catch (err: any) {
+      alert(err?.error?.message || 'AI 出题失败');
+    } finally {
+      setAiProblemGenerating(false);
+    }
+  };
+
+  const handleSaveProblem = async (idx: number) => {
+    setAiProblemSaving(idx);
+    try {
+      const problem = aiGeneratedProblems[idx];
+      const res = await enhancedAiAPI.saveProblem(problem);
+      if (res.success) {
+        alert(`题目「${problem.title}」已保存到题库`);
+        // 标记已保存
+        setAiGeneratedProblems(prev => prev.map((p, i) => i === idx ? { ...p, _saved: true } : p));
+      }
+    } catch (err: any) {
+      alert(err?.error?.message || '保存失败');
+    } finally {
+      setAiProblemSaving(null);
+    }
+  };
+
+  const handleAddTag = () => {
+    const tag = aiProblemTagInput.trim();
+    if (tag && !aiProblemForm.tags.includes(tag)) {
+      setAiProblemForm(prev => ({ ...prev, tags: [...prev.tags, tag] }));
+    }
+    setAiProblemTagInput('');
+  };
+
+  // ==================== AI 班级报告操作 ====================
+
+  const handleGenerateClassReport = async (classId: string) => {
+    setClassReportLoading(classId);
+    setClassReportClassId(classId);
+    setClassReport(null);
+    try {
+      const res = await enhancedAiAPI.generateClassReport({ classId, timeRange: classReportTimeRange });
+      if (res.success) {
+        setClassReport(res.data);
+      }
+    } catch (err: any) {
+      alert(err?.error?.message || 'AI 班级报告生成失败');
+    } finally {
+      setClassReportLoading(null);
+    }
+  };
+
+  const handleExportReport = () => {
+    if (!classReport) return;
+    const cls = classes.find(c => c.id === classReportClassId);
+    const text = [
+      `📊 ${cls?.name || ''} AI 班级报告`,
+      '',
+      `【班级总评】`,
+      classReport.summary,
+      '',
+      `【优秀学生】`,
+      ...(classReport.performers || []).map((s: string) => `• ${s}`),
+      '',
+      `【需关注学生】`,
+      ...(classReport.struggles || []).map((s: string) => `• ${s}`),
+      '',
+      `【共性薄弱点】`,
+      (classReport.gaps || []).join('、'),
+      '',
+      `【教学建议】`,
+      ...(classReport.suggestions || []).map((s: string, i: number) => `${i + 1}. ${s}`),
+      '',
+      `【下周重点】`,
+      ...(classReport.focusAreas || []).map((s: string) => `• ${s}`),
+    ].join('\n');
+
+    navigator.clipboard?.writeText(text).then(() => alert('报告已复制到剪贴板')).catch(() => {
+      const w = window.open('', '_blank');
+      if (w) { w.document.write(`<pre>${text}</pre>`); }
+    });
   };
 
   // ==================== AI 操作 ====================
@@ -995,7 +1116,7 @@ export function TeacherDashboard() {
                       ) : (
                         <div className="space-y-6">
                           {/* 操作按钮 */}
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 flex-wrap">
                             {!cls.classCode && (
                               <button
                                 onClick={() => handleGenerateCode(cls.id)}
@@ -1011,6 +1132,16 @@ export function TeacherDashboard() {
                             >
                               <RefreshCw className="h-3.5 w-3.5" />
                               刷新数据
+                            </button>
+                            <button
+                              onClick={() => handleGenerateClassReport(cls.id)}
+                              disabled={classReportLoading !== null}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-sm hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
+                            >
+                              {classReportLoading === cls.id
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <FileText className="h-3.5 w-3.5" />}
+                              柯德·班级报告
                             </button>
                           </div>
 
@@ -1142,6 +1273,13 @@ export function TeacherDashboard() {
           <h2 className="text-xl font-semibold text-white mb-4">AI 快捷操作</h2>
           <div className="space-y-4">
             <button
+              onClick={() => { setShowAiProblemGen(true); setAiGeneratedProblems([]); }}
+              className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 hover:from-violet-500/20 hover:to-fuchsia-500/20 border border-fuchsia-500/30 text-fuchsia-400 rounded-xl transition-colors"
+            >
+              <Sparkles className="h-5 w-5" />
+              <span className="font-medium">AI 出题</span>
+            </button>
+            <button
               onClick={() => handleAiAction('generateExam')}
               disabled={aiLoading !== null}
               className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1188,6 +1326,307 @@ export function TeacherDashboard() {
           )}
         </div>
       </div>
+
+      {/* ==================== AI 出题弹窗 ==================== */}
+      {showAiProblemGen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-xl p-6 max-w-3xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-fuchsia-400" />
+                柯德·智能出题
+              </h2>
+              <button onClick={() => setShowAiProblemGen(false)} className="text-slate-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {aiGeneratedProblems.length === 0 ? (
+              <div className="space-y-4">
+                {/* 主题 */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">题目主题 *</label>
+                  <input
+                    type="text"
+                    value={aiProblemForm.topic}
+                    onChange={e => setAiProblemForm(prev => ({ ...prev, topic: e.target.value }))}
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                    placeholder="例如：递归、二分查找、动态规划"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* 难度 */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">难度</label>
+                    <select
+                      value={aiProblemForm.difficulty}
+                      onChange={e => setAiProblemForm(prev => ({ ...prev, difficulty: e.target.value }))}
+                      className="w-full px-3 py-2.5 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                    >
+                      <option value="EASY">简单</option>
+                      <option value="MEDIUM">中等</option>
+                      <option value="HARD">困难</option>
+                    </select>
+                  </div>
+                  {/* 目标语言 */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">目标语言（可选）</label>
+                    <select
+                      value={aiProblemForm.language}
+                      onChange={e => setAiProblemForm(prev => ({ ...prev, language: e.target.value }))}
+                      className="w-full px-3 py-2.5 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                    >
+                      <option value="">不限</option>
+                      <option value="C++">C++</option>
+                      <option value="Python">Python</option>
+                      <option value="Java">Java</option>
+                      <option value="JavaScript">JavaScript</option>
+                      <option value="Go">Go</option>
+                    </select>
+                  </div>
+                </div>
+                {/* 标签 */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">知识点标签</label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={aiProblemTagInput}
+                      onChange={e => setAiProblemTagInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddTag(); } }}
+                      className="flex-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                      placeholder="输入标签后回车添加"
+                    />
+                    <button onClick={handleAddTag} className="px-3 py-2 bg-slate-600 text-slate-300 rounded-lg text-sm hover:bg-slate-500">
+                      添加
+                    </button>
+                  </div>
+                  {aiProblemForm.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {aiProblemForm.tags.map((tag, i) => (
+                        <span key={i} className="flex items-center gap-1 px-2 py-1 bg-fuchsia-500/20 text-fuchsia-300 rounded text-xs">
+                          {tag}
+                          <button onClick={() => setAiProblemForm(prev => ({ ...prev, tags: prev.tags.filter((_, j) => j !== i) }))} className="hover:text-white">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {/* 额外要求 */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">额外要求（可选）</label>
+                  <textarea
+                    value={aiProblemForm.requirements}
+                    onChange={e => setAiProblemForm(prev => ({ ...prev, requirements: e.target.value }))}
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
+                    rows={2}
+                    placeholder="例如：需要包含时间复杂度分析、适合初学者理解"
+                  />
+                </div>
+                {/* 生成按钮 */}
+                <button
+                  onClick={handleGenerateProblem}
+                  disabled={aiProblemGenerating || !aiProblemForm.topic.trim()}
+                  className="w-full flex items-center justify-center px-4 py-3 bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 rounded-lg text-white font-semibold transition-colors disabled:opacity-50"
+                >
+                  {aiProblemGenerating
+                    ? <><Loader2 className="h-5 w-5 mr-2 animate-spin" />AI 正在生成...</>
+                    : <><Sparkles className="h-5 w-5 mr-2" />生成题目</>}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-slate-400 text-sm">已生成 {aiGeneratedProblems.length} 道题目，请预览并编辑后保存到题库：</p>
+                {aiGeneratedProblems.map((p, idx) => (
+                  <div key={idx} className="bg-slate-700/70 rounded-lg p-4 border border-slate-600">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-fuchsia-400 font-bold">#{idx + 1}</span>
+                        <span className="text-white font-semibold">{p.title}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          p.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400'
+                          : p.difficulty === 'HARD' ? 'bg-red-500/20 text-red-400'
+                          : 'bg-yellow-500/20 text-yellow-400'
+                        }`}>
+                          {p.difficulty === 'EASY' ? '简单' : p.difficulty === 'HARD' ? '困难' : '中等'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setAiProblemEditIdx(aiProblemEditIdx === idx ? null : idx)}
+                          className="p-1.5 text-slate-400 hover:text-cyan-400 transition-colors"
+                          title="编辑"
+                        >
+                          <Edit3 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleSaveProblem(idx)}
+                          disabled={p._saved || aiProblemSaving === idx}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-green-500/20 text-green-400 rounded-lg text-sm hover:bg-green-500/30 disabled:opacity-50"
+                        >
+                          {aiProblemSaving === idx ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                          {p._saved ? '已保存' : '保存到题库'}
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-slate-400 text-sm line-clamp-3 mb-2">{p.description?.slice(0, 200)}...</p>
+                    {p.tags && (
+                      <div className="flex gap-1 flex-wrap mb-2">
+                        {(Array.isArray(p.tags) ? p.tags : []).map((t: string, i: number) => (
+                          <span key={i} className="text-xs px-2 py-0.5 bg-cyan-500/10 text-cyan-400 rounded">{t}</span>
+                        ))}
+                      </div>
+                    )}
+                    {p.testCases && <p className="text-xs text-slate-500">{Array.isArray(p.testCases) ? p.testCases.length : 0} 个测试用例</p>}
+                    {/* 简单行内编辑 */}
+                    {aiProblemEditIdx === idx && (
+                      <div className="mt-3 space-y-2 border-t border-slate-600 pt-3">
+                        <input
+                          value={p.title}
+                          onChange={e => setAiGeneratedProblems(prev => prev.map((pp, i) => i === idx ? { ...pp, title: e.target.value } : pp))}
+                          className="w-full px-3 py-2 bg-slate-600 border border-slate-500 rounded text-white text-sm"
+                        />
+                        <textarea
+                          value={p.description}
+                          onChange={e => setAiGeneratedProblems(prev => prev.map((pp, i) => i === idx ? { ...pp, description: e.target.value } : pp))}
+                          className="w-full px-3 py-2 bg-slate-600 border border-slate-500 rounded text-white text-sm"
+                          rows={4}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div className="flex justify-between">
+                  <button
+                    onClick={() => setAiGeneratedProblems([])}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    重新生成
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================== AI 班级报告弹窗 ==================== */}
+      {classReport && classReportClassId && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-xl p-6 max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                <FileText className="h-5 w-5 text-emerald-400" />
+                柯德·班级报告 — {classes.find(c => c.id === classReportClassId)?.name}
+              </h2>
+              <div className="flex items-center gap-2">
+                <select
+                  value={classReportTimeRange}
+                  onChange={e => setClassReportTimeRange(e.target.value as 'week' | 'month')}
+                  className="px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white"
+                >
+                  <option value="week">最近一周</option>
+                  <option value="month">最近一月</option>
+                </select>
+                <button
+                  onClick={() => handleGenerateClassReport(classReportClassId)}
+                  disabled={classReportLoading !== null}
+                  className="p-1.5 text-slate-400 hover:text-cyan-400"
+                  title="重新生成"
+                >
+                  {classReportLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                </button>
+                <button onClick={() => { setClassReport(null); setClassReportClassId(null); }} className="text-slate-400 hover:text-white">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* 班级总评 */}
+            <div className="mb-5">
+              <h3 className="text-sm font-medium text-emerald-400 mb-2">📋 班级总评</h3>
+              <p className="text-slate-300 text-sm leading-relaxed bg-slate-700/50 rounded-lg p-4">{classReport.summary}</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+              {/* 优秀学生 */}
+              <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-green-400 mb-2">🌟 优秀学生</h3>
+                {(classReport.performers || []).length > 0 ? (
+                  <ul className="space-y-1">
+                    {classReport.performers.map((s: string, i: number) => (
+                      <li key={i} className="text-slate-300 text-sm flex items-center gap-2">
+                        <CheckCircle className="h-3.5 w-3.5 text-green-400" />{s}
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="text-slate-500 text-sm">暂无数据</p>}
+              </div>
+              {/* 需关注学生 */}
+              <div className="bg-orange-500/5 border border-orange-500/20 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-orange-400 mb-2">⚠️ 需关注学生</h3>
+                {(classReport.struggles || []).length > 0 ? (
+                  <ul className="space-y-1">
+                    {classReport.struggles.map((s: string, i: number) => (
+                      <li key={i} className="text-slate-300 text-sm flex items-center gap-2">
+                        <AlertTriangle className="h-3.5 w-3.5 text-orange-400" />{s}
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="text-slate-500 text-sm">暂无数据</p>}
+              </div>
+            </div>
+
+            {/* 共性薄弱点 */}
+            <div className="mb-5">
+              <h3 className="text-sm font-medium text-yellow-400 mb-2">🎯 共性薄弱点</h3>
+              <div className="flex flex-wrap gap-2">
+                {(classReport.gaps || []).length > 0
+                  ? classReport.gaps.map((g: string, i: number) => (
+                      <span key={i} className="px-3 py-1 bg-yellow-500/10 text-yellow-300 rounded-full text-xs border border-yellow-500/20">{g}</span>
+                    ))
+                  : <p className="text-slate-500 text-sm">暂无数据</p>}
+              </div>
+            </div>
+
+            {/* 教学建议 */}
+            <div className="mb-5">
+              <h3 className="text-sm font-medium text-cyan-400 mb-2">💡 教学建议</h3>
+              <ol className="list-decimal list-inside space-y-1.5">
+                {(classReport.suggestions || []).map((s: string, i: number) => (
+                  <li key={i} className="text-slate-300 text-sm">{s}</li>
+                ))}
+              </ol>
+            </div>
+
+            {/* 下周重点 */}
+            <div className="mb-5">
+              <h3 className="text-sm font-medium text-purple-400 mb-2">📌 下周重点</h3>
+              <ul className="space-y-1">
+                {(classReport.focusAreas || []).map((s: string, i: number) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />{s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* 导出按钮 */}
+            <div className="flex justify-end">
+              <button
+                onClick={handleExportReport}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition-colors"
+              >
+                <Download className="h-4 w-4" />
+                导出报告
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

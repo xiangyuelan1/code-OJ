@@ -1,5 +1,6 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Navbar } from './Navbar';
+import { AIFloatingAssistant } from '../AIFloatingAssistant';
 import { useAuthStore } from '../../stores/auth.store';
 import { useSocketStore } from '../../services/socket';
 import { classAPI } from '../../services/api';
@@ -200,6 +201,9 @@ export function Layout() {
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-cyan-500 border-t-transparent"></div>
         </div>
       )}
+
+      {/* AI 浮动助手 - 仅对已认证用户显示 */}
+      <AIFloatingAssistant />
     </div>
   );
 }
