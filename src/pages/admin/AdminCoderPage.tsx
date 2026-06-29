@@ -216,7 +216,7 @@ function ConfigTab() {
             {group.keys.map(key => {
               const inputType = getInputType(group.type, key);
               const value = getConfigValue(key);
-              const label = key.replace('coder_', '').replaceAll('_', ' ');
+              const label = key.replace('coder_', '').split('_').join(' ');
 
               return (
                 <div key={key} className="flex flex-col gap-1.5">
