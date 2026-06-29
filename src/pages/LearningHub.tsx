@@ -6,6 +6,7 @@ import {
   Shuffle, Clock, Star, ChevronRight, Play,
 } from 'lucide-react';
 import { AIBadge } from '../components/ui/AIBadge';
+import { CoderAvatar } from '../components/ui/CoderAvatar';
 import { starpathAPI, starpathAchievementAPI, submissionsAPI, minigameAPI, learningAdminAPI } from '../services/api';
 
 function TwinklingStars({ count = 60 }: { count?: number }) {
@@ -545,6 +546,15 @@ export function LearningHub() {
       <TwinklingStars />
 
       <div className="relative z-10 mx-auto max-w-6xl px-6 py-16">
+        {/* 柯德推荐头部 */}
+        <div className="flex items-center gap-4 mb-8 px-4 py-4 rounded-xl bg-purple-500/5 border border-purple-500/15">
+          <CoderAvatar size={48} animated mood="happy" />
+          <div>
+            <p className="text-sm font-medium text-purple-300">柯德为你推荐的学习路径</p>
+            <p className="text-xs text-slate-500">根据你的学习进度和薄弱点智能推荐</p>
+          </div>
+        </div>
+
         {/* 标题区域 */}
         <div className="mb-12 text-center">
           <h1 className="mb-4 text-5xl font-extrabold">

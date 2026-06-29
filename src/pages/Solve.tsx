@@ -6,6 +6,7 @@ import Editor from '@monaco-editor/react';
 import { useAuthStore } from '../stores/auth.store';
 import { MarkdownRenderer } from '../components/MarkdownEditor';
 import { CoderPowered } from '../components/ui/CoderPowered';
+import { CoderAvatar } from '../components/ui/CoderAvatar';
 
 const EDITOR_SETTINGS_KEY = 'oj_editor_settings';
 
@@ -621,9 +622,11 @@ export function SolvePage() {
             </div>
           )}
 
-          {/* AI 提示 */}
+          {/* AI 提示 - 柯德智能辅助区 */}
           <div className="bg-slate-800 rounded-xl p-6 shadow-xl">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-3 mb-3">
+              <CoderAvatar size={32} animated={false} mood="happy" />
+              <span className="text-sm font-medium text-purple-300">柯德在这里帮你</span>
               <CoderPowered size="md" />
             </div>
             <div className="flex flex-wrap gap-2">

@@ -1,6 +1,7 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Navbar } from './Navbar';
 import { AIFloatingAssistant } from '../AIFloatingAssistant';
+import { CoderLivingCharacter } from '../CoderLivingCharacter';
 import { useAuthStore } from '../../stores/auth.store';
 import { useSocketStore } from '../../services/socket';
 import { classAPI } from '../../services/api';
@@ -202,6 +203,8 @@ export function Layout() {
         </div>
       )}
 
+      {/* 柯德活体形象 - 突破边界的页面角色 */}
+      <CoderLivingCharacter />
       {/* AI 浮动助手 - 仅对已认证用户显示 */}
       <AIFloatingAssistant />
     </div>

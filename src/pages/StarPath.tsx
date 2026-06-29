@@ -9,6 +9,7 @@ import {
   Rocket, Pickaxe, Dumbbell, Clock, Lock,
 } from 'lucide-react';
 import { GuideChatPanel } from '../components/GuideChatPanel';
+import { CoderAvatar } from '../components/ui/CoderAvatar';
 
 /* ═══════════════════════════════════════
    流星雨动画
@@ -772,11 +773,14 @@ export function StarPathPage() {
       {/* 顶部统计栏 */}
       <div className="relative z-10 mb-8">
         <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-white mb-1">
-              编程<span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">星途</span>
-            </h1>
-            <p className="text-slate-400 text-sm">探索知识的星辰大海 ✨ 儿童节快乐！🎈</p>
+          <div className="flex items-center gap-4">
+            <CoderAvatar size={48} animated mood="excited" />
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold text-white mb-1">
+                编程<span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">星途</span>
+              </h1>
+              <p className="text-slate-400 text-sm">柯德带你探索知识的星辰大海 ✨</p>
+            </div>
           </div>
           <button onClick={() => setChatOpen(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-500/15 border border-violet-400/25 text-violet-300 hover:bg-violet-500/25 hover:text-white transition-all">
             <MessageSquare className="h-4 w-4" />

@@ -339,14 +339,56 @@ function MeetCoderSection() {
           backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%237c3aed' fill-opacity='1'%3E%3Ccircle cx='20' cy='20' r='2'/%3E%3C/g%3E%3C/svg%3E")`,
         }}
       />
+
+      {/* 浮动装饰元素动画 */}
+      <style>{`
+        @keyframes coder-orbit {
+          0% { transform: rotate(0deg) translateX(140px) rotate(0deg); }
+          100% { transform: rotate(360deg) translateX(140px) rotate(-360deg); }
+        }
+        @keyframes coder-glow-pulse {
+          0%, 100% { box-shadow: 0 0 30px rgba(124,58,237,0.3), 0 0 60px rgba(124,58,237,0.15); }
+          50% { box-shadow: 0 0 50px rgba(124,58,237,0.5), 0 0 100px rgba(124,58,237,0.25); }
+        }
+        @keyframes coder-code-float {
+          0%, 100% { transform: translateY(0) rotate(-2deg); opacity: 0.6; }
+          50% { transform: translateY(-8px) rotate(2deg); opacity: 0.9; }
+        }
+        .coder-glow-aura {
+          animation: coder-glow-pulse 3s ease-in-out infinite;
+        }
+        .coder-float-element {
+          animation: coder-code-float 4s ease-in-out infinite;
+        }
+      `}</style>
+
       <div className="relative px-8 py-12 md:px-14 md:py-16">
-        <div className="flex flex-col md:flex-row items-center gap-10">
-          {/* 左侧：柯德形象 */}
-          <div className="shrink-0">
-            <CoderAvatar size={200} animated mood="happy" />
+        <div className="flex flex-col md:flex-row items-center gap-12">
+          {/* 左侧：柯德形象 + 发光光环 + 浮动装饰 */}
+          <div className="relative shrink-0">
+            {/* 发光光环背景 */}
+            <div className="absolute inset-0 -m-6 rounded-full bg-purple-500/10 coder-glow-aura" />
+
+            {/* 浮动代码片段装饰 */}
+            <div className="absolute -top-8 -right-10 px-2 py-1 rounded-md bg-slate-800/80 border border-cyan-500/30 text-xs font-mono text-cyan-400 coder-float-element">
+              if (learn) {'{}'}
+            </div>
+            <div className="absolute -bottom-6 -left-8 px-2 py-1 rounded-md bg-slate-800/80 border border-purple-500/30 text-xs font-mono text-purple-400 coder-float-element" style={{ animationDelay: '1.5s' }}>
+              &lt;Code /&gt;
+            </div>
+            <div className="absolute top-1/2 -right-14 px-2 py-1 rounded-md bg-slate-800/80 border border-emerald-500/30 text-xs font-mono text-emerald-400 coder-float-element" style={{ animationDelay: '2.5s' }}>
+              ✓ AC
+            </div>
+
+            {/* 二进制浮动数字 */}
+            <div className="absolute -top-4 left-0 text-xs font-mono text-purple-500/40 coder-float-element" style={{ animationDelay: '0.5s' }}>01</div>
+            <div className="absolute bottom-4 -right-4 text-xs font-mono text-cyan-500/40 coder-float-element" style={{ animationDelay: '1s' }}>10</div>
+
+            {/* 柯德大头像 */}
+            <CoderAvatar size={240} animated mood="happy" />
           </div>
 
-          {/* 右侧：介绍内容 */}
+          {/* 右侧：介绍内容 + 连接线风格 */}
           <div className="flex-1 text-center md:text-left">
             <h2 className="text-2xl md:text-3xl font-bold text-white mb-3">
               认识柯德 —— 你的 AI 编程伙伴
@@ -355,11 +397,19 @@ function MeetCoderSection() {
               Code + 导 = 柯德。一位懂编程、有耐心、会鼓励的 AI 学习伙伴。
             </p>
 
+            {/* 思维导图风格特性列表 */}
             <ul className="space-y-3 mb-8">
-              {features.map(({ emoji, text }) => (
-                <li key={text} className="flex items-center gap-3 text-slate-300">
-                  <span className="text-lg">{emoji}</span>
-                  <span className="text-sm md:text-base">{text}</span>
+              {features.map(({ emoji, text }, idx) => (
+                <li key={text} className="flex items-center gap-3 text-slate-300 group">
+                  {/* 连接圆点 */}
+                  <span className="relative shrink-0 w-8 h-8 rounded-full bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-base group-hover:bg-purple-500/25 group-hover:border-purple-500/50 transition-all">
+                    {emoji}
+                    {/* 竖向连接线（非最后项） */}
+                    {idx < features.length - 1 && (
+                      <span className="absolute top-full left-1/2 -translate-x-1/2 w-px h-3 bg-gradient-to-b from-purple-500/40 to-transparent" />
+                    )}
+                  </span>
+                  <span className="text-sm md:text-base group-hover:text-white transition-colors">{text}</span>
                 </li>
               ))}
             </ul>
@@ -407,26 +457,54 @@ function CoderStatusCard({
     return `${timeGreeting}，${name}！今天也要加油呀~`;
   };
 
-  /** 点击按钮触发浮动助手打开（通过 DOM 事件触发浮动球 click） */
+  /** 柯德今日建议 */
+  const getDailySuggestions = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return ['完成今日挑战', '复习昨日错题', '学习一个新知识点'];
+    if (hour < 18) return ['刷两道中等题', '参与一次对战', '整理笔记'];
+    return ['总结今日收获', '预习明日内容', '放松一下'];
+  };
+
+  /** 点击按钮触发浮动助手打开 */
   const openAssistant = () => {
     const btn = document.querySelector('[title="柯德 · AI助手"]') as HTMLElement | null;
     btn?.click();
   };
 
+  const suggestions = getDailySuggestions();
+
   return (
-    <section className="relative overflow-hidden rounded-xl border border-purple-500/20">
+    <section className="relative overflow-hidden rounded-xl border-l-4 border-l-purple-500 border border-purple-500/20">
       <div className="absolute inset-0 bg-gradient-to-r from-purple-600/10 via-slate-800/60 to-indigo-600/10" />
-      <div className="relative px-6 py-5 md:px-8">
-        <div className="flex items-center gap-4">
-          <CoderAvatar size={64} animated mood="happy" />
+      <div className="relative px-6 py-6 md:px-8 md:py-7">
+        <div className="flex flex-col md:flex-row md:items-center gap-5">
+          {/* 柯德头像 */}
+          <div className="shrink-0">
+            <CoderAvatar size={80} animated mood="happy" />
+          </div>
+
+          {/* 问候 + 建议 */}
           <div className="flex-1 min-w-0">
-            <p className="text-white text-sm md:text-base font-medium mb-2">{getGreeting()}</p>
+            <p className="text-white text-base md:text-lg font-semibold mb-3">{getGreeting()}</p>
+
+            {/* 今日目标建议 */}
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <span className="text-xs text-purple-400 font-medium">柯德建议：</span>
+              {suggestions.map((s, i) => (
+                <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-xs text-purple-300">
+                  <Target className="h-3 w-3" />
+                  {s}
+                </span>
+              ))}
+            </div>
+
             <button
               onClick={openAssistant}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-white hover:bg-purple-500/30 transition-all font-medium text-sm"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gradient-to-r from-purple-500/20 to-indigo-500/20 border border-purple-500/30 text-purple-300 hover:text-white hover:from-purple-500/30 hover:to-indigo-500/30 transition-all font-medium text-sm"
             >
               <Bot className="h-4 w-4" />
               和柯德聊聊
+              <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
@@ -601,45 +679,92 @@ export function HomePage() {
   if (!isAuthenticated) {
     return (
       <div className="-mt-8">
+        {/* Hero 区域：柯德形象 + 核心标语 */}
         <section className="relative overflow-hidden rounded-2xl mb-12">
+          {/* 柯德活体形象锚点 - hero 底部 */}
+          <div id="coder-anchor-hero-bottom" className="absolute bottom-0 left-0 w-full h-1 pointer-events-none" />
           <div className="absolute inset-0 bg-gradient-to-br from-cyan-600/20 via-slate-900 to-indigo-600/20" />
           <div className="absolute inset-0 opacity-[0.03]"
             style={{
               backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%2306b6d4' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
             }}
           />
-          <div className="relative px-8 py-16 md:px-16 md:py-24 text-center">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-sm mb-6">
-              <Zap className="h-3.5 w-3.5" />
-              <span>在线评测 · 实时对战 · 智能辅助</span>
-            </div>
-            <h1 className="text-4xl md:text-6xl font-extrabold text-white mb-5 tracking-tight">
-              Code <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400">OJ</span>
-            </h1>
-            <p className="text-lg md:text-xl text-slate-300 max-w-2xl mx-auto mb-10 leading-relaxed">
-              刷题训练、模拟考试、实时对战，一站式编程能力提升平台
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link
-                to="/categories"
-                className="group inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-semibold shadow-lg shadow-cyan-500/25 transition-all"
-              >
-                <BookOpen className="h-5 w-5" />
-                开始刷题
-                <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
-              </Link>
-              <Link
-                to="/register"
-                className="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl border border-slate-600 hover:border-cyan-500/50 text-slate-300 hover:text-white font-semibold transition-all"
-              >
-                立即注册
-              </Link>
+
+          {/* 柯德粒子星光动画 */}
+          <style>{`
+            @keyframes coder-star-float {
+              0%, 100% { transform: translateY(0) scale(1); opacity: 0.6; }
+              50% { transform: translateY(-12px) scale(1.3); opacity: 1; }
+            }
+            @keyframes coder-speech-fade {
+              0% { opacity: 0; transform: translateY(8px); }
+              10% { opacity: 1; transform: translateY(0); }
+              90% { opacity: 1; transform: translateY(0); }
+              100% { opacity: 0; transform: translateY(-4px); }
+            }
+            .coder-star-particle {
+              animation: coder-star-float 3s ease-in-out infinite;
+            }
+          `}</style>
+
+          <div className="relative px-8 py-14 md:px-16 md:py-20">
+            <div className="flex flex-col md:flex-row items-center gap-10 md:gap-16">
+              {/* 左侧：文字内容 */}
+              <div className="flex-1 text-center md:text-left">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-sm mb-6">
+                  <Zap className="h-3.5 w-3.5" />
+                  <span>在线评测 · 实时对战 · 智能辅助</span>
+                </div>
+                <h1 className="text-4xl md:text-6xl font-extrabold text-white mb-5 tracking-tight">
+                  Code <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400">OJ</span>
+                </h1>
+                <p className="text-lg md:text-xl text-slate-300 max-w-xl mb-10 leading-relaxed">
+                  刷题训练、模拟考试、实时对战，一站式编程能力提升平台
+                </p>
+                <div className="flex flex-col sm:flex-row items-center md:items-start gap-4">
+                  <Link
+                    to="/categories"
+                    className="group inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-white font-semibold shadow-lg shadow-cyan-500/25 transition-all"
+                  >
+                    <BookOpen className="h-5 w-5" />
+                    开始刷题
+                    <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
+                  </Link>
+                  <Link
+                    to="/register"
+                    className="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl border border-slate-600 hover:border-cyan-500/50 text-slate-300 hover:text-white font-semibold transition-all"
+                  >
+                    立即注册
+                  </Link>
+                </div>
+              </div>
+
+              {/* 右侧：柯德形象 + 对话气泡 + 粒子装饰 */}
+              <div className="relative shrink-0">
+                {/* 粒子星光装饰 */}
+                <div className="absolute -top-4 -left-4 w-3 h-3 rounded-full bg-cyan-400/60 coder-star-particle" />
+                <div className="absolute top-8 -right-6 w-2 h-2 rounded-full bg-purple-400/70 coder-star-particle" style={{ animationDelay: '0.8s' }} />
+                <div className="absolute -bottom-2 left-6 w-2.5 h-2.5 rounded-full bg-indigo-400/60 coder-star-particle" style={{ animationDelay: '1.5s' }} />
+                <div className="absolute top-1/2 -left-8 w-2 h-2 rounded-full bg-amber-400/50 coder-star-particle" style={{ animationDelay: '2.2s' }} />
+                <div className="absolute -top-6 right-10 w-1.5 h-1.5 rounded-full bg-emerald-400/60 coder-star-particle" style={{ animationDelay: '0.4s' }} />
+
+                {/* 对话气泡 */}
+                <div className="absolute -top-14 left-1/2 -translate-x-1/2 whitespace-nowrap px-4 py-2 rounded-xl bg-slate-800/90 border border-purple-500/30 backdrop-blur-sm text-sm text-white shadow-lg">
+                  <span>嘿，我是柯德！准备好开始编程冒险了吗？</span>
+                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-2.5 h-2.5 bg-slate-800/90 border-r border-b border-purple-500/30" />
+                </div>
+
+                {/* 柯德头像 */}
+                <CoderAvatar size={180} animated mood="excited" />
+              </div>
             </div>
           </div>
         </section>
 
         {stats && (
-          <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
+          <section className="relative grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
+            {/* 柯德活体形象锚点 - 统计卡片 */}
+            <div id="coder-anchor-stats" className="absolute top-0 right-0 w-1 h-1 pointer-events-none" />
             {[
               { icon: Code2, label: '题目总数', value: stats.problemCount, color: 'text-cyan-400' },
               { icon: Users, label: '注册用户', value: stats.userCount, color: 'text-indigo-400' },
@@ -658,6 +783,8 @@ export function HomePage() {
         )}
 
         {/* ═══ 认识柯德 ═══ AI 编程伙伴推广区 */}
+        {/* 柯德活体形象锚点 - 认识柯德 */}
+        <div id="coder-anchor-meet" className="w-full h-1 pointer-events-none" />
         <MeetCoderSection />
 
         {/* 升级服务：未登录访客可见（仅全量版） */}
@@ -814,6 +941,9 @@ export function HomePage() {
           </div>
         </section>
 
+        {/* 柯德活体形象锚点 - 页面底部挥手告别 */}
+        <div id="coder-anchor-footer" className="w-full h-1 pointer-events-none" />
+
         <section className="relative overflow-hidden rounded-xl border border-indigo-500/20 bg-gradient-to-r from-indigo-500/10 via-slate-800/60 to-purple-500/10 p-8 mb-12">
           <div className="flex flex-col md:flex-row items-center gap-6">
             <CoderAvatar size={64} animated mood="happy" />
@@ -837,6 +967,8 @@ export function HomePage() {
 
       {/* 欢迎卡片 */}
       <section className="relative overflow-hidden rounded-2xl">
+        {/* 柯德活体形象锚点 - 欢迎卡片 */}
+        <div id="coder-anchor-welcome" className="absolute top-1/2 right-0 w-1 h-1 pointer-events-none" />
         <div className="absolute inset-0 bg-gradient-to-br from-cyan-600/20 via-slate-900 to-indigo-600/20" />
         <div className="relative px-6 py-8 md:px-10 md:py-10">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
@@ -993,6 +1125,8 @@ export function HomePage() {
       )}
 
       {/* ═══ 每日一题 & 签到 ═══ 统一模块，作为核心展示区域 */}
+      {/* 柯德活体形象锚点 - 每日挑战 */}
+      <div id="coder-anchor-daily" className="w-full h-1 pointer-events-none" />
       <section className="relative overflow-hidden rounded-2xl border border-amber-500/20">
         {/* 渐变背景 */}
         <div className="absolute inset-0 bg-gradient-to-br from-amber-600/10 via-slate-900 to-cyan-600/10" />
@@ -1225,8 +1359,9 @@ export function HomePage() {
           </Link>
         </div>
         {matchHistory.length === 0 ? (
-          <div className="px-6 py-10 text-center">
-            <p className="text-slate-500 mb-4">还没有对战记录，来一场吧！</p>
+          <div className="flex flex-col items-center justify-center px-6 py-10">
+            <CoderAvatar size={64} animated mood="excited" className="mb-3" />
+            <p className="text-slate-400 text-sm mb-4">还没有对战记录，来和柯德一起练练手吧！</p>
             <Link to="/match"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 text-white font-medium shadow-lg shadow-indigo-500/25 transition-all">
               <Swords className="h-4 w-4" /> 开始对战

@@ -11,6 +11,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorDisplay } from '../components/ui/ErrorDisplay';
 import { StatCard } from '../components/ui/StatCard';
 import { getDifficultyBadge, getDifficultyName } from '../lib/labels';
+import { CoderAvatar } from '../components/ui/CoderAvatar';
 
 /* ── 常量与类型 ── */
 
@@ -288,9 +289,15 @@ export function WrongRecordPage() {
               disabled={aiAnalysisLoading}
               className="ml-auto flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-medium text-sm hover:from-purple-500 hover:to-cyan-500 transition-all disabled:opacity-60 shadow-lg shadow-purple-500/20"
             >
-              <Sparkles className="h-4 w-4" />
+              <CoderAvatar size={20} animated={false} />
               {aiAnalysisLoading ? '柯德分析中...' : '柯德·分析错题'}
             </button>
+            {!aiAnalysisLoading && (
+              <span className="hidden md:flex items-center gap-1.5 text-xs text-purple-400/70">
+                <CoderAvatar size={16} animated={false} />
+                让我来看看你的错题...
+              </span>
+            )}
           </div>
 
           {stats && (
@@ -532,11 +539,11 @@ export function WrongRecordPage() {
 
         {/* ── 错题列表 ── */}
         {records.length === 0 ? (
-          <EmptyState
-            icon={<BookOpen className="h-16 w-16" />}
-            title="暂无错题记录"
-            description="继续保持，你做得很棒！"
-          />
+          <div className="flex flex-col items-center justify-center py-12">
+            <CoderAvatar size={100} animated mood="happy" className="mb-4" />
+            <p className="text-base text-slate-300 font-medium mb-1">没有错题记录，你真棒！</p>
+            <p className="text-sm text-slate-500">继续保持，柯德为你骄傲～</p>
+          </div>
         ) : (
           <div className="space-y-3">
             {records.map((record) => (

@@ -10,6 +10,7 @@ import {
   Sparkles,
   Check,
 } from 'lucide-react';
+import { CoderAvatar } from '../components/ui/CoderAvatar';
 
 /* ── 类型定义 ── */
 
@@ -253,6 +254,14 @@ export function CheckInPage() {
 
         {/* ── 签到按钮区域 ── */}
         <div className="relative flex flex-col items-center gap-4 rounded-2xl bg-slate-800 p-8">
+          {/* 柯德签到祝贺 */}
+          {status?.todayCheckedIn && (
+            <div className="flex items-center gap-3 mb-2">
+              <CoderAvatar size={40} animated mood="excited" />
+              <p className="text-sm text-purple-300 font-medium">太棒了！今天也坚持签到了，继续加油～</p>
+            </div>
+          )}
+
           {/* 浮动积分动画 */}
           {floatingPoints !== null && <FloatingPoints points={floatingPoints} />}
 

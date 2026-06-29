@@ -479,8 +479,50 @@ export function AIFloatingAssistant() {
   // 渲染：浮动球
   // ============================================================
 
+  // --- 定时文字提示（每30秒轮播） ---
+  const [tipIndex, setTipIndex] = useState(0);
+  const [tipVisible, setTipVisible] = useState(false);
+  const tipMessages = ['需要帮助？', '点我聊天', '有什么问题？'];
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTipVisible(true);
+      setTipIndex(prev => (prev + 1) % tipMessages.length);
+      // 3秒后隐藏
+      setTimeout(() => setTipVisible(false), 3000);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const renderFloatingBall = () => (
     <div className="fixed bottom-5 right-5 z-50 md:bottom-5 md:right-5">
+      {/* 发光环动画样式 */}
+      <style>{`
+        @keyframes coder-ball-ring {
+          0%, 100% { transform: scale(1); opacity: 0.4; }
+          50% { transform: scale(1.3); opacity: 0; }
+        }
+        @keyframes coder-tip-fade {
+          0% { opacity: 0; transform: translateY(4px); }
+          15% { opacity: 1; transform: translateY(0); }
+          85% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-4px); }
+        }
+        .coder-ball-ring {
+          animation: coder-ball-ring 2.5s ease-out infinite;
+        }
+        .coder-tip-anim {
+          animation: coder-tip-fade 3s ease-in-out forwards;
+        }
+      `}</style>
+
+      {/* 定时文字提示 */}
+      {tipVisible && !proactiveMessage && (
+        <div className="absolute bottom-full right-0 mb-3 px-3 py-1.5 rounded-lg bg-slate-800/95 border border-purple-500/30 backdrop-blur-sm text-xs text-purple-300 shadow-lg coder-tip-anim whitespace-nowrap">
+          {tipMessages[tipIndex]}
+        </div>
+      )}
+
       {/* 主动消息气泡 */}
       {proactiveMessage && (
         <div className="absolute bottom-full right-0 mb-3 max-w-[240px] px-3 py-2 rounded-xl bg-slate-800/95 border border-purple-500/30 backdrop-blur-sm text-xs text-slate-200 shadow-lg animate-fade-in-up">
@@ -491,13 +533,15 @@ export function AIFloatingAssistant() {
 
       <button
         onClick={openPanel}
-        className="group relative flex items-center justify-center w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 shadow-lg shadow-purple-600/30 hover:shadow-purple-500/50 hover:scale-110 transition-all duration-300"
+        className="group relative flex items-center justify-center w-14 h-14 md:w-[56px] md:h-[56px] rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 shadow-lg shadow-purple-600/30 hover:shadow-purple-500/50 hover:scale-110 transition-all duration-300"
         title="柯德 · AI助手"
       >
+        {/* 外扩发光环 */}
+        <span className="absolute inset-0 rounded-full border-2 border-purple-400/40 coder-ball-ring" />
         {/* 呼吸动画 */}
-        <span className="absolute inset-0 rounded-full bg-purple-400/20 animate-pulse" />
+        <span className="absolute inset-0 rounded-full bg-purple-400/15 animate-pulse" />
         {/* 柯德头像 */}
-        <CoderAvatar size={40} animated={false} className="relative z-10" />
+        <CoderAvatar size={42} animated={false} className="relative z-10" />
         {/* 通知红点 */}
         {hasNotification && (
           <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-red-500 border-2 border-slate-900 animate-pulse" />
